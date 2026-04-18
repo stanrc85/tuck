@@ -1,6 +1,7 @@
 {
   "name": "@prnv/tuck",
   "version": "1.9.0",
+  "private": true,
   "description": "Modern dotfiles manager with a beautiful CLI",
   "keywords": [
     "dotfiles",
@@ -113,7 +114,12 @@
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",
       "@semantic-release/changelog",
-      "@semantic-release/npm",
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": false
+        }
+      ],
       "@semantic-release/github",
       [
         "@semantic-release/git",

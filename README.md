@@ -7,9 +7,8 @@
   
   Simple, fast, and beautiful. Manage your dotfiles with Git, sync across machines, and never lose your configs again.
 
-[![npm version](https://img.shields.io/npm/v/@prnv/tuck.svg)](https://www.npmjs.com/package/@prnv/tuck)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/Pranav-Karra-3301/tuck/actions/workflows/ci.yml/badge.svg)](https://github.com/Pranav-Karra-3301/tuck/actions/workflows/ci.yml)
+[![CI](https://github.com/stanrc85/tuck/actions/workflows/ci.yml/badge.svg)](https://github.com/stanrc85/tuck/actions/workflows/ci.yml)
 
 [Website](https://tuck.sh) · [Install](#installation) · [Quick Start](#quick-start) · [Commands](#commands)
 
@@ -31,22 +30,18 @@
 
 ## Installation
 
+This fork is not published to npm. Install from the GitHub repo or from a
+release binary:
+
 ```bash
-# npm (all platforms)
-npm install -g @prnv/tuck
+# Install latest from git (all platforms)
+npm install -g git+https://github.com/stanrc85/tuck.git
 
-# Homebrew (macOS/Linux) - coming soon
-brew install pranav-karra-3301/tap/tuck
+# Pin to a specific release
+npm install -g git+https://github.com/stanrc85/tuck.git#v2.0.0
 
-# pnpm (all platforms)
-pnpm add -g @prnv/tuck
-
-# yarn (all platforms)
-yarn global add @prnv/tuck
-
-# Windows (PowerShell)
-npm install -g @prnv/tuck
-# Or download the binary from GitHub Releases
+# Or grab a prebuilt standalone binary
+# → https://github.com/stanrc85/tuck/releases
 ```
 
 ## Quick Start
