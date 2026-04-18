@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { join } from 'path';
+import { join, sep } from 'path';
 import { NotInitializedError } from '../../src/errors.js';
 
 const loadManifestMock = vi.fn();
@@ -256,8 +256,10 @@ describe('sync command behavior', () => {
     getFileChecksumMock.mockResolvedValue('new');
     // pathExists controls both the change-detection path check and the repo-side
     // snapshot check; return false when it's the repo file under /test-home/.tuck.
+    // Build the prefix with join+sep so it matches Windows backslash paths in CI.
+    const repoFilesPrefix = join('/test-home/.tuck', 'files') + sep;
     pathExistsMock.mockImplementation(async (p: string) => {
-      return !String(p).startsWith('/test-home/.tuck/files/');
+      return !String(p).startsWith(repoFilesPrefix);
     });
 
     const { runSyncCommand } = await import('../../src/commands/sync.js');

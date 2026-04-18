@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { join } from 'path';
+import { join, sep } from 'path';
 import { NotInitializedError, NonInteractivePromptError } from '../../src/errors.js';
 
 const isInteractiveMock = vi.fn(() => true);
@@ -247,9 +247,11 @@ describe('restore command behavior', () => {
       },
     });
     // Repo file exists (so restore proceeds) but host target does not — nothing
-    // worth snapshotting on the destination side.
+    // worth snapshotting on the destination side. Build the prefix with join+sep
+    // so it matches Windows backslash paths in CI.
+    const repoFilesPrefix = join('/test-home/.tuck', 'files') + sep;
     pathExistsMock.mockImplementation(async (p: string) =>
-      String(p).startsWith('/test-home/.tuck/files/')
+      String(p).startsWith(repoFilesPrefix)
     );
 
     const { runRestore } = await import('../../src/commands/restore.js');
