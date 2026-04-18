@@ -110,6 +110,7 @@ tuck restore --all
 | `tuck group list`            | List all host-groups and their file counts                            |
 | `tuck group show <group>`    | Show files in a given host-group                                      |
 | `tuck migrate`               | One-time: tag existing files with a host-group (required after 2.0)   |
+| `tuck clean`                 | Remove orphaned files from `.tuck/files/` no longer in the manifest   |
 
 ### Syncing
 
@@ -228,6 +229,29 @@ tuck remove --push -m "chore: stop tracking legacy config" ~/.oldrc
 ```
 
 `--push` implies `--delete`. If the push fails (network, auth), the commit is kept locally and tuck prompts you to retry up to 3 times — run `tuck push` later if you declined.
+
+## Cleaning Orphaned Files
+
+Over time, `.tuck/files/` can drift out of sync with the manifest — usually when `tuck remove` didn't clean up a mirrored copy, or files were moved manually. Use `tuck clean` to find and remove them safely:
+
+```bash
+# Preview what would be removed (never deletes)
+tuck clean --dry-run
+
+# Interactive — shows the full list + sizes, then prompts to confirm
+tuck clean
+
+# Skip the prompt
+tuck clean -y
+
+# Clean + commit in one shot
+tuck clean --commit
+
+# Clean + commit + push
+tuck clean --push
+```
+
+Before any deletion, `tuck clean` prints every orphan file (with its size) and every directory that will be removed — and creates a time-machine snapshot so you can recover with `tuck undo`. `tuck clean` also warns when a manifest entry's destination is missing from disk (run `tuck doctor` to diagnose those).
 
 ## Git Providers
 

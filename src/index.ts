@@ -21,6 +21,7 @@ import {
   ignoreCommand,
   migrateCommand,
   groupCommand,
+  cleanCommand,
 } from './commands/index.js';
 import { handleError } from './errors.js';
 import { VERSION, DESCRIPTION } from './constants.js';
@@ -64,6 +65,7 @@ program.addCommand(doctorCommand);
 program.addCommand(ignoreCommand);
 program.addCommand(migrateCommand);
 program.addCommand(groupCommand);
+program.addCommand(cleanCommand);
 
 // Default action when no command is provided
 const runDefaultAction = async (): Promise<void> => {
