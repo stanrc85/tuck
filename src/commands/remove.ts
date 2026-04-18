@@ -1,3 +1,4 @@
+import { basename } from 'path';
 import { Command } from 'commander';
 import { prompts, logger, withSpinner } from '../ui/index.js';
 import {
@@ -16,8 +17,20 @@ import {
   assertMigrated,
 } from '../lib/manifest.js';
 import { deleteFileOrDir } from '../lib/files.js';
-import { NotInitializedError, FileNotTrackedError } from '../errors.js';
+import { stageAll, commit, push, hasRemote } from '../lib/git.js';
+import { NotInitializedError, FileNotTrackedError, GitError } from '../errors.js';
 import type { RemoveOptions } from '../types.js';
+
+const MAX_PUSH_RETRIES = 3;
+
+const buildDefaultCommitMessage = (files: FileToRemove[]): string => {
+  if (files.length === 1) {
+    return `chore(untrack): ${basename(files[0].source)}`;
+  }
+  const names = files.map((f) => basename(f.source)).slice(0, 3);
+  const tail = files.length > 3 ? `, +${files.length - 3} more` : '';
+  return `chore(untrack): ${names.join(', ')}${tail}`;
+};
 
 interface FileToRemove {
   id: string;
@@ -58,12 +71,15 @@ const removeFiles = async (
   tuckDir: string,
   options: RemoveOptions
 ): Promise<void> => {
+  const shouldDelete = options.delete || options.push;
+
   for (const file of filesToRemove) {
     // Remove from manifest
     await removeFileFromManifest(tuckDir, file.id);
 
-    // Delete from repository if requested
-    if (options.delete) {
+    // Delete from repository if requested (or implied by --push).
+    // Note: source path on the host is deliberately left alone.
+    if (shouldDelete) {
       if (await pathExists(file.destination)) {
         await withSpinner(`Deleting ${file.source} from repository...`, async () => {
           await deleteFileOrDir(file.destination);
@@ -72,8 +88,66 @@ const removeFiles = async (
     }
 
     logger.success(`Removed ${file.source} from tracking`);
-    if (options.delete) {
+    if (shouldDelete) {
       logger.dim('  Also deleted from repository');
+    }
+  }
+};
+
+/**
+ * Commit the post-removal state and push, with retries on push failure. The
+ * commit is kept regardless of push outcome so users can recover and push
+ * later. Up to MAX_PUSH_RETRIES attempts are offered via interactive prompt
+ * before giving up.
+ */
+const commitAndPushRemoval = async (
+  tuckDir: string,
+  filesToRemove: FileToRemove[],
+  options: RemoveOptions
+): Promise<void> => {
+  if (!(await hasRemote(tuckDir))) {
+    throw new GitError(
+      'Cannot push — no remote configured',
+      "Run 'tuck config remote' to set one up, or drop --push"
+    );
+  }
+
+  const message = options.message?.trim() || buildDefaultCommitMessage(filesToRemove);
+
+  await withSpinner('Staging changes...', async () => {
+    await stageAll(tuckDir);
+  });
+
+  await withSpinner('Committing removal...', async () => {
+    await commit(tuckDir, message);
+  });
+  logger.success(`Committed: ${message}`);
+
+  let attempts = 0;
+  while (attempts < MAX_PUSH_RETRIES) {
+    attempts++;
+    try {
+      await withSpinner(
+        attempts === 1 ? 'Pushing to remote...' : `Pushing to remote (attempt ${attempts})...`,
+        async () => {
+          await push(tuckDir);
+        }
+      );
+      logger.success('Pushed to remote');
+      return;
+    } catch (error) {
+      logger.error(`Push failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (attempts >= MAX_PUSH_RETRIES) {
+        logger.warning(
+          `Giving up after ${MAX_PUSH_RETRIES} attempts. The commit is preserved locally — run 'tuck push' to retry.`
+        );
+        return;
+      }
+      const retry = await prompts.confirm('Retry push?', true);
+      if (!retry) {
+        logger.info("Commit preserved locally. Run 'tuck push' to retry when ready.");
+        return;
+      }
     }
   }
 };
@@ -110,6 +184,12 @@ const runInteractiveRemove = async (tuckDir: string): Promise<void> => {
   // Ask if they want to delete from repo
   const shouldDelete = await prompts.confirm('Also delete files from repository?');
 
+  // Offer the one-shot delete-and-push flow when a remote is configured.
+  let shouldPush = false;
+  if (shouldDelete && (await hasRemote(tuckDir))) {
+    shouldPush = await prompts.confirm('Also push the removal to remote?', false);
+  }
+
   // Confirm
   const confirm = await prompts.confirm(
     `Remove ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'} from tracking?`,
@@ -133,7 +213,18 @@ const runInteractiveRemove = async (tuckDir: string): Promise<void> => {
   });
 
   // Remove files
-  await removeFiles(filesToRemove, tuckDir, { delete: shouldDelete });
+  await removeFiles(filesToRemove, tuckDir, {
+    delete: shouldDelete,
+    push: shouldPush,
+  });
+
+  if (shouldPush) {
+    await commitAndPushRemoval(tuckDir, filesToRemove, { push: true });
+    prompts.outro(
+      `Removed ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'} and pushed`
+    );
+    return;
+  }
 
   prompts.outro(`Removed ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`);
   logger.info("Run 'tuck sync' to commit changes");
@@ -156,14 +247,27 @@ export const runRemove = async (paths: string[], options: RemoveOptions): Promis
     return;
   }
 
+  // --push implies --delete.
+  const effectiveOptions: RemoveOptions = options.push
+    ? { ...options, delete: true }
+    : options;
+
   // Validate and prepare files
   const filesToRemove = await validateAndPrepareFiles(paths, tuckDir);
 
   // Remove files
-  await removeFiles(filesToRemove, tuckDir, options);
+  await removeFiles(filesToRemove, tuckDir, effectiveOptions);
 
   logger.blank();
-  logger.success(`Removed ${filesToRemove.length} ${filesToRemove.length === 1 ? 'item' : 'items'} from tracking`);
+  logger.success(
+    `Removed ${filesToRemove.length} ${filesToRemove.length === 1 ? 'item' : 'items'} from tracking`
+  );
+
+  if (effectiveOptions.push) {
+    await commitAndPushRemoval(tuckDir, filesToRemove, effectiveOptions);
+    return;
+  }
+
   logger.info("Run 'tuck sync' to commit changes");
 };
 
@@ -172,6 +276,8 @@ export const removeCommand = new Command('remove')
   .argument('[paths...]', 'Paths to dotfiles to untrack')
   .option('--delete', 'Also delete from tuck repository')
   .option('--keep-original', "Don't restore symlinks to regular files")
+  .option('--push', 'Untrack + delete from repo + commit + push (implies --delete)')
+  .option('-m, --message <msg>', 'Override the auto-generated commit message (with --push)')
   .action(async (paths: string[], options: RemoveOptions) => {
     await runRemove(paths, options);
   });

@@ -108,6 +108,10 @@ export interface AddOptions {
 export interface RemoveOptions {
   delete?: boolean;
   keepOriginal?: boolean;
+  /** Untrack + delete + commit + push in one step. Implies `delete`. */
+  push?: boolean;
+  /** Override the auto-generated commit message used with --push. */
+  message?: string;
 }
 
 export interface SyncOptions {
