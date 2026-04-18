@@ -238,7 +238,7 @@ describe('sync command behavior', () => {
 
     expect(createSnapshotMock).toHaveBeenCalledTimes(1);
     const [paths, reason, opts] = createSnapshotMock.mock.calls[0];
-    expect(paths[0]).toContain('files/shell/zshrc');
+    expect(paths[0]).toContain(join('files', 'shell', 'zshrc'));
     expect(reason).toMatch(/Pre-sync snapshot/);
     expect(opts).toEqual({ kind: 'sync' });
     expect(pruneSnapshotsMock).toHaveBeenCalledTimes(1);
