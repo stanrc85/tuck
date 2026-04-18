@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/stanrc85/tuck/compare/v1.0.0...v1.0.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* **release:** generate SHA256SUMS and repair npm git install ([71e0ce6](https://github.com/stanrc85/tuck/commit/71e0ce6fdcaa0ee2bde5f8431d2f0bcb3ecd3bc5))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # 1.0.0 (2026-04-18)
