@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [1.0.3](https://github.com/stanrc85/tuck/compare/v1.0.2...v1.0.3) (2026-04-18)
 
 
 ### Bug Fixes
 
 * **ui:** fall back to plain logs when stdout/stdin isn't a TTY ([826f7e4](https://github.com/stanrc85/tuck/commit/826f7e4305a840f756d563c489850e209012b3cd))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [1.0.2](https://github.com/stanrc85/tuck/compare/v1.0.1...v1.0.2) (2026-04-18)
 
