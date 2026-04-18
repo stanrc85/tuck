@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [1.0.4](https://github.com/stanrc85/tuck/compare/v1.0.3...v1.0.4) (2026-04-18)
 
 
 ### Bug Fixes
 
 * **restore:** fail fast on non-interactive prompt instead of hanging ([3abe37f](https://github.com/stanrc85/tuck/commit/3abe37f07cfe92c6c05d00444d401ba123a3406b))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [1.0.3](https://github.com/stanrc85/tuck/compare/v1.0.2...v1.0.3) (2026-04-18)
 
