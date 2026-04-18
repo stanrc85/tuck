@@ -133,20 +133,27 @@ install_binary() {
     success "Installed tuck to ${INSTALL_DIR}/${output_name}"
 }
 
-# Install via git URL as fallback (this fork is not published to npm)
+# Install via release tarball as fallback (this fork is not published to npm)
 install_npm() {
-    info "Installing via npm (from git)..."
+    local version="${1:-}"
 
-    local git_url="git+https://github.com/${REPO}.git"
+    if [[ -z "$version" ]]; then
+        version=$(get_latest_version 2>/dev/null) || error "Could not fetch latest release"
+        [[ -z "$version" ]] && error "Could not determine latest release version"
+    fi
+
+    info "Installing via npm (from release tarball ${version})..."
+
+    local tarball_url="https://github.com/${REPO}/releases/download/${version}/tuck.tgz"
 
     if command -v npm &> /dev/null; then
-        npm install -g "$git_url"
+        npm install -g "$tarball_url"
         success "Installed tuck via npm"
     elif command -v pnpm &> /dev/null; then
-        pnpm add -g "$git_url"
+        pnpm add -g "$tarball_url"
         success "Installed tuck via pnpm"
     elif command -v yarn &> /dev/null; then
-        yarn global add "$git_url"
+        yarn global add "$tarball_url"
         success "Installed tuck via yarn"
     else
         error "No package manager found. Please install Node.js and npm first."
@@ -188,14 +195,14 @@ main() {
             success "Installation complete! Run 'tuck --help' to get started."
             return 0
         else
-            warn "Binary download failed, falling back to npm..."
+            warn "Binary download failed, falling back to npm tarball..."
         fi
     else
-        warn "Could not fetch latest release, falling back to npm..."
+        warn "Could not fetch latest release, falling back to npm tarball..."
     fi
 
-    # Fallback to npm installation
-    install_npm
+    # Fallback to npm tarball installation
+    install_npm "$version"
 
     echo ""
     success "Installation complete! Run 'tuck --help' to get started."

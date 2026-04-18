@@ -30,15 +30,18 @@
 
 ## Installation
 
-This fork is not published to npm. Install from the GitHub repo or from a
-release binary:
+This fork is not published to npm. Install via the install script, the release
+tarball, or a prebuilt standalone binary:
 
 ```bash
-# Install latest from git (all platforms)
-npm install -g git+https://github.com/stanrc85/tuck.git
+# One-liner install script (auto-detects platform, downloads binary + verifies SHA256)
+curl -fsSL https://raw.githubusercontent.com/stanrc85/tuck/main/install.sh | bash
+
+# Or install the latest release via npm (tarball ships pre-built, no local build needed)
+npm install -g https://github.com/stanrc85/tuck/releases/latest/download/tuck.tgz
 
 # Pin to a specific release
-npm install -g git+https://github.com/stanrc85/tuck.git#v2.0.0
+npm install -g https://github.com/stanrc85/tuck/releases/download/v1.0.2/tuck.tgz
 
 # Or grab a prebuilt standalone binary
 # → https://github.com/stanrc85/tuck/releases

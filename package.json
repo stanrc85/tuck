@@ -51,7 +51,8 @@
     "test:unit": "vitest run --dir tests/lib --dir tests/commands",
     "bench": "vitest bench --config vitest.bench.config.ts",
     "bench:watch": "vitest bench --config vitest.bench.config.ts --watch",
-    "prepare": "husky install 2>/dev/null || true && tsup",
+    "prepare": "husky install 2>/dev/null || true",
+    "prepack": "tsup",
     "prepublishOnly": "pnpm build",
     "build:man": "ts-node scripts/generate-man.ts"
   },

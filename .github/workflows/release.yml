@@ -214,13 +214,37 @@ jobs:
         run: |
           # Preserve the changelog image header after semantic-release updates it
           node scripts/preserve-changelog-header.js
-          
+
           # Check if changelog was modified by our script and commit if needed
           if ! git diff --quiet CHANGELOG.md; then
             git add CHANGELOG.md
             git commit -m "chore: preserve changelog header image [skip ci]"
             git push origin HEAD || echo "Note: Could not push changelog header update (may already be included)"
           fi
+
+      - name: Pack tarball
+        if: steps.semantic.outputs.new_release_published == 'true' && inputs.dry_run != true
+        run: |
+          npm pack
+          # npm pack names by package name + version; normalize to tuck.tgz for a stable URL
+          PACKED=$(ls *.tgz | head -1)
+          mv "$PACKED" tuck.tgz
+          ls -la tuck.tgz
+
+      - name: Upload tarball artifact
+        if: steps.semantic.outputs.new_release_published == 'true' && inputs.dry_run != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuck-tarball
+          path: tuck.tgz
+          retention-days: 30
+
+      - name: Upload tarball to release
+        if: steps.semantic.outputs.new_release_published == 'true' && inputs.dry_run != true
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tuck.tgz
+          tag_name: v${{ steps.semantic.outputs.new_release_version }}
 
   build-binaries:
     name: Build Binary (${{ matrix.target }})
@@ -269,7 +293,7 @@ jobs:
         run: pnpm build
 
       - name: Build standalone binary
-        run: npx pkg dist/index.js --target node18-${{ matrix.target }} --output ${{ matrix.artifact }}
+        run: npx @yao-pkg/pkg dist/index.js --target node18-${{ matrix.target }} --output ${{ matrix.artifact }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -302,7 +326,7 @@ jobs:
         run: |
           cd artifacts
           ls -la
-          sha256sum tuck-* > SHA256SUMS
+          sha256sum tuck.tgz tuck-* > SHA256SUMS
           cat SHA256SUMS
 
       - name: Upload SHA256SUMS to release
