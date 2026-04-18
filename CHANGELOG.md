@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/stanrc85/tuck/compare/v1.0.1...v1.0.2) (2026-04-18)
+
+
+### Bug Fixes
+
+* **release:** ship pre-built tarball and ESM-compatible binaries ([495e9c7](https://github.com/stanrc85/tuck/commit/495e9c78aee6d58d62660e461b77adbf8c04f638))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [1.0.1](https://github.com/stanrc85/tuck/compare/v1.0.0...v1.0.1) (2026-04-18)
