@@ -79,6 +79,21 @@ export class ManifestError extends TuckError {
   }
 }
 
+export class MigrationRequiredError extends TuckError {
+  constructor(reason?: string) {
+    super(
+      reason
+        ? `Manifest migration required: ${reason}`
+        : 'Manifest migration required before this command can run',
+      'MIGRATION_REQUIRED',
+      [
+        'Run `tuck migrate` to tag existing files with host-groups',
+        'All commands are blocked until the manifest is on the current schema',
+      ]
+    );
+  }
+}
+
 export class PermissionError extends TuckError {
   constructor(path: string, operation: string) {
     super(`Permission denied: cannot ${operation} ${path}`, 'PERMISSION_ERROR', [

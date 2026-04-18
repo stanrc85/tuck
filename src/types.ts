@@ -37,6 +37,8 @@ export interface TuckConfig {
     }
   >;
   ignore: string[];
+  /** Default host-groups applied when -g/--group is omitted. */
+  defaultGroups?: string[];
   hooks: {
     preSync?: string;
     postSync?: string;
@@ -72,6 +74,8 @@ export interface TrackedFile {
   added: string;
   modified: string;
   checksum: string;
+  /** Named host-groups this file belongs to. Post-migration invariant: length >= 1. */
+  groups: string[];
 }
 
 export interface TuckManifest {
@@ -94,6 +98,8 @@ export interface AddOptions {
   name?: string;
   symlink?: boolean;
   force?: boolean; // Skip secret scanning (secrets will not be detected)
+  /** Host-groups to assign. Repeatable via `-g name1 -g name2`. */
+  group?: string[];
   // TODO: Encryption and templating are planned for a future version
   // encrypt?: boolean;
   // template?: boolean;
@@ -136,6 +142,8 @@ export interface RestoreOptions {
   noHooks?: boolean;
   trustHooks?: boolean;
   noSecrets?: boolean;
+  /** Filter files by host-group. Repeatable. */
+  group?: string[];
 }
 
 export interface StatusOptions {
@@ -147,6 +155,8 @@ export interface ListOptions {
   category?: string;
   paths?: boolean;
   json?: boolean;
+  /** Filter files by host-group. Repeatable. */
+  group?: string[];
 }
 
 export interface DiffOptions {

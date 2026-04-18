@@ -19,6 +19,8 @@ import {
   encryptionCommand,
   doctorCommand,
   ignoreCommand,
+  migrateCommand,
+  groupCommand,
 } from './commands/index.js';
 import { handleError } from './errors.js';
 import { VERSION, DESCRIPTION } from './constants.js';
@@ -60,6 +62,8 @@ program.addCommand(secretsCommand);
 program.addCommand(encryptionCommand);
 program.addCommand(doctorCommand);
 program.addCommand(ignoreCommand);
+program.addCommand(migrateCommand);
+program.addCommand(groupCommand);
 
 // Default action when no command is provided
 const runDefaultAction = async (): Promise<void> => {

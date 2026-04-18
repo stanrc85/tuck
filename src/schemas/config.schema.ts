@@ -55,6 +55,13 @@ export const tuckConfigSchema = z.object({
 
   ignore: z.array(z.string()).optional().default([]),
 
+  /**
+   * Default host-groups applied to newly tracked files when `-g/--group` is
+   * not specified. Set by `tuck migrate` and editable via `tuck config`.
+   * Empty array means every `tuck add` must specify `-g` explicitly.
+   */
+  defaultGroups: z.array(z.string()).optional().default([]),
+
   hooks: z
     .object({
       preSync: z.string().optional(),
@@ -123,6 +130,7 @@ export const defaultConfig: TuckConfigOutput = {
   },
   categories: {},
   ignore: [],
+  defaultGroups: [],
   hooks: {},
   templates: {
     enabled: false,

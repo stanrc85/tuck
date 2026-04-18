@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { prompts, logger, banner, colors as c } from '../ui/index.js';
 import { getTuckDir, collapsePath, expandPath } from '../lib/paths.js';
-import { loadManifest, getTrackedFileBySource } from '../lib/manifest.js';
+import { loadManifest, getTrackedFileBySource, assertMigrated } from '../lib/manifest.js';
 import { detectDotfiles, DETECTION_CATEGORIES, DetectedFile } from '../lib/detect.js';
 import { NotInitializedError } from '../errors.js';
 import { trackFilesWithProgress, type FileToTrack } from '../lib/fileTracking.js';
@@ -246,11 +246,13 @@ export const runScan = async (options: ScanOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
   // Check if tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // Detect dotfiles
   const spinner = prompts.spinner();

@@ -25,7 +25,7 @@ export const CONFIG_FILE = '.tuckrc.json';
 export const BACKUP_DIR = join(HOME_DIR, '.tuck-backups');
 export const FILES_DIR = 'files';
 
-export const MANIFEST_VERSION = '1.0.0';
+export const MANIFEST_VERSION = '2.0.0';
 
 export interface CategoryConfig {
   patterns: string[];

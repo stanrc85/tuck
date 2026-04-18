@@ -2,11 +2,12 @@ import { readFile, writeFile } from 'fs/promises';
 import {
   tuckManifestSchema,
   createEmptyManifest,
+  CURRENT_MANIFEST_VERSION,
   type TuckManifestOutput,
   type TrackedFileOutput,
 } from '../schemas/manifest.schema.js';
 import { getManifestPath, pathExists } from './paths.js';
-import { ManifestError } from '../errors.js';
+import { ManifestError, MigrationRequiredError } from '../errors.js';
 
 let cachedManifest: TuckManifestOutput | null = null;
 let cachedManifestDir: string | null = null;
@@ -209,4 +210,96 @@ export const getCategories = async (tuckDir: string): Promise<string[]> => {
 export const clearManifestCache = (): void => {
   cachedManifest = null;
   cachedManifestDir = null;
+};
+
+// ============================================================================
+// Migration gate
+// ============================================================================
+
+/**
+ * Returns true if the manifest predates the current schema (v2.0.0 added host
+ * groups). Detection is permissive: either an older version tag OR any file
+ * missing a non-empty groups array trips migration.
+ */
+export const requiresMigration = (manifest: TuckManifestOutput): boolean => {
+  if (manifest.version !== CURRENT_MANIFEST_VERSION) {
+    return true;
+  }
+  for (const file of Object.values(manifest.files)) {
+    if (!file.groups || file.groups.length === 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/**
+ * Throw MigrationRequiredError if the manifest predates v2.0. Called at the
+ * top of every command except `init` and `migrate`.
+ */
+export const assertMigrated = (manifest: TuckManifestOutput): void => {
+  if (!requiresMigration(manifest)) {
+    return;
+  }
+  if (manifest.version !== CURRENT_MANIFEST_VERSION) {
+    throw new MigrationRequiredError(
+      `manifest is on version ${manifest.version}, current is ${CURRENT_MANIFEST_VERSION}`
+    );
+  }
+  const untagged = Object.values(manifest.files).filter(
+    (f) => !f.groups || f.groups.length === 0
+  ).length;
+  throw new MigrationRequiredError(
+    `${untagged} tracked file${untagged === 1 ? ' has' : 's have'} no host-groups`
+  );
+};
+
+/**
+ * Load the manifest and assert that it is on the current schema. Any command
+ * that cannot operate on a pre-2.0 manifest should prefer this helper over
+ * calling loadManifest + assertMigrated separately.
+ */
+export const loadAndAssertMigrated = async (
+  tuckDir: string
+): Promise<TuckManifestOutput> => {
+  const manifest = await loadManifest(tuckDir);
+  assertMigrated(manifest);
+  return manifest;
+};
+
+// ============================================================================
+// Group helpers
+// ============================================================================
+
+/**
+ * Returns a file filtered by host-group. When `groups` is empty/undefined the
+ * file always matches (no filter applied). Otherwise the file's own groups
+ * must intersect the requested set.
+ */
+export const fileMatchesGroups = (
+  file: Pick<TrackedFileOutput, 'groups'>,
+  groups: string[] | undefined
+): boolean => {
+  if (!groups || groups.length === 0) {
+    return true;
+  }
+  if (!file.groups || file.groups.length === 0) {
+    return false;
+  }
+  const wanted = new Set(groups);
+  return file.groups.some((g) => wanted.has(g));
+};
+
+/**
+ * Collect every unique group name used across the manifest, sorted.
+ */
+export const getAllGroups = async (tuckDir: string): Promise<string[]> => {
+  const manifest = await loadManifest(tuckDir);
+  const groups = new Set<string>();
+  for (const file of Object.values(manifest.files)) {
+    for (const g of file.groups ?? []) {
+      groups.add(g);
+    }
+  }
+  return Array.from(groups).sort();
 };

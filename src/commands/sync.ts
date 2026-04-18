@@ -17,6 +17,7 @@ import {
   updateFileInManifest,
   removeFileFromManifest,
   getTrackedFileBySource,
+  assertMigrated,
 } from '../lib/manifest.js';
 import { stageAll, commit, getStatus, push, hasRemote, fetch, pull } from '../lib/git.js';
 import {
@@ -769,11 +770,13 @@ export const runSync = async (options: SyncOptions = {}): Promise<void> => {
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // Always run interactive sync when called programmatically
   await runInteractiveSync(tuckDir, options);
@@ -786,11 +789,13 @@ export const runSyncCommand = async (
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // If no options (except --no-push), run interactive
   if (!messageArg && !options.message && !options.noCommit) {

@@ -44,6 +44,7 @@ vi.mock('../../src/lib/paths.js', () => ({
 
 vi.mock('../../src/lib/manifest.js', () => ({
   loadManifest: loadManifestMock,
+  assertMigrated: vi.fn(),
 }));
 
 vi.mock('../../src/lib/remoteChecks.js', () => ({

@@ -63,6 +63,7 @@ export interface TrackPathCandidate {
   path: string;
   category?: string;
   name?: string;
+  groups?: string[];
 }
 
 export interface PreparedTrackFile {
@@ -74,6 +75,7 @@ export interface PreparedTrackFile {
   isDir: boolean;
   fileCount: number;
   sensitive: boolean;
+  groups?: string[];
 }
 
 export interface PreparePathsForTrackingOptions {
@@ -83,6 +85,8 @@ export interface PreparePathsForTrackingOptions {
   allowAlreadyTracked?: boolean;
   secretHandling?: 'interactive' | 'strict';
   forceBypassCommand?: string;
+  /** Groups applied to all candidates that don't specify their own. */
+  groups?: string[];
 }
 
 const isPrivateKey = (collapsedPath: string): boolean => {
@@ -363,6 +367,12 @@ export const preparePathsForTracking = async (
     const nameOverride = customName ? sanitizeFilename(customName) : undefined;
     const filename = nameOverride || sanitizeFilename(expandedPath);
 
+    const groups = candidate.groups && candidate.groups.length > 0
+      ? Array.from(new Set(candidate.groups))
+      : options.groups && options.groups.length > 0
+        ? Array.from(new Set(options.groups))
+        : undefined;
+
     prepared.push({
       source: collapsedPath,
       destination: getDestinationPathFromSource(tuckDir, category, expandedPath, nameOverride),
@@ -372,6 +382,7 @@ export const preparePathsForTracking = async (
       isDir,
       fileCount,
       sensitive: isSensitiveFile(collapsedPath),
+      groups,
     });
   }
 

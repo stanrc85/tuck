@@ -17,7 +17,7 @@ import {
   validateSafeSourcePath,
   getSafeRepoPathFromDestination,
 } from '../lib/paths.js';
-import { loadManifest, getAllTrackedFiles } from '../lib/manifest.js';
+import { loadManifest, getAllTrackedFiles, assertMigrated } from '../lib/manifest.js';
 import { getStatus, hasRemote, getRemoteUrl, getCurrentBranch } from '../lib/git.js';
 import { getFileChecksum } from '../lib/files.js';
 import { loadTuckignore } from '../lib/tuckignore.js';
@@ -320,11 +320,13 @@ const printJsonStatus = (status: TuckStatus): void => {
 export const runStatus = async (options: StatusOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   const status = await getFullStatus(tuckDir);
 

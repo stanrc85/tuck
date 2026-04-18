@@ -13,6 +13,14 @@ export const trackedFileSchema = z.object({
   added: z.string(),
   modified: z.string(),
   checksum: z.string(),
+  /**
+   * Named host-groups this file belongs to (e.g. "kubuntu", "kali").
+   * Post-migration invariant: groups.length >= 1. A file with no groups
+   * applies nowhere; commands enforce this after migration completes.
+   * Accepts undefined/missing on parse for backward compat with pre-2.0
+   * manifests — the migration flow is what populates it.
+   */
+  groups: z.array(z.string()).default([]),
 });
 
 export const tuckManifestSchema = z.object({
@@ -28,10 +36,17 @@ export type TrackedFileOutput = z.output<typeof trackedFileSchema>;
 export type TuckManifestInput = z.input<typeof tuckManifestSchema>;
 export type TuckManifestOutput = z.output<typeof tuckManifestSchema>;
 
+/**
+ * Manifest format version.
+ * 2.0.0 — adds host groups (TrackedFile.groups, >=1 required post-migration).
+ *         Old 1.x manifests load with empty groups and trip MigrationRequiredError.
+ */
+export const CURRENT_MANIFEST_VERSION = '2.0.0';
+
 export const createEmptyManifest = (machine?: string): TuckManifestOutput => {
   const now = new Date().toISOString();
   return {
-    version: '1.0.0',
+    version: CURRENT_MANIFEST_VERSION,
     created: now,
     updated: now,
     machine,

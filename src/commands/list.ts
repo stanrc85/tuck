@@ -2,22 +2,46 @@ import { Command } from 'commander';
 import { basename, sep } from 'path';
 import { prompts, logger, formatCount, colors as c } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
-import { loadManifest, getAllTrackedFiles } from '../lib/manifest.js';
+import {
+  loadManifest,
+  getAllTrackedFiles,
+  assertMigrated,
+  fileMatchesGroups,
+} from '../lib/manifest.js';
 import { NotInitializedError } from '../errors.js';
 import { CATEGORIES } from '../constants.js';
 import type { ListOptions } from '../types.js';
 
+const collectGroup = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ...value
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter(Boolean),
+];
+
 interface CategoryGroup {
   name: string;
   icon: string;
-  files: { id: string; source: string; destination: string; isDir: boolean }[];
+  files: {
+    id: string;
+    source: string;
+    destination: string;
+    isDir: boolean;
+    groups: string[];
+  }[];
 }
 
-const groupByCategory = async (tuckDir: string): Promise<CategoryGroup[]> => {
+const groupByCategory = async (
+  tuckDir: string,
+  filterGroups?: string[]
+): Promise<CategoryGroup[]> => {
   const files = await getAllTrackedFiles(tuckDir);
   const groups: Map<string, CategoryGroup> = new Map();
 
   for (const [id, file] of Object.entries(files)) {
+    if (!fileMatchesGroups(file, filterGroups)) continue;
+
     const category = file.category;
     const categoryConfig = CATEGORIES[category] || { icon: '📄' };
 
@@ -35,6 +59,7 @@ const groupByCategory = async (tuckDir: string): Promise<CategoryGroup[]> => {
       destination: file.destination,
       // Handle both Unix (/) and Windows (\) path separators for directory detection
       isDir: file.destination.endsWith('/') || file.destination.endsWith(sep) || basename(file.destination) === 'nvim',
+      groups: file.groups ?? [],
     });
   }
 
@@ -73,8 +98,10 @@ const printList = (groups: CategoryGroup[]): void => {
       const name = basename(file.source) || file.source;
       const arrow = c.dim(' → ');
       const dest = c.dim(file.source);
+      const groupsLabel =
+        file.groups.length > 0 ? c.dim(`  [${file.groups.join(', ')}]`) : '';
 
-      console.log(c.dim(prefix) + c.cyan(name) + arrow + dest);
+      console.log(c.dim(prefix) + c.cyan(name) + arrow + dest + groupsLabel);
     });
   }
 
@@ -96,10 +123,11 @@ const printJson = (groups: CategoryGroup[]): void => {
       acc[group.name] = group.files.map((f) => ({
         source: f.source,
         destination: f.destination,
+        groups: f.groups,
       }));
       return acc;
     },
-    {} as Record<string, { source: string; destination: string }[]>
+    {} as Record<string, { source: string; destination: string; groups: string[] }[]>
   );
 
   console.log(JSON.stringify(output, null, 2));
@@ -109,13 +137,15 @@ const runList = async (options: ListOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
-  let groups = await groupByCategory(tuckDir);
+  let groups = await groupByCategory(tuckDir, options.group);
 
   // Filter by category if specified
   if (options.category) {
@@ -124,6 +154,11 @@ const runList = async (options: ListOptions): Promise<void> => {
       logger.warning(`No files found in category: ${options.category}`);
       return;
     }
+  }
+
+  if (groups.length === 0 && options.group && options.group.length > 0) {
+    logger.warning(`No files found in group(s): ${options.group.join(', ')}`);
+    return;
   }
 
   // Output based on format
@@ -139,6 +174,7 @@ const runList = async (options: ListOptions): Promise<void> => {
 export const listCommand = new Command('list')
   .description('List all tracked files')
   .option('-c, --category <name>', 'Filter by category')
+  .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
   .option('--paths', 'Show only paths')
   .option('--json', 'Output as JSON')
   .action(async (options: ListOptions) => {

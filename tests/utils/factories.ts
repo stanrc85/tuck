@@ -69,7 +69,7 @@ export const createMockConfig = (overrides?: Partial<TuckConfigOutput>): TuckCon
 export const createMockManifest = (overrides?: Partial<TuckManifestOutput>): TuckManifestOutput => {
   const now = new Date().toISOString();
   return {
-    version: '1.0.0',
+    version: '2.0.0',
     created: now,
     updated: now,
     machine: 'test-machine',
@@ -95,6 +95,7 @@ export const createMockTrackedFile = (
     added: now,
     modified: now,
     checksum: 'abc123def456',
+    groups: ['test'],
     ...overrides,
   };
 };

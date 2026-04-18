@@ -23,6 +23,7 @@ import { tuckManifestSchema } from '../schemas/manifest.schema.js';
 import { findPlaceholders, restoreContent, restoreFiles as restoreSecrets, getAllSecrets, getSecretCount } from '../lib/secrets/index.js';
 import { createResolver } from '../lib/secretBackends/index.js';
 import { loadConfig } from '../lib/config.js';
+import { fileMatchesGroups } from '../lib/manifest.js';
 import { IS_WINDOWS } from '../lib/platform.js';
 import { RepositoryNotFoundError } from '../errors.js';
 
@@ -72,6 +73,8 @@ export interface ApplyOptions {
   dryRun?: boolean;
   force?: boolean;
   yes?: boolean;
+  /** Filter files by host-group (repeatable). */
+  group?: string[];
 }
 
 interface ApplyFile {
@@ -173,11 +176,14 @@ const readClonedManifest = async (repoDir: string): Promise<TuckManifest | null>
  */
 const prepareFilesToApply = async (
   repoDir: string,
-  manifest: TuckManifest
+  manifest: TuckManifest,
+  filterGroups?: string[]
 ): Promise<ApplyFile[]> => {
   const files: ApplyFile[] = [];
 
   for (const [_id, file] of Object.entries(manifest.files)) {
+    if (!fileMatchesGroups(file, filterGroups)) continue;
+
     try {
       validateSafeSourcePath(file.source);
       validateSafeManifestDestination(file.destination);
@@ -541,7 +547,7 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     }
 
     // Prepare files to apply
-    const files = await prepareFilesToApply(repoDir, manifest);
+    const files = await prepareFilesToApply(repoDir, manifest, options.group);
 
     if (files.length === 0) {
       prompts.log.warning('No files to apply');
@@ -713,7 +719,7 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
     }
 
     // Prepare files to apply
-    const files = await prepareFilesToApply(repoDir, manifest);
+    const files = await prepareFilesToApply(repoDir, manifest, options.group);
 
     if (files.length === 0) {
       logger.warning('No files to apply');
@@ -788,11 +794,20 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
   }
 };
 
+const collectApplyGroup = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ...value
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter(Boolean),
+];
+
 export const applyCommand = new Command('apply')
   .description('Apply dotfiles from a repository to this machine')
   .argument('<source>', 'GitHub username, user/repo, or full repository URL')
   .option('-m, --merge', 'Merge with existing files (preserve local customizations)')
   .option('-r, --replace', 'Replace existing files completely')
+  .option('-g, --group <name>', 'Filter files by host-group (repeatable)', collectApplyGroup, [])
   .option('--dry-run', 'Show what would be applied without making changes')
   .option('-f, --force', 'Apply without confirmation prompts')
   .option('-y, --yes', 'Assume yes to all prompts')

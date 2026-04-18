@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { prompts, logger, withSpinner, colors as c } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
-import { loadManifest } from '../lib/manifest.js';
+import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { checkLocalMode, showLocalModeWarningForPush } from '../lib/remoteChecks.js';
 import {
   push,
@@ -136,11 +136,13 @@ const runPush = async (options: PushOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // Check for local-only mode
   if (await checkLocalMode(tuckDir)) {

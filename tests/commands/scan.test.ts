@@ -64,6 +64,7 @@ vi.mock('../../src/lib/paths.js', () => ({
 vi.mock('../../src/lib/manifest.js', () => ({
   loadManifest: loadManifestMock,
   getTrackedFileBySource: getTrackedFileBySourceMock,
+  assertMigrated: vi.fn(),
 }));
 
 vi.mock('../../src/lib/detect.js', () => ({

@@ -16,3 +16,5 @@ export { secretsCommand } from './secrets.js';
 export { encryptionCommand } from './encryption.js';
 export { doctorCommand } from './doctor.js';
 export { ignoreCommand } from './ignore.js';
+export { migrateCommand } from './migrate.js';
+export { groupCommand } from './group.js';

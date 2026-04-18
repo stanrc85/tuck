@@ -12,7 +12,13 @@ import {
   validateSafeManifestDestination,
   validatePathWithinRoot,
 } from '../lib/paths.js';
-import { loadManifest, getAllTrackedFiles, getTrackedFileBySource } from '../lib/manifest.js';
+import {
+  loadManifest,
+  getAllTrackedFiles,
+  getTrackedFileBySource,
+  assertMigrated,
+  fileMatchesGroups,
+} from '../lib/manifest.js';
 import { loadConfig } from '../lib/config.js';
 import { copyFileOrDir, createSymlink } from '../lib/files.js';
 import { createBackup } from '../lib/backup.js';
@@ -91,7 +97,8 @@ interface RestoreResult {
 
 const prepareFilesToRestore = async (
   tuckDir: string,
-  paths?: string[]
+  paths?: string[],
+  filterGroups?: string[]
 ): Promise<FileToRestore[]> => {
   const allFiles = await getAllTrackedFiles(tuckDir);
   const filesToRestore: FileToRestore[] = [];
@@ -106,6 +113,8 @@ const prepareFilesToRestore = async (
       if (!tracked) {
         throw new FileNotFoundError(`Not tracked: ${path}`);
       }
+
+      if (!fileMatchesGroups(tracked.file, filterGroups)) continue;
 
       validateSafeSourcePath(tracked.file.source);
       validateSafeManifestDestination(tracked.file.destination);
@@ -123,6 +132,8 @@ const prepareFilesToRestore = async (
   } else {
     // Restore all files
     for (const [id, file] of Object.entries(allFiles)) {
+      if (!fileMatchesGroups(file, filterGroups)) continue;
+
       validateSafeSourcePath(file.source);
       validateSafeManifestDestination(file.destination);
       const repositoryPath = join(tuckDir, file.destination);
@@ -234,7 +245,7 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
   prompts.intro('tuck restore');
 
   // Get all tracked files
-  const files = await prepareFilesToRestore(tuckDir);
+  const files = await prepareFilesToRestore(tuckDir, undefined, options.group);
 
   if (files.length === 0) {
     prompts.log.warning('No files to restore');
@@ -346,16 +357,18 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // Run interactive restore when called programmatically with --all
   if (options.all) {
     // Prepare files to restore
-    const files = await prepareFilesToRestore(tuckDir, undefined);
+    const files = await prepareFilesToRestore(tuckDir, undefined, options.group);
 
     if (files.length === 0) {
       logger.warning('No files to restore');
@@ -377,11 +390,13 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // If no paths and no --all, run interactive
   if (paths.length === 0 && !options.all) {
@@ -390,7 +405,11 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   }
 
   // Prepare files to restore
-  const files = await prepareFilesToRestore(tuckDir, options.all ? undefined : paths);
+  const files = await prepareFilesToRestore(
+    tuckDir,
+    options.all ? undefined : paths,
+    options.group
+  );
 
   if (files.length === 0) {
     logger.warning('No files to restore');
@@ -417,10 +436,19 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   }
 };
 
+const collectGroup = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ...value
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter(Boolean),
+];
+
 export const restoreCommand = new Command('restore')
   .description('Restore dotfiles to the system')
   .argument('[paths...]', 'Paths to restore (or use --all)')
   .option('-a, --all', 'Restore all tracked files')
+  .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
   .option('--symlink', 'Create symlinks from source paths to tuck repo files')
   .option('--backup', 'Backup existing files before restore')
   .option('--no-backup', 'Skip backup of existing files')

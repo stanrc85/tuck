@@ -20,7 +20,12 @@ import {
   getFileCount,
   getCategories,
   clearManifestCache,
+  requiresMigration,
+  assertMigrated,
+  fileMatchesGroups,
+  getAllGroups,
 } from '../../src/lib/manifest.js';
+import { MigrationRequiredError } from '../../src/errors.js';
 import { TEST_TUCK_DIR } from '../setup.js';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
 
@@ -168,7 +173,7 @@ describe('manifest', () => {
     it('should create new manifest file', async () => {
       const manifest = await createManifest(TEST_TUCK_DIR, 'test-machine');
 
-      expect(manifest.version).toBe('1.0.0');
+      expect(manifest.version).toBe('2.0.0');
       expect(manifest.machine).toBe('test-machine');
       expect(manifest.files).toEqual({});
     });
@@ -415,6 +420,115 @@ describe('manifest', () => {
 
       const categories = await getCategories(TEST_TUCK_DIR);
       expect(categories).toEqual(['editors', 'git', 'shell']);
+    });
+  });
+
+  // ============================================================================
+  // Migration gate Tests
+  // ============================================================================
+
+  describe('migration gate', () => {
+    it('requiresMigration returns false for a clean v2 manifest', () => {
+      const manifest = createMockManifest({
+        version: '2.0.0',
+        files: {
+          file1: createMockTrackedFile({ groups: ['home'] }),
+        },
+      });
+      expect(requiresMigration(manifest)).toBe(false);
+    });
+
+    it('requiresMigration returns true for a v1 manifest', () => {
+      const manifest = createMockManifest({
+        version: '1.0.0',
+        files: {
+          file1: createMockTrackedFile({ groups: ['home'] }),
+        },
+      });
+      expect(requiresMigration(manifest)).toBe(true);
+    });
+
+    it('requiresMigration returns true when any file has empty groups', () => {
+      const manifest = createMockManifest({
+        version: '2.0.0',
+        files: {
+          file1: createMockTrackedFile({ groups: ['home'] }),
+          file2: createMockTrackedFile({ source: '~/.bashrc', groups: [] }),
+        },
+      });
+      expect(requiresMigration(manifest)).toBe(true);
+    });
+
+    it('assertMigrated throws MigrationRequiredError for pre-v2 manifest', () => {
+      const manifest = createMockManifest({ version: '1.0.0' });
+      expect(() => assertMigrated(manifest)).toThrow(MigrationRequiredError);
+    });
+
+    it('assertMigrated throws with file count when files lack groups', () => {
+      const manifest = createMockManifest({
+        version: '2.0.0',
+        files: {
+          file1: createMockTrackedFile({ groups: [] }),
+          file2: createMockTrackedFile({ source: '~/.bashrc', groups: [] }),
+        },
+      });
+      expect(() => assertMigrated(manifest)).toThrow(/2 tracked files have no host-groups/);
+    });
+
+    it('assertMigrated is a no-op for a migrated manifest', () => {
+      const manifest = createMockManifest({
+        version: '2.0.0',
+        files: {
+          file1: createMockTrackedFile({ groups: ['home'] }),
+        },
+      });
+      expect(() => assertMigrated(manifest)).not.toThrow();
+    });
+
+    it('assertMigrated passes for empty-file manifests', () => {
+      const manifest = createMockManifest({ version: '2.0.0', files: {} });
+      expect(() => assertMigrated(manifest)).not.toThrow();
+    });
+  });
+
+  // ============================================================================
+  // Group helpers Tests
+  // ============================================================================
+
+  describe('group helpers', () => {
+    it('fileMatchesGroups returns true when filter is empty/undefined', () => {
+      const file = createMockTrackedFile({ groups: ['home'] });
+      expect(fileMatchesGroups(file, undefined)).toBe(true);
+      expect(fileMatchesGroups(file, [])).toBe(true);
+    });
+
+    it('fileMatchesGroups returns true when file shares any group', () => {
+      const file = createMockTrackedFile({ groups: ['home', 'laptop'] });
+      expect(fileMatchesGroups(file, ['laptop'])).toBe(true);
+      expect(fileMatchesGroups(file, ['work', 'laptop'])).toBe(true);
+    });
+
+    it('fileMatchesGroups returns false when no overlap', () => {
+      const file = createMockTrackedFile({ groups: ['home'] });
+      expect(fileMatchesGroups(file, ['work'])).toBe(false);
+    });
+
+    it('fileMatchesGroups returns false when file has empty groups and a filter is set', () => {
+      const file = createMockTrackedFile({ groups: [] });
+      expect(fileMatchesGroups(file, ['home'])).toBe(false);
+    });
+
+    it('getAllGroups returns a sorted de-duplicated list', async () => {
+      const manifest = createMockManifest({
+        version: '2.0.0',
+        files: {
+          f1: createMockTrackedFile({ groups: ['home', 'laptop'] }),
+          f2: createMockTrackedFile({ source: '~/.bashrc', groups: ['work', 'laptop'] }),
+        },
+      });
+      vol.writeFileSync(join(TEST_TUCK_DIR, '.tuckmanifest.json'), JSON.stringify(manifest));
+
+      expect(await getAllGroups(TEST_TUCK_DIR)).toEqual(['home', 'laptop', 'work']);
     });
   });
 });

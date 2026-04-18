@@ -8,7 +8,13 @@ import {
   validateSafeSourcePath,
   getSafeRepoPathFromDestination,
 } from '../lib/paths.js';
-import { loadManifest, removeFileFromManifest, getTrackedFileBySource, getAllTrackedFiles } from '../lib/manifest.js';
+import {
+  loadManifest,
+  removeFileFromManifest,
+  getTrackedFileBySource,
+  getAllTrackedFiles,
+  assertMigrated,
+} from '../lib/manifest.js';
 import { deleteFileOrDir } from '../lib/files.js';
 import { NotInitializedError, FileNotTrackedError } from '../errors.js';
 import type { RemoveOptions } from '../types.js';
@@ -137,11 +143,13 @@ export const runRemove = async (paths: string[], options: RemoveOptions): Promis
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   if (paths.length === 0) {
     await runInteractiveRemove(tuckDir);

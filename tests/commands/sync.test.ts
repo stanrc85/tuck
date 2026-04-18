@@ -83,6 +83,7 @@ vi.mock('../../src/lib/manifest.js', () => ({
   updateFileInManifest: updateFileInManifestMock,
   removeFileFromManifest: removeFileFromManifestMock,
   getTrackedFileBySource: getTrackedFileBySourceMock,
+  assertMigrated: vi.fn(),
 }));
 
 vi.mock('../../src/lib/git.js', () => ({

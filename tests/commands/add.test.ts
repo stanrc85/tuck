@@ -64,6 +64,7 @@ vi.mock('../../src/ui/index.js', () => ({
 vi.mock('../../src/lib/manifest.js', () => ({
   loadManifest: loadManifestMock,
   isFileTracked: isFileTrackedMock,
+  assertMigrated: vi.fn(),
 }));
 
 vi.mock('../../src/lib/fileTracking.js', () => ({

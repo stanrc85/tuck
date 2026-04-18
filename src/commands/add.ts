@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { prompts, logger } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
-import { loadManifest } from '../lib/manifest.js';
+import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { trackFilesWithProgress, type FileToTrack } from '../lib/fileTracking.js';
 import { NotInitializedError } from '../errors.js';
 import { CATEGORIES } from '../constants.js';
@@ -11,6 +11,14 @@ import {
   type PreparedTrackFile,
   type TrackPathCandidate,
 } from '../lib/trackPipeline.js';
+
+const collectGroup = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ...value
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter(Boolean),
+];
 
 type FileToAdd = PreparedTrackFile;
 
@@ -29,6 +37,10 @@ const addFiles = async (
       trackedFile.name = f.nameOverride;
     }
 
+    if (f.groups && f.groups.length > 0) {
+      trackedFile.groups = f.groups;
+    }
+
     return trackedFile;
   });
 
@@ -36,10 +48,11 @@ const addFiles = async (
     showCategory: true,
     strategy: options.symlink ? 'symlink' : undefined,
     actionVerb: 'Tracking',
+    defaultGroups: options.group,
   });
 };
 
-const runInteractiveAdd = async (tuckDir: string): Promise<void> => {
+const runInteractiveAdd = async (tuckDir: string, options: AddOptions): Promise<void> => {
   prompts.intro('tuck add');
 
   const pathsInput = await prompts.text('Enter file paths to track (space-separated):', {
@@ -51,13 +64,17 @@ const runInteractiveAdd = async (tuckDir: string): Promise<void> => {
   });
 
   const paths = pathsInput.split(/\s+/).filter(Boolean);
-  const candidates: TrackPathCandidate[] = paths.map((path) => ({ path }));
+  const candidates: TrackPathCandidate[] = paths.map((path) => ({
+    path,
+    groups: options.group,
+  }));
 
   let filesToAdd: FileToAdd[];
   try {
     filesToAdd = await preparePathsForTracking(candidates, tuckDir, {
       secretHandling: 'interactive',
       forceBypassCommand: 'tuck add --force',
+      groups: options.group,
     });
   } catch (error) {
     if (error instanceof Error) {
@@ -127,6 +144,7 @@ export const addFilesFromPaths = async (
     path,
     category: options.category,
     name: options.name,
+    groups: options.group,
   }));
 
   const filesToAdd = await preparePathsForTracking(candidates, tuckDir, {
@@ -135,6 +153,7 @@ export const addFilesFromPaths = async (
     force: options.force,
     secretHandling: 'strict',
     forceBypassCommand: 'tuck add --force',
+    groups: options.group,
   });
 
   if (filesToAdd.length === 0) {
@@ -148,14 +167,16 @@ export const addFilesFromPaths = async (
 const runAdd = async (paths: string[], options: AddOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   if (paths.length === 0) {
-    await runInteractiveAdd(tuckDir);
+    await runInteractiveAdd(tuckDir, options);
     return;
   }
 
@@ -163,6 +184,7 @@ const runAdd = async (paths: string[], options: AddOptions): Promise<void> => {
     path,
     category: options.category,
     name: options.name,
+    groups: options.group,
   }));
 
   const filesToAdd = await preparePathsForTracking(candidates, tuckDir, {
@@ -171,6 +193,7 @@ const runAdd = async (paths: string[], options: AddOptions): Promise<void> => {
     force: options.force,
     secretHandling: 'interactive',
     forceBypassCommand: 'tuck add --force',
+    groups: options.group,
   });
 
   if (filesToAdd.length === 0) {
@@ -198,6 +221,12 @@ export const addCommand = new Command('add')
   .argument('[paths...]', 'Paths to dotfiles to track')
   .option('-c, --category <name>', 'Category to organize under')
   .option('-n, --name <name>', 'Custom name for the file in manifest')
+  .option(
+    '-g, --group <name>',
+    'Host-group to tag (repeatable: -g kubuntu -g work)',
+    collectGroup,
+    []
+  )
   .option('--symlink', 'Copy into tuck repo, then replace source path with a symlink')
   .option('-f, --force', 'Skip secret scanning (not recommended)')
   .action(async (paths: string[], options: AddOptions) => {

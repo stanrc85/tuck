@@ -10,7 +10,12 @@ import {
   validateSafeSourcePath,
   getSafeRepoPathFromDestination,
 } from '../lib/paths.js';
-import { loadManifest, getAllTrackedFiles, getTrackedFileBySource } from '../lib/manifest.js';
+import {
+  loadManifest,
+  getAllTrackedFiles,
+  getTrackedFileBySource,
+  assertMigrated,
+} from '../lib/manifest.js';
 import { getDiff } from '../lib/git.js';
 import {
   getFileChecksum,
@@ -278,11 +283,13 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   const tuckDir = getTuckDir();
 
   // Verify tuck is initialized
+  let manifest;
   try {
-    await loadManifest(tuckDir);
+    manifest = await loadManifest(tuckDir);
   } catch {
     throw new NotInitializedError();
   }
+  assertMigrated(manifest);
 
   // If --staged, show git diff
   if (options.staged) {

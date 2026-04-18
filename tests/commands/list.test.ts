@@ -17,6 +17,11 @@ vi.mock('../../src/lib/paths.js', () => ({
 vi.mock('../../src/lib/manifest.js', () => ({
   loadManifest: loadManifestMock,
   getAllTrackedFiles: getAllTrackedFilesMock,
+  assertMigrated: vi.fn(),
+  fileMatchesGroups: (
+    _file: unknown,
+    groups: string[] | undefined
+  ): boolean => !groups || groups.length === 0,
 }));
 
 vi.mock('../../src/ui/index.js', () => ({

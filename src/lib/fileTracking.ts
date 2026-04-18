@@ -14,6 +14,7 @@ import { loadConfig } from './config.js';
 import { CATEGORIES } from '../constants.js';
 import { ensureDir } from 'fs-extra';
 import { dirname } from 'path';
+import { hostname } from 'os';
 import type { FileStrategy } from '../types.js';
 import { toPosixPath } from './platform.js';
 
@@ -21,6 +22,8 @@ export interface FileToTrack {
   path: string;
   category?: string;
   name?: string;
+  /** Host-groups to assign. Falls back to options.defaultGroups when omitted. */
+  groups?: string[];
 }
 
 export interface FileTrackingOptions {
@@ -60,6 +63,13 @@ export interface FileTrackingOptions {
    * Callback called after each file is processed
    */
   onProgress?: (current: number, total: number) => void;
+
+  /**
+   * Default host-groups applied to files that don't specify their own.
+   * When falsy/empty, tracking falls back to config.defaultGroups, then
+   * to [hostname()] so fresh installs work without extra configuration.
+   */
+  defaultGroups?: string[];
 }
 
 export interface FileTrackingResult {
@@ -133,6 +143,19 @@ export const trackFilesWithProgress = async (
 
   const config = await loadConfig(tuckDir);
   const strategy: FileStrategy = customStrategy || config.files.strategy || 'copy';
+
+  // Resolve the default groups for files that don't specify their own.
+  // Precedence: explicit options.defaultGroups → config.defaultGroups → [hostname()].
+  const resolvedDefaultGroups: string[] = (() => {
+    if (options.defaultGroups && options.defaultGroups.length > 0) {
+      return options.defaultGroups;
+    }
+    if (config.defaultGroups && config.defaultGroups.length > 0) {
+      return config.defaultGroups;
+    }
+    return [hostname()];
+  })();
+
   const total = files.length;
   const errors: Array<{ path: string; error: Error }> = [];
   const sensitiveFiles: string[] = [];
@@ -209,6 +232,14 @@ export const trackFilesWithProgress = async (
       // Generate unique ID
       const id = generateFileId(file.path);
 
+      // Determine groups for this file, de-duplicated and non-empty.
+      const perFileGroups =
+        file.groups && file.groups.length > 0 ? file.groups : resolvedDefaultGroups;
+      const groups = Array.from(new Set(perFileGroups));
+      if (groups.length === 0) {
+        throw new Error('At least one host-group is required');
+      }
+
       // Add to manifest
       await addFileToManifest(tuckDir, id, {
         source: sourcePath,
@@ -222,6 +253,7 @@ export const trackFilesWithProgress = async (
         added: now,
         modified: now,
         checksum,
+        groups,
       });
 
       spinner.stop();
