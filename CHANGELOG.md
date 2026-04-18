@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # 1.0.0 (2026-04-18)
 
 
@@ -122,8 +124,6 @@ one step (interactive or `-g <name>` non-interactive); the migration is
 idempotent.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.9.0](https://github.com/Pranav-Karra-3301/tuck/compare/v1.8.0...v1.9.0) (2026-02-20)
 
