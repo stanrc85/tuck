@@ -284,3 +284,29 @@ jobs:
           files: ${{ matrix.artifact }}
           tag_name: v${{ needs.release.outputs.new_release_version }}
         continue-on-error: true
+
+  checksums:
+    name: Generate SHA256SUMS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [release, build-binaries]
+    if: needs.release.outputs.new_release_published == 'true' && inputs.dry_run != true
+    steps:
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd artifacts
+          ls -la
+          sha256sum tuck-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload SHA256SUMS to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/SHA256SUMS
+          tag_name: v${{ needs.release.outputs.new_release_version }}
