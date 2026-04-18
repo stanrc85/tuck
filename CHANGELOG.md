@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/stanrc85/tuck/compare/v1.1.0...v1.2.0) (2026-04-18)
+
+
+### Features
+
+* **undo:** generalize undo across every destructive op with kind-tagged snapshots ([4b0848e](https://github.com/stanrc85/tuck/commit/4b0848e42211b97c76d9b6956b16f7484baeaf4b))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.1.0](https://github.com/stanrc85/tuck/compare/v1.0.4...v1.1.0) (2026-04-18)
