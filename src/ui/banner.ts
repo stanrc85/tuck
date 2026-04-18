@@ -79,7 +79,7 @@ ${indent()}${indent()}config            Manage settings
 
   const footer = `
 ${c.muted('Run')} ${c.brand('tuck <command> --help')} ${c.muted('for details')}
-${c.muted('Docs:')} ${c.brand('https://github.com/Pranav-Karra-3301/tuck')}
+${c.muted('Docs:')} ${c.brand('https://github.com/stanrc85/tuck')}
 `;
 
   return `${title}\n${quickStart}${commands}${footer}`;

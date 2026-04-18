@@ -10,13 +10,13 @@
     "configuration",
     "git"
   ],
-  "homepage": "https://github.com/Pranav-Karra-3301/tuck#readme",
+  "homepage": "https://github.com/stanrc85/tuck#readme",
   "bugs": {
-    "url": "https://github.com/Pranav-Karra-3301/tuck/issues"
+    "url": "https://github.com/stanrc85/tuck/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Pranav-Karra-3301/tuck.git"
+    "url": "git+https://github.com/stanrc85/tuck.git"
   },
   "license": "MIT",
   "author": "Pranav Karra",

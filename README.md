@@ -354,7 +354,7 @@ Run custom commands before/after operations:
 ## Development
 
 ```bash
-git clone https://github.com/Pranav-Karra-3301/tuck.git
+git clone https://github.com/stanrc85/tuck.git
 cd tuck
 pnpm install
 pnpm build

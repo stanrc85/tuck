@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # tuck installer script
-# Usage: curl -fsSL https://raw.githubusercontent.com/Pranav-Karra-3301/tuck/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/stanrc85/tuck/main/install.sh | bash
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO="Pranav-Karra-3301/tuck"
+REPO="stanrc85/tuck"
 BINARY_NAME="tuck"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
@@ -133,18 +133,20 @@ install_binary() {
     success "Installed tuck to ${INSTALL_DIR}/${output_name}"
 }
 
-# Install via npm as fallback
+# Install via git URL as fallback (this fork is not published to npm)
 install_npm() {
-    info "Installing via npm..."
+    info "Installing via npm (from git)..."
+
+    local git_url="git+https://github.com/${REPO}.git"
 
     if command -v npm &> /dev/null; then
-        npm install -g @prnv/tuck
+        npm install -g "$git_url"
         success "Installed tuck via npm"
     elif command -v pnpm &> /dev/null; then
-        pnpm add -g @prnv/tuck
+        pnpm add -g "$git_url"
         success "Installed tuck via pnpm"
     elif command -v yarn &> /dev/null; then
-        yarn global add @prnv/tuck
+        yarn global add "$git_url"
         success "Installed tuck via yarn"
     else
         error "No package manager found. Please install Node.js and npm first."
