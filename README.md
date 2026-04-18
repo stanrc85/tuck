@@ -97,13 +97,21 @@ tuck restore --all
 
 ### Managing Files
 
-| Command               | Description                        |
-| --------------------- | ---------------------------------- |
-| `tuck add <paths>`    | Manually track specific files      |
-| `tuck remove <paths>` | Stop tracking files                |
-| `tuck scan`           | Discover dotfiles without syncing  |
-| `tuck list`           | List all tracked files by category |
-| `tuck diff [file]`    | Show what's changed                |
+| Command                      | Description                                                           |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `tuck add <paths>`           | Manually track specific files (`-g <group>` to tag for a host)        |
+| `tuck remove <paths>`        | Stop tracking files (`--push` to also delete from remote)             |
+| `tuck scan`                  | Discover dotfiles without syncing                                     |
+| `tuck list`                  | List all tracked files by category (`-g <group>` to filter)           |
+| `tuck diff [file]`           | Show what's changed                                                   |
+| `tuck ignore add <paths>`    | Append paths to `.tuckignore` so scan/add skip them                   |
+| `tuck ignore rm <paths>`     | Remove paths from `.tuckignore`                                       |
+| `tuck ignore list`           | Show ignored paths                                                    |
+| `tuck group add <g> <paths>` | Tag tracked files with a host-group                                   |
+| `tuck group rm <g> <paths>`  | Remove a host-group tag (keeps at least one group per file)           |
+| `tuck group list`            | List all host-groups and their file counts                            |
+| `tuck group show <group>`    | Show files in a given host-group                                      |
+| `tuck migrate`               | One-time: tag existing files with a host-group (required after 2.0)   |
 
 ### Syncing
 
@@ -114,11 +122,11 @@ tuck restore --all
 
 ### Restoring
 
-| Command             | Description                                            |
-| ------------------- | ------------------------------------------------------ |
-| `tuck apply <user>` | Apply dotfiles from a GitHub user (with smart merging) |
-| `tuck restore`      | Restore dotfiles from repo to system                   |
-| `tuck undo`         | Restore from Time Machine backup snapshots             |
+| Command             | Description                                                                  |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `tuck apply <user>` | Apply dotfiles from a GitHub user, with smart merging (`-g` to pick a group) |
+| `tuck restore`      | Restore dotfiles from repo to system (`-g` to pick a group)                  |
+| `tuck undo`         | Restore from Time Machine backup snapshots                                   |
 
 ### Configuration
 
@@ -165,6 +173,63 @@ tuck stores your dotfiles in `~/.tuck`, organized by category:
 ```
 
 Run `tuck sync` anytime to detect changes and push. On a new machine, run `tuck apply username` to grab anyone's dotfiles.
+
+## Host Groups
+
+Tag each tracked file with one or more **host-groups** (e.g. `work`, `kubuntu`, `kali`) so a single dotfiles repo can power several very different machines. Every tracked file belongs to at least one group; commands that apply files accept `-g/--group` to filter by host.
+
+### Typical workflow
+
+```bash
+# On your work laptop — tag everything as "work"
+tuck add ~/.zshrc ~/.gitconfig -g work
+
+# On your personal desktop — pull and apply only the "personal" set
+tuck apply you/dotfiles -g personal
+
+# Move a file between groups
+tuck group add personal ~/.zshrc
+tuck group rm work ~/.zshrc
+
+# See what you've got
+tuck group list
+tuck group show work
+```
+
+### Defaults
+
+If you omit `-g` on `tuck add`, the file is tagged with `config.defaultGroups` (set via `tuck migrate` or edit `~/.tuck/.tuckrc.json`), falling back to your machine's hostname. Set a sensible default once and most `tuck add` calls won't need the flag.
+
+### Migrating from 1.x
+
+If you upgraded from a 1.x manifest (no groups), every command will error with `MigrationRequiredError` until you run:
+
+```bash
+# Interactive — prompts for the group name (defaults to hostname)
+tuck migrate
+
+# Or non-interactive
+tuck migrate -g laptop
+
+# Multiple groups supported
+tuck migrate -g laptop -g work
+```
+
+`tuck migrate` is idempotent; running it on an already-migrated manifest is a no-op.
+
+## One-Shot Remove + Push
+
+Use `tuck remove --push` to untrack files, delete them from the repo, commit, and push — all in one step. Your source path on the host is **never** touched:
+
+```bash
+# Drop ~/.oldrc from tracking and the remote in one go
+tuck remove --push ~/.oldrc
+
+# Custom commit message
+tuck remove --push -m "chore: stop tracking legacy config" ~/.oldrc
+```
+
+`--push` implies `--delete`. If the push fails (network, auth), the commit is kept locally and tuck prompts you to retry up to 3 times — run `tuck push` later if you declined.
 
 ## Git Providers
 
@@ -213,12 +278,15 @@ Configure tuck via `~/.tuck/.tuckrc.json` or `tuck config wizard`:
     "strategy": "copy",
     "backupOnRestore": true
   },
+  "defaultGroups": ["work-laptop"],
   "remote": {
     "mode": "github",
     "username": "your-username"
   }
 }
 ```
+
+`defaultGroups` — applied by `tuck add` when `-g` is omitted. Set during `tuck migrate` or edit it here to change what a bare `tuck add` does.
 
 ### File Strategies
 
