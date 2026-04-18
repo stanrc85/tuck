@@ -1,7 +1,8 @@
 /**
  * Spinner utilities for tuck CLI
- * Uses @clack/prompts spinner as the primary implementation
- * Provides backward-compatible API with enhanced methods
+ * Uses @clack/prompts spinner when attached to a TTY; falls back to plain
+ * log output otherwise so automated/scripted invocations don't hang on
+ * @clack's stdin readline setup.
  */
 
 import * as p from '@clack/prompts';
@@ -23,14 +24,94 @@ export interface SpinnerInstance {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Interactivity Detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Whether the process is attached to an interactive TTY on both stdin and
+ * stdout. @clack's spinner sets up a readline interface and keypress listener
+ * on stdin (via @clack/core's `block()`), which can hang when stdin is a pipe,
+ * /dev/null, or a TTY left in a non-canonical state by a prior command.
+ *
+ * `TUCK_NON_INTERACTIVE=1` forces the non-interactive fallback even when a
+ * TTY is detected — useful for CI, scripts, or debugging.
+ */
+export const isInteractive = (): boolean => {
+  if (process.env.TUCK_NON_INTERACTIVE === '1' || process.env.TUCK_NON_INTERACTIVE === 'true') {
+    return false;
+  }
+  return Boolean(process.stdout.isTTY && process.stdin.isTTY);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Non-Interactive Fallback
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Plain-log fallback spinner for non-TTY execution.
+ *
+ * Emits one line per terminal state transition (succeed/fail/warn/info), or a
+ * single info line on stop if no terminal state was reached. start/text are
+ * silent — this keeps output readable when a caller drives a tight loop of
+ * short-lived spinners (e.g. restore iterating over every tracked file).
+ */
+const createNonInteractiveSpinner = (initialText?: string): SpinnerInstance => {
+  let currentText = initialText || '';
+  let settled = false;
+
+  return {
+    start: (text?: string) => {
+      currentText = text || currentText || 'Loading...';
+      settled = false;
+    },
+
+    stop: () => {
+      if (!settled && currentText) {
+        console.log(logSymbols.info, c.info(currentText));
+      }
+      settled = true;
+    },
+
+    succeed: (text?: string) => {
+      console.log(logSymbols.success, c.success(text || currentText));
+      settled = true;
+    },
+
+    fail: (text?: string) => {
+      console.log(logSymbols.error, c.error(text || currentText));
+      settled = true;
+    },
+
+    warn: (text?: string) => {
+      console.log(logSymbols.warning, c.warning(text || currentText));
+      settled = true;
+    },
+
+    info: (text?: string) => {
+      console.log(logSymbols.info, c.info(text || currentText));
+      settled = true;
+    },
+
+    text: (text: string) => {
+      currentText = text;
+    },
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Create Spinner
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Create a spinner instance using @clack/prompts
- * Provides ora-compatible API for backward compatibility
+ * Create a spinner instance. In interactive TTY mode this is @clack/prompts'
+ * animated spinner; in non-interactive mode it falls back to plain log lines
+ * to avoid hanging on stdin setup.
  */
 export const createSpinner = (initialText?: string): SpinnerInstance => {
+  if (!isInteractive()) {
+    return createNonInteractiveSpinner(initialText);
+  }
+
   const spinner = p.spinner();
   let currentText = initialText || '';
   let started = false;
