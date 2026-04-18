@@ -95,6 +95,13 @@ vi.mock('../../src/lib/hooks.js', () => ({
   runPostRestoreHook: runPostRestoreHookMock,
 }));
 
+const createSnapshotMock = vi.fn();
+const pruneSnapshotsMock = vi.fn();
+vi.mock('../../src/lib/timemachine.js', () => ({
+  createSnapshot: createSnapshotMock,
+  pruneSnapshotsFromConfig: pruneSnapshotsMock,
+}));
+
 vi.mock('../../src/lib/secrets/index.js', () => ({
   restoreFiles: restoreSecretsMock,
   getSecretCount: getSecretCountMock,
@@ -208,5 +215,62 @@ describe('restore command behavior', () => {
       'Unsafe manifest destination detected'
     );
     expect(copyFileOrDirMock).not.toHaveBeenCalled();
+  });
+
+  it('creates a pre-restore snapshot (kind="restore") of existing host paths before overwriting', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        category: 'shell',
+      },
+    });
+    pathExistsMock.mockResolvedValue(true); // both source (exists-at-target) and repo file exist
+
+    const { runRestore } = await import('../../src/commands/restore.js');
+    await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+    expect(createSnapshotMock).toHaveBeenCalledTimes(1);
+    const [paths, reason, opts] = createSnapshotMock.mock.calls[0];
+    expect(paths).toContain('/test-home/.zshrc');
+    expect(reason).toMatch(/Pre-restore snapshot/);
+    expect(opts).toEqual({ kind: 'restore' });
+    expect(pruneSnapshotsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a snapshot when no tracked host files exist yet', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        category: 'shell',
+      },
+    });
+    // Repo file exists (so restore proceeds) but host target does not — nothing
+    // worth snapshotting on the destination side.
+    pathExistsMock.mockImplementation(async (p: string) =>
+      String(p).startsWith('/test-home/.tuck/files/')
+    );
+
+    const { runRestore } = await import('../../src/commands/restore.js');
+    await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+    expect(createSnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it('skips snapshot creation on --dry-run', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        category: 'shell',
+      },
+    });
+    pathExistsMock.mockResolvedValue(true);
+
+    const { runRestore } = await import('../../src/commands/restore.js');
+    await runRestore({ all: true, noHooks: true, noSecrets: true, dryRun: true });
+
+    expect(createSnapshotMock).not.toHaveBeenCalled();
   });
 });

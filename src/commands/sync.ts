@@ -29,6 +29,7 @@ import {
   SIZE_BLOCK_THRESHOLD,
 } from '../lib/files.js';
 import { addToTuckignore, loadTuckignore, isIgnored } from '../lib/tuckignore.js';
+import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { runPreSyncHook, runPostSyncHook, type HookOptions } from '../lib/hooks.js';
 import { NotInitializedError, SecretsDetectedError } from '../errors.js';
 import type { SyncOptions, FileChange } from '../types.js';
@@ -236,6 +237,27 @@ const syncFiles = async (
 
   // Run pre-sync hook
   await runPreSyncHook(tuckDir, hookOptions);
+
+  // Pre-sync Time Machine snapshot of the repo-side copies that are about to
+  // be overwritten. Git history already covers this, but a snapshot gives
+  // `tuck undo` a consistent UI for rolling back a sync the same way a user
+  // rolls back an apply or restore.
+  const repoPathsToSnapshot: string[] = [];
+  for (const change of changes) {
+    if (change.status !== 'modified' || !change.destination) continue;
+    const repoPath = join(tuckDir, change.destination);
+    if (await pathExists(repoPath)) {
+      repoPathsToSnapshot.push(repoPath);
+    }
+  }
+  if (repoPathsToSnapshot.length > 0) {
+    await createSnapshot(
+      repoPathsToSnapshot,
+      `Pre-sync snapshot: ${repoPathsToSnapshot.length} repo file${repoPathsToSnapshot.length === 1 ? '' : 's'}`,
+      { kind: 'sync' }
+    );
+    await pruneSnapshotsFromConfig(tuckDir);
+  }
 
   // Process each change
   for (const change of changes) {

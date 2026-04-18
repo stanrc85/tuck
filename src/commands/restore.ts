@@ -22,6 +22,7 @@ import {
 import { loadConfig } from '../lib/config.js';
 import { copyFileOrDir, createSymlink } from '../lib/files.js';
 import { createBackup } from '../lib/backup.js';
+import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { runPreRestoreHook, runPostRestoreHook, type HookOptions } from '../lib/hooks.js';
 import { NotInitializedError, FileNotFoundError, NonInteractivePromptError } from '../errors.js';
 import { CATEGORIES } from '../constants.js';
@@ -169,6 +170,30 @@ const restoreFilesInternal = async (
 
   // Run pre-restore hook
   await runPreRestoreHook(tuckDir, hookOptions);
+
+  // Pre-restore Time Machine snapshot of host paths that already exist, so
+  // `tuck undo` can roll back an unwanted restore. Skipped on dry-run, and
+  // only captures paths that exist (no point snapshotting files that don't
+  // yet exist on disk).
+  if (!options.dryRun) {
+    const existingHostPaths: string[] = [];
+    for (const file of files) {
+      if (file.existsAtTarget) {
+        existingHostPaths.push(expandPath(file.source));
+      }
+    }
+
+    if (existingHostPaths.length > 0) {
+      await withSpinner('Creating snapshot before restore...', async () => {
+        await createSnapshot(
+          existingHostPaths,
+          `Pre-restore snapshot: ${existingHostPaths.length} file${existingHostPaths.length === 1 ? '' : 's'}`,
+          { kind: 'restore' }
+        );
+      });
+      await pruneSnapshotsFromConfig(tuckDir);
+    }
+  }
 
   let restoredCount = 0;
   const restoredPaths: string[] = [];

@@ -59,6 +59,13 @@ export interface TuckConfig {
     emoji: boolean;
     verbose: boolean;
   };
+  /** Retention policy for Time Machine snapshots. */
+  snapshots?: {
+    /** Keep at most this many snapshots. */
+    maxCount?: number;
+    /** Delete snapshots older than this many days. */
+    maxAgeDays?: number;
+  };
   /** Remote/provider configuration */
   remote?: RemoteConfig;
 }

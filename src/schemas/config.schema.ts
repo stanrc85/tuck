@@ -107,6 +107,21 @@ export const tuckConfigSchema = z.object({
     .partial()
     .default({}),
 
+  /**
+   * Retention policy for Time Machine snapshots (created by apply, restore,
+   * sync, remove --delete, clean). Pruning runs after each new snapshot.
+   * Set a value to `0` or omit to disable that dimension.
+   */
+  snapshots: z
+    .object({
+      /** Keep at most this many snapshots. Default: 50. */
+      maxCount: z.number().int().nonnegative().default(50),
+      /** Delete snapshots older than this many days. Default: 30. */
+      maxAgeDays: z.number().int().nonnegative().default(30),
+    })
+    .partial()
+    .default({}),
+
   security: securityConfigSchema,
 
   /** Remote/provider configuration */
@@ -145,6 +160,10 @@ export const defaultConfig: TuckConfigOutput = {
     colors: true,
     emoji: true,
     verbose: false,
+  },
+  snapshots: {
+    maxCount: 50,
+    maxAgeDays: 30,
   },
   security: {
     scanSecrets: true,

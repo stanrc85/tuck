@@ -78,6 +78,13 @@ vi.mock('../../src/lib/git.js', () => ({
   hasRemote: hasRemoteMock,
 }));
 
+const createSnapshotMock = vi.fn();
+const pruneSnapshotsMock = vi.fn();
+vi.mock('../../src/lib/timemachine.js', () => ({
+  createSnapshot: createSnapshotMock,
+  pruneSnapshotsFromConfig: pruneSnapshotsMock,
+}));
+
 describe('remove --push', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -179,5 +186,24 @@ describe('remove --push', () => {
 
     expect(pushMock).toHaveBeenCalledTimes(3);
     expect(commitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a pre-remove snapshot (kind="remove") of repo copies before deletion', async () => {
+    const { runRemove } = await import('../../src/commands/remove.js');
+    await runRemove(['~/.zshrc'], { push: true });
+
+    expect(createSnapshotMock).toHaveBeenCalledTimes(1);
+    const [paths, reason, opts] = createSnapshotMock.mock.calls[0];
+    expect(paths[0]).toContain('files/shell/zshrc');
+    expect(reason).toMatch(/Pre-remove snapshot/);
+    expect(opts).toEqual({ kind: 'remove' });
+    expect(pruneSnapshotsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not snapshot on plain untrack (no --delete or --push)', async () => {
+    const { runRemove } = await import('../../src/commands/remove.js');
+    await runRemove(['~/.zshrc'], {});
+
+    expect(createSnapshotMock).not.toHaveBeenCalled();
   });
 });

@@ -3,9 +3,23 @@ import { readdir, readFile, writeFile, rm, stat } from 'fs/promises';
 import { copy, ensureDir, pathExists } from 'fs-extra';
 import { homedir } from 'os';
 import { expandPath, pathExists as checkPathExists } from './paths.js';
+import { loadConfig } from './config.js';
 import { BackupError } from '../errors.js';
 
 const TIMEMACHINE_DIR = join(homedir(), '.tuck', 'backups');
+
+/**
+ * Categorises a snapshot by the operation that created it. Drives the
+ * label shown in `tuck undo --list` / interactive mode so users can tell
+ * a pre-apply backup apart from a pre-sync or pre-remove one.
+ */
+export type SnapshotKind =
+  | 'apply'
+  | 'restore'
+  | 'sync'
+  | 'remove'
+  | 'clean'
+  | 'manual';
 
 export interface SnapshotMetadata {
   id: string;
@@ -14,6 +28,8 @@ export interface SnapshotMetadata {
   files: SnapshotFile[];
   machine: string;
   profile?: string;
+  /** Optional on disk for backward-compat; pre-kind snapshots default to 'apply'. */
+  kind?: SnapshotKind;
 }
 
 export interface SnapshotFile {
@@ -30,7 +46,15 @@ export interface Snapshot {
   files: SnapshotFile[];
   machine: string;
   profile?: string;
+  kind: SnapshotKind;
 }
+
+export interface CreateSnapshotOptions {
+  kind?: SnapshotKind;
+  profile?: string;
+}
+
+const DEFAULT_KIND: SnapshotKind = 'apply';
 
 /**
  * Generate a unique snapshot ID (YYYY-MM-DD-HHMMSS)
@@ -90,16 +114,18 @@ const toBackupPath = (originalPath: string): string => {
 };
 
 /**
- * Create a Time Machine snapshot of multiple files
- * This is the main entry point for creating backups before apply operations
+ * Create a Time Machine snapshot of multiple files. `options.kind` tags the
+ * snapshot so `tuck undo` can present it with the right context ("Pre-apply",
+ * "Pre-sync", etc.); defaults to `'manual'` for ad-hoc callers.
  */
 export const createSnapshot = async (
   filePaths: string[],
   reason: string,
-  profile?: string
+  options: CreateSnapshotOptions = {}
 ): Promise<Snapshot> => {
   const snapshotId = generateSnapshotId();
   const snapshotPath = getSnapshotPath(snapshotId);
+  const kind: SnapshotKind = options.kind ?? 'manual';
 
   await ensureDir(snapshotPath);
 
@@ -132,7 +158,8 @@ export const createSnapshot = async (
     reason,
     files,
     machine,
-    profile,
+    profile: options.profile,
+    kind,
   };
 
   await writeFile(
@@ -148,7 +175,8 @@ export const createSnapshot = async (
     reason,
     files,
     machine,
-    profile,
+    profile: options.profile,
+    kind,
   };
 };
 
@@ -163,7 +191,7 @@ export const createPreApplySnapshot = async (
     ? `Pre-apply backup before applying from ${sourceRepo}`
     : 'Pre-apply backup';
 
-  return createSnapshot(targetPaths, reason);
+  return createSnapshot(targetPaths, reason, { kind: 'apply' });
 };
 
 /**
@@ -197,6 +225,7 @@ export const listSnapshots = async (): Promise<Snapshot[]> => {
         files: metadata.files,
         machine: metadata.machine,
         profile: metadata.profile,
+        kind: metadata.kind ?? DEFAULT_KIND,
       });
     } catch (error) {
       // Skip invalid snapshots
@@ -238,6 +267,7 @@ export const getSnapshot = async (snapshotId: string): Promise<Snapshot | null> 
       files: metadata.files,
       machine: metadata.machine,
       profile: metadata.profile,
+      kind: metadata.kind ?? DEFAULT_KIND,
     };
   } catch {
     return null;
@@ -357,6 +387,76 @@ export const cleanOldSnapshots = async (keepCount: number): Promise<number> => {
   return deletedCount;
 };
 
+export interface PruneRetentionOptions {
+  /** Keep at most this many snapshots. Older ones are deleted. Use 0 to disable. */
+  maxCount?: number;
+  /** Delete snapshots older than this many days. Use 0 to disable. */
+  maxAgeDays?: number;
+}
+
+/**
+ * Delete snapshots that fall outside the retention policy. Age-based pruning
+ * runs first, then count-based pruning keeps the newest `maxCount` of what's
+ * left. Returns the number of snapshots deleted.
+ *
+ * Passing `undefined` for either option disables that dimension; passing both
+ * as `undefined` is a no-op (returns 0 without touching disk).
+ */
+export const pruneSnapshotsByRetention = async (
+  options: PruneRetentionOptions
+): Promise<number> => {
+  const { maxCount, maxAgeDays } = options;
+  if (maxCount === undefined && maxAgeDays === undefined) {
+    return 0;
+  }
+
+  const snapshots = await listSnapshots();
+  const toDelete = new Set<string>();
+
+  if (maxAgeDays !== undefined && maxAgeDays > 0) {
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    for (const snapshot of snapshots) {
+      if (snapshot.timestamp.getTime() < cutoff) {
+        toDelete.add(snapshot.id);
+      }
+    }
+  }
+
+  if (maxCount !== undefined && maxCount > 0) {
+    const survivors = snapshots.filter((s) => !toDelete.has(s.id));
+    if (survivors.length > maxCount) {
+      for (const snapshot of survivors.slice(maxCount)) {
+        toDelete.add(snapshot.id);
+      }
+    }
+  }
+
+  for (const id of toDelete) {
+    await deleteSnapshot(id);
+  }
+
+  return toDelete.size;
+};
+
+/**
+ * Read retention policy from the config at `tuckDir` and prune accordingly.
+ * Commands call this after creating a snapshot so backup disk usage stays
+ * bounded without requiring a manual `tuck undo --delete` flow.
+ */
+export const pruneSnapshotsFromConfig = async (tuckDir: string): Promise<number> => {
+  try {
+    const config = await loadConfig(tuckDir);
+    return await pruneSnapshotsByRetention({
+      maxCount: config.snapshots?.maxCount,
+      maxAgeDays: config.snapshots?.maxAgeDays,
+    });
+  } catch {
+    // Don't let pruning failures crash a destructive command — the snapshot
+    // itself already succeeded, and the user can run `tuck undo --delete` manually.
+    return 0;
+  }
+};
+
 /**
  * Get the total size of all snapshots in bytes
  */
@@ -397,6 +497,28 @@ export const formatSnapshotSize = (bytes: number): string => {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+};
+
+/**
+ * Human-friendly label for a snapshot kind, used in `tuck undo` UI.
+ */
+export const formatSnapshotKind = (kind: SnapshotKind | undefined): string => {
+  switch (kind ?? DEFAULT_KIND) {
+    case 'apply':
+      return 'apply';
+    case 'restore':
+      return 'restore';
+    case 'sync':
+      return 'sync';
+    case 'remove':
+      return 'remove';
+    case 'clean':
+      return 'clean';
+    case 'manual':
+      return 'manual';
+    default:
+      return String(kind);
+  }
 };
 
 /**

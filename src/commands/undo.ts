@@ -11,6 +11,7 @@ import {
   getSnapshotsSize,
   formatSnapshotSize,
   formatSnapshotDate,
+  formatSnapshotKind,
   Snapshot,
 } from '../lib/timemachine.js';
 
@@ -31,7 +32,9 @@ const showSnapshotList = async (): Promise<void> => {
 
   if (snapshots.length === 0) {
     logger.warning('No backup snapshots found');
-    logger.dim('Snapshots are created automatically when using `tuck apply`');
+    logger.dim(
+      'Snapshots are created automatically before apply, restore, sync, remove --delete, and clean.'
+    );
     return;
   }
 
@@ -41,8 +44,9 @@ const showSnapshotList = async (): Promise<void> => {
   for (const snapshot of snapshots) {
     const date = formatSnapshotDate(snapshot.id);
     const fileCount = snapshot.files.filter((f) => f.existed).length;
+    const kindLabel = formatSnapshotKind(snapshot.kind);
 
-    console.log(c.cyan(`  ${snapshot.id}`));
+    console.log(`  ${c.cyan(snapshot.id)}  ${c.dim(`[${kindLabel}]`)}`);
     console.log(c.dim(`    Date:    ${date}`));
     console.log(c.dim(`    Reason:  ${snapshot.reason}`));
     console.log(c.dim(`    Files:   ${fileCount} file(s) backed up`));
@@ -64,6 +68,7 @@ const showSnapshotDetails = (snapshot: Snapshot): void => {
   console.log();
   console.log(c.bold('Snapshot Details:'));
   console.log(c.dim(`  ID:      ${snapshot.id}`));
+  console.log(c.dim(`  Kind:    ${formatSnapshotKind(snapshot.kind)}`));
   console.log(c.dim(`  Date:    ${formatSnapshotDate(snapshot.id)}`));
   console.log(c.dim(`  Reason:  ${snapshot.reason}`));
   console.log(c.dim(`  Machine: ${snapshot.machine}`));
@@ -205,16 +210,26 @@ const runInteractiveUndo = async (): Promise<void> => {
 
   if (snapshots.length === 0) {
     prompts.log.warning('No backup snapshots available');
-    prompts.note('Snapshots are created when using `tuck apply`', 'Info');
+    prompts.note(
+      'Snapshots are created before apply, restore, sync, remove --delete, and clean.',
+      'Info'
+    );
     return;
   }
 
   // Let user select a snapshot
-  const snapshotOptions = snapshots.map((s) => ({
-    value: s.id,
-    label: `${s.id} - ${s.reason.slice(0, 40)}${s.reason.length > 40 ? '...' : ''}`,
-    hint: `${s.files.filter((f) => f.existed).length} files`,
-  }));
+  const snapshotOptions = snapshots.map((s) => {
+    const fileCount = s.files.filter((f) => f.existed).length;
+    const date = formatSnapshotDate(s.id);
+    const kindLabel = formatSnapshotKind(s.kind);
+    const reasonSnippet =
+      s.reason.length > 40 ? `${s.reason.slice(0, 40)}...` : s.reason;
+    return {
+      value: s.id,
+      label: `[${kindLabel}] ${date} — ${reasonSnippet}`,
+      hint: `${fileCount} file${fileCount === 1 ? '' : 's'}`,
+    };
+  });
 
   const selectedId = await prompts.select('Select a snapshot to restore:', snapshotOptions);
 

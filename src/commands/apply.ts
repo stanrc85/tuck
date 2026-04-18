@@ -15,7 +15,7 @@ import {
 } from '../lib/paths.js';
 import { cloneRepo } from '../lib/git.js';
 import { isGhInstalled, findDotfilesRepo, ghCloneRepo, repoExists } from '../lib/github.js';
-import { createPreApplySnapshot } from '../lib/timemachine.js';
+import { createPreApplySnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { smartMerge, isShellFile, generateMergePreview } from '../lib/merge.js';
 import { CATEGORIES } from '../constants.js';
 import type { TuckManifest } from '../types.js';
@@ -646,6 +646,11 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
       spinner.start('Creating backup snapshot...');
       const snapshot = await createPreApplySnapshot(existingPaths, repoId);
       spinner.stop(`Backup created: ${snapshot.id}`);
+      try {
+        await pruneSnapshotsFromConfig(getTuckDir());
+      } catch {
+        // Apply can be run without a local tuck init; skip prune silently.
+      }
       console.log();
     }
 
@@ -742,6 +747,11 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
         logger.info('Creating backup snapshot...');
         const snapshot = await createPreApplySnapshot(existingPaths, repoId);
         logger.success(`Backup created: ${snapshot.id}`);
+        try {
+          await pruneSnapshotsFromConfig(getTuckDir());
+        } catch {
+          // Apply can run without a local tuck init; skip prune silently.
+        }
       }
     }
 

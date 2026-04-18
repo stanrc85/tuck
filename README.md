@@ -125,7 +125,7 @@ tuck restore --all
 | ------------------- | ---------------------------------------------------------------------------- |
 | `tuck apply <user>` | Apply dotfiles from a GitHub user, with smart merging (`-g` to pick a group) |
 | `tuck restore`      | Restore dotfiles from repo to system (`-g` to pick a group)                  |
-| `tuck undo`         | Restore from Time Machine backup snapshots                                   |
+| `tuck undo`         | Roll back any destructive op (apply, restore, sync, remove, clean)           |
 
 ### Configuration
 
@@ -253,6 +253,54 @@ tuck clean --push
 
 Before any deletion, `tuck clean` prints every orphan file (with its size) and every directory that will be removed — and creates a time-machine snapshot so you can recover with `tuck undo`. `tuck clean` also warns when a manifest entry's destination is missing from disk (run `tuck doctor` to diagnose those).
 
+## Time Machine & Undo
+
+tuck takes an automatic snapshot of any files it's about to overwrite or delete, so you can always roll back. Snapshots live in `~/.tuck/backups/` and are tagged with the operation that created them:
+
+| Kind      | Created before                                                           |
+| --------- | ------------------------------------------------------------------------ |
+| `apply`   | `tuck apply` overwrites host files                                       |
+| `restore` | `tuck restore` overwrites host files                                     |
+| `sync`    | `tuck sync` overwrites the repo-side copies of modified tracked files    |
+| `remove`  | `tuck remove --delete` / `--push` deletes a repo-side copy               |
+| `clean`   | `tuck clean` removes orphaned files from the repo                        |
+| `manual`  | Ad-hoc snapshot (e.g. via the programmatic API)                          |
+
+```bash
+# List every snapshot (kind + date + file count)
+tuck undo --list
+
+# Interactive pick-one
+tuck undo
+
+# Restore the latest
+tuck undo --latest
+
+# Restore a specific snapshot by ID
+tuck undo 2026-04-18-143022
+
+# Restore a single file from a snapshot
+tuck undo 2026-04-18-143022 --file ~/.zshrc
+
+# Delete a snapshot
+tuck undo --delete 2026-04-18-143022
+```
+
+### Retention
+
+Snapshots are pruned automatically after each new one is created. Defaults keep the 50 newest snapshots and drop anything older than 30 days. Tune it in `~/.tuck/.tuckrc.json`:
+
+```json
+{
+  "snapshots": {
+    "maxCount": 50,
+    "maxAgeDays": 30
+  }
+}
+```
+
+Set either value to `0` to disable that dimension.
+
 ## Git Providers
 
 tuck supports multiple git hosting providers, detected automatically during setup:
@@ -301,6 +349,10 @@ Configure tuck via `~/.tuck/.tuckrc.json` or `tuck config wizard`:
     "backupOnRestore": true
   },
   "defaultGroups": ["work-laptop"],
+  "snapshots": {
+    "maxCount": 50,
+    "maxAgeDays": 30
+  },
   "remote": {
     "mode": "github",
     "username": "your-username"

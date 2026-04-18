@@ -75,6 +75,7 @@ vi.mock('../../src/lib/files.js', () => ({
 
 vi.mock('../../src/lib/timemachine.js', () => ({
   createSnapshot: createSnapshotMock,
+  pruneSnapshotsFromConfig: vi.fn(),
 }));
 
 vi.mock('../../src/lib/git.js', () => ({
@@ -185,7 +186,8 @@ describe('tuck clean', () => {
     expect(order).toEqual(['snapshot', 'delete']);
     expect(createSnapshotMock).toHaveBeenCalledWith(
       ['/test-home/.tuck/files/shell/old-bashrc'],
-      expect.stringContaining('Pre-clean snapshot')
+      expect.stringContaining('Pre-clean snapshot'),
+      { kind: 'clean' }
     );
   });
 

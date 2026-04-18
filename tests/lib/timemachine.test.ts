@@ -64,6 +64,9 @@ import {
   cleanOldSnapshots,
   formatSnapshotSize,
   formatSnapshotDate,
+  formatSnapshotKind,
+  pruneSnapshotsByRetention,
+  createPreApplySnapshot,
 } from '../../src/lib/timemachine.js';
 
 const TIMEMACHINE_DIR = join(TEST_HOME, '.tuck', 'backups');
@@ -405,6 +408,165 @@ describe('timemachine', () => {
     it('should return original string for invalid format', () => {
       const result = formatSnapshotDate('invalid-id');
       expect(result).toBe('invalid-id');
+    });
+  });
+
+  // ============================================================================
+  // Snapshot kind Tests
+  // ============================================================================
+
+  describe('snapshot kind', () => {
+    it('defaults new snapshots to kind "manual" when no kind is given', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      const snapshot = await createSnapshot(
+        [join(TEST_HOME, '.zshrc')],
+        'manual backup'
+      );
+      expect(snapshot.kind).toBe('manual');
+    });
+
+    it('persists kind in metadata and exposes it via listSnapshots', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      await createSnapshot(
+        [join(TEST_HOME, '.zshrc')],
+        'Pre-restore snapshot',
+        { kind: 'restore' }
+      );
+
+      const [snap] = await listSnapshots();
+      expect(snap.kind).toBe('restore');
+    });
+
+    it('exposes kind via getSnapshot', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      const created = await createSnapshot(
+        [join(TEST_HOME, '.zshrc')],
+        'Pre-sync snapshot',
+        { kind: 'sync' }
+      );
+
+      const retrieved = await getSnapshot(created.id);
+      expect(retrieved?.kind).toBe('sync');
+    });
+
+    it('falls back to "apply" for legacy snapshots missing a kind field', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      const snapshot = await createSnapshot(
+        [join(TEST_HOME, '.zshrc')],
+        'legacy apply snapshot',
+        { kind: 'apply' }
+      );
+
+      // Simulate an older snapshot by stripping `kind` from its metadata on disk.
+      const metadataPath = join(snapshot.path, 'metadata.json');
+      const parsed = JSON.parse(vol.readFileSync(metadataPath, 'utf-8') as string);
+      delete parsed.kind;
+      vol.writeFileSync(metadataPath, JSON.stringify(parsed));
+
+      const retrieved = await getSnapshot(snapshot.id);
+      expect(retrieved?.kind).toBe('apply');
+    });
+
+    it('createPreApplySnapshot tags snapshots with kind="apply"', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      const snap = await createPreApplySnapshot(
+        [join(TEST_HOME, '.zshrc')],
+        'someone/dotfiles'
+      );
+      expect(snap.kind).toBe('apply');
+      expect(snap.reason).toMatch(/someone\/dotfiles/);
+    });
+  });
+
+  // ============================================================================
+  // formatSnapshotKind Tests
+  // ============================================================================
+
+  describe('formatSnapshotKind', () => {
+    it('returns the kind label for each known kind', () => {
+      expect(formatSnapshotKind('apply')).toBe('apply');
+      expect(formatSnapshotKind('restore')).toBe('restore');
+      expect(formatSnapshotKind('sync')).toBe('sync');
+      expect(formatSnapshotKind('remove')).toBe('remove');
+      expect(formatSnapshotKind('clean')).toBe('clean');
+      expect(formatSnapshotKind('manual')).toBe('manual');
+    });
+
+    it('falls back to "apply" for undefined (legacy snapshots)', () => {
+      expect(formatSnapshotKind(undefined)).toBe('apply');
+    });
+  });
+
+  // ============================================================================
+  // pruneSnapshotsByRetention Tests
+  // ============================================================================
+
+  describe('pruneSnapshotsByRetention', () => {
+    it('is a no-op when both maxCount and maxAgeDays are undefined', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      await createSnapshot([join(TEST_HOME, '.zshrc')], 'one');
+
+      const deleted = await pruneSnapshotsByRetention({});
+
+      expect(deleted).toBe(0);
+      const remaining = await listSnapshots();
+      expect(remaining.length).toBe(1);
+    });
+
+    it('keeps only maxCount newest snapshots (count-based prune)', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+
+      // Create 4 snapshots — each sleep ensures a distinct timestamp ID.
+      for (let i = 0; i < 4; i++) {
+        await createSnapshot([join(TEST_HOME, '.zshrc')], `snap ${i}`);
+        await new Promise((r) => setTimeout(r, 1100));
+      }
+
+      const deleted = await pruneSnapshotsByRetention({ maxCount: 2 });
+      expect(deleted).toBe(2);
+
+      const remaining = await listSnapshots();
+      expect(remaining.length).toBe(2);
+      // Newest two should survive
+      expect(remaining[0].reason).toBe('snap 3');
+      expect(remaining[1].reason).toBe('snap 2');
+    }, 10000);
+
+    it('deletes snapshots older than maxAgeDays', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+
+      // Fresh snapshot — should survive a 7-day cutoff.
+      const fresh = await createSnapshot([join(TEST_HOME, '.zshrc')], 'fresh');
+
+      // Snapshot IDs are second-granular, so sleep > 1s to get a distinct ID.
+      await new Promise((r) => setTimeout(r, 1100));
+      const ancient = await createSnapshot([join(TEST_HOME, '.zshrc')], 'ancient');
+      const ancientMeta = join(ancient.path, 'metadata.json');
+      const parsed = JSON.parse(vol.readFileSync(ancientMeta, 'utf-8') as string);
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+      parsed.timestamp = tenDaysAgo;
+      vol.writeFileSync(ancientMeta, JSON.stringify(parsed));
+
+      const deleted = await pruneSnapshotsByRetention({ maxAgeDays: 7 });
+      expect(deleted).toBe(1);
+
+      const remaining = await listSnapshots();
+      expect(remaining.length).toBe(1);
+      expect(remaining[0].id).toBe(fresh.id);
+    }, 5000);
+
+    it('treats maxCount=0 and maxAgeDays=0 as disabled', async () => {
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      await createSnapshot([join(TEST_HOME, '.zshrc')], 'keep me');
+
+      const deleted = await pruneSnapshotsByRetention({
+        maxCount: 0,
+        maxAgeDays: 0,
+      });
+
+      expect(deleted).toBe(0);
+      const remaining = await listSnapshots();
+      expect(remaining.length).toBe(1);
     });
   });
 });

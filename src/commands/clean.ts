@@ -11,7 +11,7 @@ import { getTuckDir, collapsePath } from '../lib/paths.js';
 import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { scanOrphans, deleteOrphans, type OrphanScanResult } from '../lib/clean.js';
 import { formatFileSize } from '../lib/files.js';
-import { createSnapshot } from '../lib/timemachine.js';
+import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { stageAll, commit, push, hasRemote } from '../lib/git.js';
 import {
   NotInitializedError,
@@ -198,9 +198,11 @@ export const runClean = async (options: CleanOptions): Promise<void> => {
     await withSpinner('Creating snapshot before cleanup...', async () => {
       await createSnapshot(
         orphanPaths,
-        `Pre-clean snapshot: removing ${result.orphanFiles.length} orphaned file${result.orphanFiles.length === 1 ? '' : 's'}`
+        `Pre-clean snapshot: removing ${result.orphanFiles.length} orphaned file${result.orphanFiles.length === 1 ? '' : 's'}`,
+        { kind: 'clean' }
       );
     });
+    await pruneSnapshotsFromConfig(tuckDir);
   }
 
   await withSpinner(

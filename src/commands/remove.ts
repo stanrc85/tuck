@@ -17,6 +17,7 @@ import {
   assertMigrated,
 } from '../lib/manifest.js';
 import { deleteFileOrDir } from '../lib/files.js';
+import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { stageAll, commit, push, hasRemote } from '../lib/git.js';
 import { NotInitializedError, FileNotTrackedError, GitError } from '../errors.js';
 import type { RemoveOptions } from '../types.js';
@@ -72,6 +73,28 @@ const removeFiles = async (
   options: RemoveOptions
 ): Promise<void> => {
   const shouldDelete = options.delete || options.push;
+
+  // Pre-remove Time Machine snapshot of the repo-side copies that are about
+  // to be deleted. Only relevant when the user asked us to also delete the
+  // repo file (--delete or --push); plain untrack leaves .tuck/files/ alone.
+  if (shouldDelete) {
+    const repoPathsToSnapshot: string[] = [];
+    for (const file of filesToRemove) {
+      if (await pathExists(file.destination)) {
+        repoPathsToSnapshot.push(file.destination);
+      }
+    }
+    if (repoPathsToSnapshot.length > 0) {
+      await withSpinner('Creating snapshot before removal...', async () => {
+        await createSnapshot(
+          repoPathsToSnapshot,
+          `Pre-remove snapshot: ${repoPathsToSnapshot.length} file${repoPathsToSnapshot.length === 1 ? '' : 's'}`,
+          { kind: 'remove' }
+        );
+      });
+      await pruneSnapshotsFromConfig(tuckDir);
+    }
+  }
 
   for (const file of filesToRemove) {
     // Remove from manifest

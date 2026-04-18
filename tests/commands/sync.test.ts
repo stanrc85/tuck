@@ -116,6 +116,13 @@ vi.mock('../../src/lib/hooks.js', () => ({
   runPostSyncHook: runPostSyncHookMock,
 }));
 
+const createSnapshotMock = vi.fn();
+const pruneSnapshotsMock = vi.fn();
+vi.mock('../../src/lib/timemachine.js', () => ({
+  createSnapshot: createSnapshotMock,
+  pruneSnapshotsFromConfig: pruneSnapshotsMock,
+}));
+
 vi.mock('../../src/lib/detect.js', () => ({
   detectDotfiles: vi.fn().mockResolvedValue([]),
   DETECTION_CATEGORIES: {},
@@ -209,6 +216,59 @@ describe('sync command behavior', () => {
     );
     expect(stageAllMock).not.toHaveBeenCalled();
     expect(commitMock).not.toHaveBeenCalled();
+  });
+
+  it('creates a pre-sync snapshot (kind="sync") of repo copies before overwriting', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        checksum: 'old',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('new');
+    const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+    await runSyncCommand('sync: update', {
+      noCommit: true,
+      noHooks: true,
+      scan: false,
+      pull: false,
+    });
+
+    expect(createSnapshotMock).toHaveBeenCalledTimes(1);
+    const [paths, reason, opts] = createSnapshotMock.mock.calls[0];
+    expect(paths[0]).toContain('files/shell/zshrc');
+    expect(reason).toMatch(/Pre-sync snapshot/);
+    expect(opts).toEqual({ kind: 'sync' });
+    expect(pruneSnapshotsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips snapshot creation when no modified files exist in the repo', async () => {
+    // Modified tracked file but repo copy does not yet exist on disk → nothing to snapshot.
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        checksum: 'old',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('new');
+    // pathExists controls both the change-detection path check and the repo-side
+    // snapshot check; return false when it's the repo file under /test-home/.tuck.
+    pathExistsMock.mockImplementation(async (p: string) => {
+      return !String(p).startsWith('/test-home/.tuck/files/');
+    });
+
+    const { runSyncCommand } = await import('../../src/commands/sync.js');
+    await runSyncCommand('sync: new file', {
+      noCommit: true,
+      noHooks: true,
+      scan: false,
+      pull: false,
+    });
+
+    expect(createSnapshotMock).not.toHaveBeenCalled();
   });
 
   it('fails fast when manifest destination is unsafe', async () => {

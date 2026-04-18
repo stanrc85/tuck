@@ -73,6 +73,7 @@ vi.mock('../../src/lib/github.js', () => ({
 
 vi.mock('../../src/lib/timemachine.js', () => ({
   createPreApplySnapshot: createPreApplySnapshotMock,
+  pruneSnapshotsFromConfig: vi.fn(),
 }));
 
 vi.mock('../../src/lib/merge.js', () => ({
