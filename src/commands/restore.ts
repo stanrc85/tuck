@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { join } from 'path';
 import { colors as c } from '../ui/theme.js';
 import { chmod, stat } from 'fs/promises';
-import { prompts, logger, withSpinner } from '../ui/index.js';
+import { prompts, logger, withSpinner, isInteractive } from '../ui/index.js';
 import {
   getTuckDir,
   expandPath,
@@ -23,7 +23,7 @@ import { loadConfig } from '../lib/config.js';
 import { copyFileOrDir, createSymlink } from '../lib/files.js';
 import { createBackup } from '../lib/backup.js';
 import { runPreRestoreHook, runPostRestoreHook, type HookOptions } from '../lib/hooks.js';
-import { NotInitializedError, FileNotFoundError } from '../errors.js';
+import { NotInitializedError, FileNotFoundError, NonInteractivePromptError } from '../errors.js';
 import { CATEGORIES } from '../constants.js';
 import type { RestoreOptions } from '../types.js';
 import { restoreFiles as restoreSecrets, getSecretCount } from '../lib/secrets/index.js';
@@ -242,6 +242,17 @@ const restoreFilesInternal = async (
 };
 
 const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = {}): Promise<void> => {
+  // Refuse to prompt when stdout isn't a TTY — `@clack/prompts.multiselect` would
+  // still open a readline on /dev/pts/0 and hang forever because no UI is visible
+  // to the user. Force-fail with guidance to pass --all or explicit paths.
+  if (!isInteractive()) {
+    throw new NonInteractivePromptError('tuck restore', [
+      'Pass --all to restore every tracked file non-interactively',
+      'Or pass one or more explicit paths (e.g. `tuck restore ~/.zshrc`)',
+      'Combine with -g <group> to scope the restore to a host-group',
+    ]);
+  }
+
   prompts.intro('tuck restore');
 
   // Get all tracked files

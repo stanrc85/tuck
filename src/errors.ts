@@ -263,6 +263,19 @@ export class OperationCancelledError extends TuckError {
   }
 }
 
+export class NonInteractivePromptError extends TuckError {
+  constructor(command: string, flagHints: string[]) {
+    super(
+      `Cannot run interactive ${command} prompt: stdout is not a TTY`,
+      'NON_INTERACTIVE_PROMPT',
+      [
+        ...flagHints,
+        'Or set TUCK_NON_INTERACTIVE=0 and attach a TTY (e.g. `script -qc "..." /dev/null`)',
+      ]
+    );
+  }
+}
+
 export class PrivateKeyError extends TuckError {
   constructor(path: string) {
     super(`Cannot track private key: ${path}`, 'PRIVATE_KEY_ERROR', [

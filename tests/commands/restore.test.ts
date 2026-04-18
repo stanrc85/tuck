@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { join } from 'path';
-import { NotInitializedError } from '../../src/errors.js';
+import { NotInitializedError, NonInteractivePromptError } from '../../src/errors.js';
+
+const isInteractiveMock = vi.fn(() => true);
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
@@ -44,6 +46,7 @@ vi.mock('../../src/ui/index.js', () => ({
     file: vi.fn(),
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
+  isInteractive: isInteractiveMock,
 }));
 
 vi.mock('../../src/ui/theme.js', () => ({
@@ -100,6 +103,7 @@ vi.mock('../../src/lib/secrets/index.js', () => ({
 describe('restore command behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isInteractiveMock.mockReturnValue(true);
 
     loadManifestMock.mockResolvedValue({ files: {} });
     getAllTrackedFilesMock.mockResolvedValue({});
@@ -149,6 +153,41 @@ describe('restore command behavior', () => {
       '/test-home/.tuck',
       'restore source'
     );
+  });
+
+  it('throws NonInteractivePromptError when interactive restore is requested without a TTY', async () => {
+    isInteractiveMock.mockReturnValue(false);
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        category: 'shell',
+      },
+    });
+
+    const { runRestore } = await import('../../src/commands/restore.js');
+
+    // No --all → falls into interactive path → must fail fast, not hang.
+    await expect(runRestore({})).rejects.toBeInstanceOf(NonInteractivePromptError);
+    expect(copyFileOrDirMock).not.toHaveBeenCalled();
+    expect(createSymlinkMock).not.toHaveBeenCalled();
+  });
+
+  it('still runs --all mode when stdout is not a TTY (non-interactive is fine for --all)', async () => {
+    isInteractiveMock.mockReturnValue(false);
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        category: 'shell',
+      },
+    });
+
+    const { runRestore } = await import('../../src/commands/restore.js');
+
+    await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+    expect(copyFileOrDirMock.mock.calls.length + createSymlinkMock.mock.calls.length).toBe(1);
   });
 
   it('fails fast when manifest destination is unsafe', async () => {
