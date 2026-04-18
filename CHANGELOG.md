@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [1.1.0](https://github.com/stanrc85/tuck/compare/v1.0.4...v1.1.0) (2026-04-18)
 
 
 ### Features
 
 * **clean:** add tuck clean to remove orphaned files from the repo ([6081c38](https://github.com/stanrc85/tuck/commit/6081c38cca83519941114823d27d5ec74c9e8d59))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [1.0.4](https://github.com/stanrc85/tuck/compare/v1.0.3...v1.0.4) (2026-04-18)
 
