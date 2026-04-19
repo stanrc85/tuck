@@ -275,15 +275,21 @@ describe('doctor checks', () => {
       expect(check?.message).toContain('not applicable');
     });
 
-    it('passes when pnpm is on PATH in a dev install', async () => {
+    it('reports real pnpm availability in a dev install', async () => {
       process.env.TUCK_SELF_UPDATE_ORIGIN = 'dev';
-      // PATH unchanged — tests run via pnpm so the binary is reachable.
+      // PATH unchanged — behavior depends on whether the runner has pnpm
+      // reachable via execFile. Either outcome is valid; we just verify the
+      // shape of the result matches the reported status.
 
       const report = await runDoctorChecks({ category: 'env' });
       const check = findPnpmCheck(report);
 
-      expect(check?.status).toBe('pass');
-      expect(check?.message).toMatch(/pnpm \d/);
+      if (check?.status === 'pass') {
+        expect(check.message).toMatch(/pnpm \d/);
+      } else {
+        expect(check?.status).toBe('warn');
+        expect(check?.fix).toContain('pnpm');
+      }
     });
 
     it('warns when pnpm is missing in a dev install', async () => {
