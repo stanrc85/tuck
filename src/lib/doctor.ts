@@ -94,6 +94,71 @@ const checkNodeVersion: DoctorCheck = {
   },
 };
 
+const checkTtyCapability: DoctorCheck = {
+  id: 'env.tty-capability',
+  category: 'env',
+  run: async () => {
+    const stdoutTty = Boolean(process.stdout.isTTY);
+    const stdinTty = Boolean(process.stdin.isTTY);
+    const nonInteractiveEnv = process.env.TUCK_NON_INTERACTIVE;
+    const nonInteractive = nonInteractiveEnv === '1' || nonInteractiveEnv === 'true';
+    const term = process.env.TERM ?? '';
+    const noColor = process.env.NO_COLOR !== undefined;
+
+    const envDetails = [
+      `stdin.isTTY=${stdinTty}`,
+      `stdout.isTTY=${stdoutTty}`,
+      `TUCK_NON_INTERACTIVE=${nonInteractiveEnv ?? '<unset>'}`,
+      `TERM=${term || '<unset>'}`,
+      `NO_COLOR=${noColor ? '<set>' : '<unset>'}`,
+    ].join(' ');
+
+    if (nonInteractive) {
+      return {
+        id: 'env.tty-capability',
+        category: 'env',
+        status: 'pass',
+        message: 'Non-interactive mode forced via TUCK_NON_INTERACTIVE',
+        details: envDetails,
+      };
+    }
+
+    if (stdoutTty && stdinTty) {
+      return {
+        id: 'env.tty-capability',
+        category: 'env',
+        status: 'pass',
+        message: 'Interactive TTY detected on stdin and stdout',
+        details: envDetails,
+      };
+    }
+
+    if (!stdoutTty && !stdinTty) {
+      return {
+        id: 'env.tty-capability',
+        category: 'env',
+        status: 'pass',
+        message: 'Non-interactive shell — tuck will use its plain-log fallback',
+        details: envDetails,
+      };
+    }
+
+    // Mixed state: the dangerous middle ground. @clack/prompts can open a
+    // readline on whichever side is a TTY and wait forever for keypresses the
+    // user can't see (e.g. stdout redirected to a log file).
+    const tty = stdoutTty ? 'stdout' : 'stdin';
+    const nonTty = stdoutTty ? 'stdin' : 'stdout';
+    return {
+      id: 'env.tty-capability',
+      category: 'env',
+      status: 'warn',
+      message: `Mixed TTY state — ${tty} is a TTY but ${nonTty} is not`,
+      details: envDetails,
+      fix: 'Interactive prompts may hang. Set TUCK_NON_INTERACTIVE=1 to force the plain-log fallback, or run inside a real terminal (e.g. `script -qc "..." /dev/null`).',
+    };
+  },
+};
+
 const checkHomeDirectory: DoctorCheck = {
   id: 'env.home-directory',
   category: 'env',
@@ -645,6 +710,7 @@ const checkHooksSafety: DoctorCheck = {
 
 const doctorChecks: DoctorCheck[] = [
   checkNodeVersion,
+  checkTtyCapability,
   checkHomeDirectory,
   checkTuckDirectory,
   checkGitDirectory,

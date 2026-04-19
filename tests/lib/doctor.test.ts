@@ -140,6 +140,114 @@ describe('doctor checks', () => {
     expect(tuckDirCheck?.message).toContain('not a directory');
   });
 
+  describe('tty-capability check', () => {
+    const originalStdoutTty = process.stdout.isTTY;
+    const originalStdinTty = process.stdin.isTTY;
+    const originalNonInteractive = process.env.TUCK_NON_INTERACTIVE;
+
+    const setTty = (stdin: boolean, stdout: boolean): void => {
+      Object.defineProperty(process.stdin, 'isTTY', { value: stdin, configurable: true });
+      Object.defineProperty(process.stdout, 'isTTY', { value: stdout, configurable: true });
+    };
+
+    afterEach(() => {
+      Object.defineProperty(process.stdin, 'isTTY', {
+        value: originalStdinTty,
+        configurable: true,
+      });
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: originalStdoutTty,
+        configurable: true,
+      });
+      if (originalNonInteractive === undefined) {
+        delete process.env.TUCK_NON_INTERACTIVE;
+      } else {
+        process.env.TUCK_NON_INTERACTIVE = originalNonInteractive;
+      }
+    });
+
+    const findTtyCheck = (report: { checks: Array<{ id: string; status: string; message: string; fix?: string; details?: string }> }) =>
+      report.checks.find((c) => c.id === 'env.tty-capability');
+
+    it('passes when both stdin and stdout are TTYs', async () => {
+      delete process.env.TUCK_NON_INTERACTIVE;
+      setTty(true, true);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('Interactive TTY detected');
+    });
+
+    it('passes when neither stdin nor stdout is a TTY (pure non-interactive)', async () => {
+      delete process.env.TUCK_NON_INTERACTIVE;
+      setTty(false, false);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('Non-interactive shell');
+    });
+
+    it('warns when stdout is a TTY but stdin is not', async () => {
+      delete process.env.TUCK_NON_INTERACTIVE;
+      setTty(false, true);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('stdout is a TTY but stdin is not');
+      expect(check?.fix).toContain('TUCK_NON_INTERACTIVE=1');
+    });
+
+    it('warns when stdin is a TTY but stdout is not', async () => {
+      delete process.env.TUCK_NON_INTERACTIVE;
+      setTty(true, false);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('stdin is a TTY but stdout is not');
+    });
+
+    it('passes even in mixed TTY state when TUCK_NON_INTERACTIVE is set', async () => {
+      process.env.TUCK_NON_INTERACTIVE = '1';
+      setTty(false, true);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('TUCK_NON_INTERACTIVE');
+    });
+
+    it('honors TUCK_NON_INTERACTIVE=true (word form)', async () => {
+      process.env.TUCK_NON_INTERACTIVE = 'true';
+      setTty(false, true);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.status).toBe('pass');
+    });
+
+    it('surfaces env signals in the details string', async () => {
+      delete process.env.TUCK_NON_INTERACTIVE;
+      setTty(true, true);
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findTtyCheck(report);
+
+      expect(check?.details).toContain('stdin.isTTY=true');
+      expect(check?.details).toContain('stdout.isTTY=true');
+      expect(check?.details).toContain('TUCK_NON_INTERACTIVE=<unset>');
+    });
+  });
+
   describe('branch-tracking check', () => {
     const mockStatus = (overrides: Record<string, unknown>): void => {
       // Both checkGitStatusReadable and checkBranchTracking call getStatus —
