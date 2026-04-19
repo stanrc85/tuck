@@ -1,3 +1,40 @@
+# [2.0.0](https://github.com/stanrc85/tuck/compare/v1.5.0...v2.0.0) (2026-04-19)
+
+
+### Bug Fixes
+
+* **doctor:** harden pnpm check for cross-platform CI runners ([ebf8871](https://github.com/stanrc85/tuck/commit/ebf887161874998efd12ec26896f1f49732de026))
+* **doctor:** resolve pnpm.cmd on windows for availability check ([0f926fe](https://github.com/stanrc85/tuck/commit/0f926fe466d0f50018b6b64960d29c76198ec97c))
+
+
+* refactor(config)!: remove dead templates scaffolding ([bca3870](https://github.com/stanrc85/tuck/commit/bca3870c34cd2e601b8fdf12096095694f4dafdb))
+* feat(backups)!: move snapshots out of synced repo, drop legacy backup module ([3502a84](https://github.com/stanrc85/tuck/commit/3502a84ea7116ba9729f068a9140b4f3b88f25e7))
+
+
+### Features
+
+* **config:** allow hooks block in .tuckrc.local.json for per-host hooks ([1b8a514](https://github.com/stanrc85/tuck/commit/1b8a514a688e8e2703f2e47109d46bfaa2528270))
+* **doctor:** close plan gaps — pnpm, gh CLI, and hooks trust model ([b37a26b](https://github.com/stanrc85/tuck/commit/b37a26b61ffc129345129cb25ce88801f0a74eea))
+* **doctor:** warn when defaultGroups leaks via shared .tuckrc.json ([c4f9622](https://github.com/stanrc85/tuck/commit/c4f9622e23cae890c76ab4e99a470d391d992424))
+
+
+### BREAKING CHANGES
+
+* config.templates and manifest trackedFile.template
+removed from schemas. Existing configs/manifests load fine (unknown
+keys silently stripped) but the fields are no longer available to read
+or set via tuck config. Anyone who had hand-written values in templates
+will find them silently ignored — there was never a code path that
+applied them, so behavior is unchanged.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+* Snapshots relocated from ~/.tuck/backups/ to
+~/.tuck-backups/. Auto-migration handles the move transparently on first
+post-upgrade invocation; no user action required. `config.files.backupDir`
+is no longer read (silently stripped on config load).
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.5.0](https://github.com/stanrc85/tuck/compare/v1.4.0...v1.5.0) (2026-04-19)
