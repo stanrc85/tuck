@@ -133,6 +133,8 @@ export interface SyncOptions {
   noHooks?: boolean;
   trustHooks?: boolean;
   force?: boolean; // Skip secret scanning
+  /** Filter files by host-group. Repeatable. Falls back to config.defaultGroups when omitted. */
+  group?: string[];
 }
 
 export interface PushOptions {

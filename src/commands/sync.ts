@@ -18,7 +18,9 @@ import {
   removeFileFromManifest,
   getTrackedFileBySource,
   assertMigrated,
+  fileMatchesGroups,
 } from '../lib/manifest.js';
+import { loadConfig } from '../lib/config.js';
 import { stageAll, commit, getStatus, push, hasRemote, fetch, pull } from '../lib/git.js';
 import {
   copyFileOrDir,
@@ -60,7 +62,10 @@ const pathsResolveToSameLocation = async (sourcePath: string, destinationPath: s
   }
 };
 
-const detectChanges = async (tuckDir: string): Promise<FileChange[]> => {
+const detectChanges = async (
+  tuckDir: string,
+  filterGroups?: string[]
+): Promise<FileChange[]> => {
   const files = await getAllTrackedFiles(tuckDir);
   const ignoredPaths = await loadTuckignore(tuckDir);
   const changes: FileChange[] = [];
@@ -68,6 +73,15 @@ const detectChanges = async (tuckDir: string): Promise<FileChange[]> => {
   for (const [, file] of Object.entries(files)) {
     validateSafeSourcePath(file.source);
     validateSafeManifestDestination(file.destination);
+
+    // Host-group filter: skip files that don't belong to any requested group.
+    // When filterGroups is undefined/empty, fileMatchesGroups returns true and
+    // the file passes through — preserves pre-group-filter behavior.
+    // Gating here also means an out-of-group file whose source is missing on
+    // this host is NOT mis-flagged as 'deleted' — it's simply out of scope.
+    if (!fileMatchesGroups(file, filterGroups)) {
+      continue;
+    }
 
     // Skip if in .tuckignore
     if (ignoredPaths.has(file.source)) {
@@ -109,6 +123,28 @@ const detectChanges = async (tuckDir: string): Promise<FileChange[]> => {
   }
 
   return changes;
+};
+
+/**
+ * Resolve the group filter for a sync invocation.
+ *
+ * Precedence (mirrors fileTracking.ts for consistency):
+ *   1. options.group (explicit CLI `-g` flag) wins when non-empty.
+ *   2. config.defaultGroups (per-host config) when non-empty.
+ *   3. undefined — no filter, legacy "process every tracked file" behavior.
+ */
+const resolveGroupFilter = async (
+  tuckDir: string,
+  options: SyncOptions
+): Promise<string[] | undefined> => {
+  if (options.group && options.group.length > 0) {
+    return options.group;
+  }
+  const config = await loadConfig(tuckDir);
+  if (config.defaultGroups && config.defaultGroups.length > 0) {
+    return config.defaultGroups;
+  }
+  return undefined;
 };
 
 /**
@@ -459,6 +495,11 @@ const scanAndHandleSecrets = async (
 const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): Promise<void> => {
   prompts.intro('tuck sync');
 
+  const groupFilter = await resolveGroupFilter(tuckDir, options);
+  if (groupFilter) {
+    prompts.log.info(`Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`);
+  }
+
   // ========== STEP 1: Pull from remote if behind ==========
   if (options.pull !== false && (await hasRemote(tuckDir))) {
     const pullSpinner = prompts.spinner();
@@ -480,7 +521,7 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
   // ========== STEP 2: Detect changes to tracked files ==========
   const changeSpinner = prompts.spinner();
   changeSpinner.start('Detecting changes to tracked files...');
-  const changes = await detectChanges(tuckDir);
+  const changes = await detectChanges(tuckDir, groupFilter);
   changeSpinner.stop(`Found ${changes.length} changed file${changes.length !== 1 ? 's' : ''}`);
 
   // ========== STEP 2.5: Scan modified files for secrets ==========
@@ -825,8 +866,13 @@ export const runSyncCommand = async (
     return;
   }
 
+  const groupFilter = await resolveGroupFilter(tuckDir, options);
+  if (groupFilter) {
+    logger.info(`Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`);
+  }
+
   // Detect changes
-  const changes = await detectChanges(tuckDir);
+  const changes = await detectChanges(tuckDir, groupFilter);
 
   if (changes.length === 0) {
     logger.info('No changes detected');
@@ -893,6 +939,14 @@ export const runSyncCommand = async (
   }
 };
 
+const collectGroup = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ...value
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter(Boolean),
+];
+
 export const syncCommand = new Command('sync')
   .description(
     'Sync all dotfile changes (pull, detect changes, scan for new files, track, commit, push)'
@@ -908,6 +962,7 @@ export const syncCommand = new Command('sync')
   .option('--no-scan', "Don't scan for new dotfiles")
   .option('--no-hooks', 'Skip execution of pre/post sync hooks')
   .option('--trust-hooks', 'Trust and run hooks without confirmation (use with caution)')
+  .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
   .option('-f, --force', 'Skip secret scanning (not recommended)')
   .action(async (messageArg: string | undefined, options: SyncOptions) => {
     await runSyncCommand(messageArg, options);

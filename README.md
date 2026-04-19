@@ -90,7 +90,7 @@ tuck restore --all
 | Command       | Description                                                             |
 | ------------- | ----------------------------------------------------------------------- |
 | `tuck init`   | Set up tuck - scans for dotfiles, select what to track, syncs to GitHub |
-| `tuck sync`   | Detect changes + new files, commit, and push (pulls first if behind)    |
+| `tuck sync`   | Detect changes + new files, commit, and push (pulls first if behind; `-g` to scope to a host-group) |
 | `tuck status` | See what's tracked, what's changed, and sync status                     |
 
 ### Managing Files
@@ -211,6 +211,8 @@ tuck group show work
 ### Defaults
 
 If you omit `-g` on `tuck add`, the file is tagged with `config.defaultGroups` (set via `tuck migrate` or edit `~/.tuck/.tuckrc.json`), falling back to your machine's hostname. Set a sensible default once and most `tuck add` calls won't need the flag.
+
+`tuck sync` honors `config.defaultGroups` the same way: on a host where `defaultGroups = ["kali"]`, a bare `tuck sync` only inspects kali-tagged files — files tagged for other hosts are left untouched, not re-synced, and not mis-flagged as deleted just because their source doesn't exist on this machine. Pass `-g <name>` to override.
 
 ### Migrating from 1.x
 

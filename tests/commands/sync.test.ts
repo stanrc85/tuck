@@ -84,6 +84,22 @@ vi.mock('../../src/lib/manifest.js', () => ({
   removeFileFromManifest: removeFileFromManifestMock,
   getTrackedFileBySource: getTrackedFileBySourceMock,
   assertMigrated: vi.fn(),
+  // Real semantics inlined so group-filter tests exercise the actual behavior
+  // instead of a blanket-true stub.
+  fileMatchesGroups: (
+    file: { groups?: string[] },
+    groups: string[] | undefined
+  ): boolean => {
+    if (!groups || groups.length === 0) return true;
+    if (!file.groups || file.groups.length === 0) return false;
+    const wanted = new Set(groups);
+    return file.groups.some((g) => wanted.has(g));
+  },
+}));
+
+const loadConfigMock = vi.fn();
+vi.mock('../../src/lib/config.js', () => ({
+  loadConfig: loadConfigMock,
 }));
 
 vi.mock('../../src/lib/git.js', () => ({
@@ -165,6 +181,7 @@ describe('sync command behavior', () => {
     getFileChecksumMock.mockResolvedValue('new-checksum');
     hasRemoteMock.mockResolvedValue(false);
     commitMock.mockResolvedValue('abc123def456');
+    loadConfigMock.mockResolvedValue({ defaultGroups: [] });
     validateSafeSourcePathMock.mockImplementation(() => {});
     validateSafeManifestDestinationMock.mockImplementation(() => {});
     validatePathWithinRootMock.mockImplementation(() => {});
@@ -290,5 +307,124 @@ describe('sync command behavior', () => {
       runSyncCommand('sync: unsafe manifest', { noCommit: true, noHooks: true, scan: false, pull: false })
     ).rejects.toThrow('Unsafe manifest destination detected');
     expect(copyFileOrDirMock).not.toHaveBeenCalled();
+  });
+
+  // ========== Host-group filtering ==========
+
+  describe('host-group filtering', () => {
+    const kaliFile = {
+      source: '~/.kali-rc',
+      destination: 'files/shell/kali-rc',
+      checksum: 'old',
+      groups: ['kali'],
+    };
+    const macFile = {
+      source: '~/.mac-rc',
+      destination: 'files/shell/mac-rc',
+      checksum: 'old',
+      groups: ['work-mac'],
+    };
+    const sharedFile = {
+      source: '~/.shared-rc',
+      destination: 'files/shell/shared-rc',
+      checksum: 'old',
+      groups: ['kali', 'work-mac'],
+    };
+
+    it('processes every tracked file when no -g flag and no config.defaultGroups (legacy behavior)', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, m: macFile });
+      getFileChecksumMock.mockResolvedValue('new');
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await runSyncCommand('sync: all', { noCommit: true, noHooks: true, scan: false, pull: false });
+
+      // Both files flagged modified + copied
+      expect(copyFileOrDirMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('scopes to config.defaultGroups when -g flag is omitted', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, m: macFile, s: sharedFile });
+      getFileChecksumMock.mockResolvedValue('new');
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kali'] });
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await runSyncCommand('sync: kali host', {
+        noCommit: true,
+        noHooks: true,
+        scan: false,
+        pull: false,
+      });
+
+      // kali + shared match; mac-only does not
+      expect(copyFileOrDirMock).toHaveBeenCalledTimes(2);
+      const copiedSources = copyFileOrDirMock.mock.calls.map((call) => call[0]);
+      expect(copiedSources).toContain('/test-home/.kali-rc');
+      expect(copiedSources).toContain('/test-home/.shared-rc');
+      expect(copiedSources).not.toContain('/test-home/.mac-rc');
+    });
+
+    it('CLI -g flag overrides config.defaultGroups', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, m: macFile });
+      getFileChecksumMock.mockResolvedValue('new');
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kali'] });
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await runSyncCommand('sync: mac override', {
+        noCommit: true,
+        noHooks: true,
+        scan: false,
+        pull: false,
+        group: ['work-mac'],
+      });
+
+      // Only mac-tagged file synced; kali file filtered out despite config
+      expect(copyFileOrDirMock).toHaveBeenCalledTimes(1);
+      expect(copyFileOrDirMock.mock.calls[0][0]).toBe('/test-home/.mac-rc');
+    });
+
+    it('does NOT flag out-of-group file as deleted when its source is missing on this host', async () => {
+      // Regression guard: before the fix, any tracked file whose source didn't
+      // exist on the host was flagged 'deleted' and removed from the manifest.
+      // With group filtering active, out-of-group files are skipped entirely.
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, m: macFile });
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kali'] });
+
+      // kali source exists + unchanged; mac source is missing (legitimate — different host)
+      pathExistsMock.mockImplementation(async (p: string) => {
+        return !String(p).includes('mac-rc');
+      });
+      getFileChecksumMock.mockResolvedValue(kaliFile.checksum);
+
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+      await runSyncCommand('sync: kali', {
+        noCommit: true,
+        noHooks: true,
+        scan: false,
+        pull: false,
+      });
+
+      // mac-rc must NOT be removed from manifest — it's simply out of scope
+      expect(removeFileFromManifestMock).not.toHaveBeenCalled();
+      expect(deleteFileOrDirMock).not.toHaveBeenCalled();
+    });
+
+    it('still flags in-group file as deleted when its source is missing (legitimate delete signal)', async () => {
+      // Counterpart to the guard above: if an IN-group file is missing, that's
+      // a real user intent signal — the file should be untracked.
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile });
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kali'] });
+      pathExistsMock.mockResolvedValue(false);
+
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+      await runSyncCommand('sync: kali delete', {
+        noCommit: true,
+        noHooks: true,
+        scan: false,
+        pull: false,
+      });
+
+      expect(removeFileFromManifestMock).toHaveBeenCalledTimes(1);
+      expect(deleteFileOrDirMock).toHaveBeenCalledTimes(1);
+    });
   });
 });
