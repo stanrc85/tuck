@@ -209,7 +209,6 @@ export const generateLargeManifest = (fileCount: number): object => {
       category: ['shell', 'git', 'editors', 'terminal', 'misc'][i % 5],
       strategy: 'copy', // Required by schema
       encrypted: false,
-      template: false,
       added: now, // Schema uses 'added' not 'addedAt'
       modified: now, // Required by schema
     };

@@ -246,9 +246,8 @@ export const trackFilesWithProgress = async (
         destination: relativeDestination,
         category,
         strategy,
-        // TODO: Encryption and templating are planned for a future version
+        // TODO: Encryption is planned for a future version
         encrypted: false,
-        template: false,
         permissions: info.permissions,
         added: now,
         modified: now,

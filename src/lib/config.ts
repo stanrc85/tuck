@@ -208,10 +208,6 @@ export const saveConfig = async (
       ...existing.hooks,
       ...config.hooks,
     },
-    templates: {
-      ...existing.templates,
-      ...config.templates,
-    },
     encryption: {
       ...existing.encryption,
       ...config.encryption,

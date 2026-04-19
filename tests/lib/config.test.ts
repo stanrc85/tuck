@@ -82,10 +82,6 @@ describe('config', () => {
       expect(defaultConfig.security.blockOnSecrets).toBe(true);
     });
 
-    it('should have templates disabled by default', () => {
-      expect(defaultConfig.templates.enabled).toBe(false);
-    });
-
     it('should have encryption disabled by default', () => {
       expect(defaultConfig.encryption.enabled).toBe(false);
     });
@@ -118,7 +114,6 @@ describe('config', () => {
       expect(defaultConfig).toHaveProperty('repository');
       expect(defaultConfig).toHaveProperty('files');
       expect(defaultConfig).toHaveProperty('hooks');
-      expect(defaultConfig).toHaveProperty('templates');
       expect(defaultConfig).toHaveProperty('encryption');
       expect(defaultConfig).toHaveProperty('ui');
       expect(defaultConfig).toHaveProperty('security');

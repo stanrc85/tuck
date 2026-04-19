@@ -140,7 +140,6 @@ describe('config command', () => {
       expect(loadedConfig.files).toBeDefined();
       expect(loadedConfig.ui).toBeDefined();
       expect(loadedConfig.hooks).toBeDefined();
-      expect(loadedConfig.templates).toBeDefined();
       expect(loadedConfig.encryption).toBeDefined();
     });
   });

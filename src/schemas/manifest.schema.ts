@@ -8,7 +8,6 @@ export const trackedFileSchema = z.object({
   category: z.string(),
   strategy: fileStrategySchema,
   encrypted: z.boolean().default(false),
-  template: z.boolean().default(false),
   permissions: z.string().optional(),
   added: z.string(),
   modified: z.string(),

@@ -25,11 +25,6 @@ export const createMockConfig = (overrides?: Partial<TuckConfigOutput>): TuckCon
     categories: overrides?.categories ?? {},
     ignore: overrides?.ignore ?? [],
     hooks: overrides?.hooks ?? {},
-    templates: {
-      enabled: false,
-      variables: {},
-      ...overrides?.templates,
-    },
     encryption: {
       enabled: false,
       files: [],
@@ -90,7 +85,6 @@ export const createMockTrackedFile = (
     category: 'shell',
     strategy: 'copy',
     encrypted: false,
-    template: false,
     added: now,
     modified: now,
     checksum: 'abc123def456',

@@ -44,10 +44,6 @@ export interface TuckConfig {
     preRestore?: string;
     postRestore?: string;
   };
-  templates: {
-    enabled: boolean;
-    variables: Record<string, string>;
-  };
   encryption: {
     enabled: boolean;
     gpgKey?: string;
@@ -75,7 +71,6 @@ export interface TrackedFile {
   category: string;
   strategy: FileStrategy;
   encrypted: boolean;
-  template: boolean;
   permissions?: string;
   added: string;
   modified: string;

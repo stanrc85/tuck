@@ -71,7 +71,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -89,7 +88,6 @@ describe('hooks', () => {
         hooks: {
           preSync: 'echo "test"',
         },
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -114,7 +112,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -131,7 +128,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -148,7 +144,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -165,7 +160,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -188,7 +182,6 @@ describe('hooks', () => {
         hooks: {
           preSync: 'echo "pre-sync"',
         },
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -203,7 +196,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -226,7 +218,6 @@ describe('hooks', () => {
         hooks: {
           postSync: 'brew bundle',
         },
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -241,7 +232,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -264,7 +254,6 @@ describe('hooks', () => {
         hooks: {
           postRestore: 'source ~/.zshrc',
         },
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -279,7 +268,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -305,7 +293,6 @@ describe('hooks', () => {
           preRestore: undefined,
           postRestore: 'source ~/.bashrc',
         },
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });
@@ -323,7 +310,6 @@ describe('hooks', () => {
         repository: { path: TEST_TUCK_DIR },
         files: { symlink: false },
         hooks: {},
-        templates: {},
         encryption: {},
         ui: { color: true, verbose: false },
       });

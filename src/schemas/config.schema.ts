@@ -71,14 +71,6 @@ export const tuckConfigSchema = z.object({
     .partial()
     .default({}),
 
-  templates: z
-    .object({
-      enabled: z.boolean().default(false),
-      variables: z.record(z.string()).default({}),
-    })
-    .partial()
-    .default({}),
-
   encryption: z
     .object({
       /** Master switch for encryption features */
@@ -165,10 +157,6 @@ export const defaultConfig: TuckConfigOutput = {
   ignore: [],
   defaultGroups: [],
   hooks: {},
-  templates: {
-    enabled: false,
-    variables: {},
-  },
   encryption: {
     enabled: false,
     backupsEnabled: false,

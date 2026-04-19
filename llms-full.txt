@@ -531,10 +531,6 @@ Configuration is stored in `~/.tuck/.tuckrc.json`.
     "preRestore": null,
     "postRestore": null
   },
-  "templates": {
-    "enabled": false,
-    "variables": {}
-  },
   "encryption": {
     "enabled": false,
     "gpgKey": null,
