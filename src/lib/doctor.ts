@@ -186,8 +186,9 @@ const checkPnpmAvailability: DoctorCheck = {
       };
     }
 
+    const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
     try {
-      const { stdout } = await execFileAsync('pnpm', ['--version'], { timeout: 2000 });
+      const { stdout } = await execFileAsync(pnpmBin, ['--version'], { timeout: 2000 });
       return {
         id: 'env.pnpm-availability',
         category: 'env',
