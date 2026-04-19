@@ -20,7 +20,7 @@ import {
   assertMigrated,
   fileMatchesGroups,
 } from '../lib/manifest.js';
-import { loadConfig } from '../lib/config.js';
+import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { stageAll, commit, getStatus, push, hasRemote, fetch, pull } from '../lib/git.js';
 import {
   copyFileOrDir,
@@ -123,28 +123,6 @@ const detectChanges = async (
   }
 
   return changes;
-};
-
-/**
- * Resolve the group filter for a sync invocation.
- *
- * Precedence (mirrors fileTracking.ts for consistency):
- *   1. options.group (explicit CLI `-g` flag) wins when non-empty.
- *   2. config.defaultGroups (per-host config) when non-empty.
- *   3. undefined — no filter, legacy "process every tracked file" behavior.
- */
-const resolveGroupFilter = async (
-  tuckDir: string,
-  options: SyncOptions
-): Promise<string[] | undefined> => {
-  if (options.group && options.group.length > 0) {
-    return options.group;
-  }
-  const config = await loadConfig(tuckDir);
-  if (config.defaultGroups && config.defaultGroups.length > 0) {
-    return config.defaultGroups;
-  }
-  return undefined;
 };
 
 /**

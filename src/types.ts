@@ -180,6 +180,8 @@ export interface DiffOptions {
   category?: string;
   nameOnly?: boolean;
   exitCode?: boolean;
+  /** Filter by host-group. Repeatable. Falls back to config.defaultGroups when omitted. */
+  group?: string[];
 }
 
 export interface DoctorOptions {

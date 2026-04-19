@@ -8,6 +8,7 @@ import {
   assertMigrated,
   fileMatchesGroups,
 } from '../lib/manifest.js';
+import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { NotInitializedError } from '../errors.js';
 import { CATEGORIES } from '../constants.js';
 import type { ListOptions } from '../types.js';
@@ -145,7 +146,8 @@ const runList = async (options: ListOptions): Promise<void> => {
   }
   assertMigrated(manifest);
 
-  let groups = await groupByCategory(tuckDir, options.group);
+  const filterGroups = await resolveGroupFilter(tuckDir, options);
+  let groups = await groupByCategory(tuckDir, filterGroups);
 
   // Filter by category if specified
   if (options.category) {
@@ -156,8 +158,8 @@ const runList = async (options: ListOptions): Promise<void> => {
     }
   }
 
-  if (groups.length === 0 && options.group && options.group.length > 0) {
-    logger.warning(`No files found in group(s): ${options.group.join(', ')}`);
+  if (groups.length === 0 && filterGroups && filterGroups.length > 0) {
+    logger.warning(`No files found in group(s): ${filterGroups.join(', ')}`);
     return;
   }
 

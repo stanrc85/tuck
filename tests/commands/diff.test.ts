@@ -202,4 +202,56 @@ describe('diff command', () => {
       await expect(runDiff([], {})).rejects.toThrow('Unsafe manifest destination');
     });
   });
+
+  describe('host-group filtering', () => {
+    // These tests verify the -g flag is accepted + `config.defaultGroups` is
+    // honored as a fallback. We keep manifest entries safe and just confirm
+    // the command runs without throwing under each scope combination — the
+    // real filter plumbing is unit-tested in tests/lib/groupFilter.test.ts.
+    const writeManifestWithGroups = (): void => {
+      const manifest = createMockManifest();
+      manifest.files['kali-rc'] = createMockTrackedFile({
+        source: '~/.kali-rc',
+        destination: 'files/shell/kali-rc',
+        groups: ['kali'],
+      });
+      manifest.files['mac-rc'] = createMockTrackedFile({
+        source: '~/.mac-rc',
+        destination: 'files/shell/mac-rc',
+        groups: ['work-mac'],
+      });
+      vol.writeFileSync(join(TEST_TUCK_DIR, '.tuckmanifest.json'), JSON.stringify(manifest));
+    };
+
+    it('accepts an explicit -g flag without throwing', async () => {
+      writeManifestWithGroups();
+      const { runDiff } = await import('../../src/commands/diff.js');
+      await expect(runDiff([], { group: ['kali'] })).resolves.toBeUndefined();
+    });
+
+    it('honors config.defaultGroups from .tuckrc.local.json when -g is omitted', async () => {
+      writeManifestWithGroups();
+      vol.writeFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        JSON.stringify({ defaultGroups: ['kali'] })
+      );
+      const { runDiff } = await import('../../src/commands/diff.js');
+      await expect(runDiff([], {})).resolves.toBeUndefined();
+    });
+
+    it('does not filter explicit path arguments by group (user-intent override)', async () => {
+      // Users invoking `tuck diff ~/.mac-rc` from a kali host deserve the
+      // answer even though the file is tagged for another group. The filter
+      // only gates the "all tracked files" sweep, not named paths.
+      writeManifestWithGroups();
+      vol.writeFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        JSON.stringify({ defaultGroups: ['kali'] })
+      );
+      const { runDiff } = await import('../../src/commands/diff.js');
+      // Explicit path for a mac-tagged file — should not throw "not tracked"
+      // and should not be filtered out by the kali scope.
+      await expect(runDiff(['~/.mac-rc'], {})).resolves.toBeUndefined();
+    });
+  });
 });

@@ -24,6 +24,13 @@ vi.mock('../../src/lib/manifest.js', () => ({
   ): boolean => !groups || groups.length === 0,
 }));
 
+// Stub the group-filter helper so list tests don't have to wire up full
+// config/paths mocks just to reach their assertions. Tests that exercise the
+// fallback behavior go in their own describe block below with explicit mocks.
+vi.mock('../../src/lib/groupFilter.js', () => ({
+  resolveGroupFilter: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: promptsIntroMock,

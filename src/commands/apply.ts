@@ -23,6 +23,7 @@ import { tuckManifestSchema } from '../schemas/manifest.schema.js';
 import { findPlaceholders, restoreContent, restoreFiles as restoreSecrets, getAllSecrets, getSecretCount } from '../lib/secrets/index.js';
 import { createResolver } from '../lib/secretBackends/index.js';
 import { loadConfig } from '../lib/config.js';
+import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { fileMatchesGroups } from '../lib/manifest.js';
 import { IS_WINDOWS } from '../lib/platform.js';
 import { RepositoryNotFoundError } from '../errors.js';
@@ -546,8 +547,12 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
       return;
     }
 
-    // Prepare files to apply
-    const files = await prepareFilesToApply(repoDir, manifest, options.group);
+    // Prepare files to apply. Group filter resolves against the local host's
+    // config (`.tuckrc.local.json` → `defaultGroups`), not the applied repo's
+    // manifest — so a kali host applying a shared dotfiles repo only pulls in
+    // kali-tagged files by default.
+    const filterGroups = await resolveGroupFilter(getTuckDir(), options);
+    const files = await prepareFilesToApply(repoDir, manifest, filterGroups);
 
     if (files.length === 0) {
       prompts.log.warning('No files to apply');
@@ -723,8 +728,12 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
       throw new Error('No tuck manifest found in repository');
     }
 
-    // Prepare files to apply
-    const files = await prepareFilesToApply(repoDir, manifest, options.group);
+    // Prepare files to apply. Group filter resolves against the local host's
+    // config (`.tuckrc.local.json` → `defaultGroups`), not the applied repo's
+    // manifest — so a kali host applying a shared dotfiles repo only pulls in
+    // kali-tagged files by default.
+    const filterGroups = await resolveGroupFilter(getTuckDir(), options);
+    const files = await prepareFilesToApply(repoDir, manifest, filterGroups);
 
     if (files.length === 0) {
       logger.warning('No files to apply');

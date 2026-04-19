@@ -15,7 +15,9 @@ import {
   getAllTrackedFiles,
   getTrackedFileBySource,
   assertMigrated,
+  fileMatchesGroups,
 } from '../lib/manifest.js';
+import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { getDiff } from '../lib/git.js';
 import {
   getFileChecksum,
@@ -305,6 +307,7 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   // Get all tracked files
   const allFiles = await getAllTrackedFiles(tuckDir);
   const changedFiles: FileDiff[] = [];
+  const filterGroups = await resolveGroupFilter(tuckDir, options);
 
   // If no paths specified, check all files
   const filesToCheck =
@@ -322,6 +325,14 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
 
   // Check each file for changes
   for (const file of filesToCheck) {
+    // Skip if host-group filter doesn't match (CLI `-g` → config.defaultGroups
+    // → no filter). Explicit paths still pass through — users invoking
+    // `tuck diff ~/.zshrc` want the answer for that exact file even if it's
+    // tagged for a different host.
+    if (paths.length === 0 && !fileMatchesGroups(file, filterGroups)) {
+      continue;
+    }
+
     // Skip if category filter is set and doesn't match
     if (options.category && file.category !== options.category) {
       continue;
@@ -397,6 +408,14 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
 
 export { runDiff, formatUnifiedDiff };
 
+const collectGroup = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ...value
+    .split(/[,\s]+/)
+    .map((g) => g.trim())
+    .filter(Boolean),
+];
+
 export const diffCommand = new Command('diff')
   .description('Show differences between system and repository')
   .argument('[paths...]', 'Specific files to diff')
@@ -406,6 +425,7 @@ export const diffCommand = new Command('diff')
     '--category <category>',
     'Filter by file category (shell, git, editors, terminal, ssh, misc)'
   )
+  .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
   .option('--name-only', 'Show only changed file names')
   .option('--exit-code', 'Return exit code 1 if differences found')
   .action(async (paths: string[], options: DiffOptions) => {

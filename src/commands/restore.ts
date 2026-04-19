@@ -22,6 +22,7 @@ import {
 import { loadConfig } from '../lib/config.js';
 import { copyFileOrDir, createSymlink } from '../lib/files.js';
 import { createBackup } from '../lib/backup.js';
+import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { runPreRestoreHook, runPostRestoreHook, type HookOptions } from '../lib/hooks.js';
 import { NotInitializedError, FileNotFoundError, NonInteractivePromptError } from '../errors.js';
@@ -281,7 +282,8 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
   prompts.intro('tuck restore');
 
   // Get all tracked files
-  const files = await prepareFilesToRestore(tuckDir, undefined, options.group);
+  const filterGroups = await resolveGroupFilter(tuckDir, options);
+  const files = await prepareFilesToRestore(tuckDir, undefined, filterGroups);
 
   if (files.length === 0) {
     prompts.log.warning('No files to restore');
@@ -404,7 +406,8 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
   // Run interactive restore when called programmatically with --all
   if (options.all) {
     // Prepare files to restore
-    const files = await prepareFilesToRestore(tuckDir, undefined, options.group);
+    const filterGroups = await resolveGroupFilter(tuckDir, options);
+  const files = await prepareFilesToRestore(tuckDir, undefined, filterGroups);
 
     if (files.length === 0) {
       logger.warning('No files to restore');
@@ -441,10 +444,11 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   }
 
   // Prepare files to restore
+  const filterGroups = await resolveGroupFilter(tuckDir, options);
   const files = await prepareFilesToRestore(
     tuckDir,
     options.all ? undefined : paths,
-    options.group
+    filterGroups
   );
 
   if (files.length === 0) {
