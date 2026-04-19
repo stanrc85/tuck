@@ -137,6 +137,21 @@ export type RemoteConfigOutput = z.output<typeof remoteConfigSchema>;
 export const tuckLocalConfigSchema = z
   .object({
     defaultGroups: z.array(z.string()).optional(),
+    /**
+     * Per-host hook overrides. Each named hook in this block replaces the
+     * shared `.tuckrc.json` hook of the same name; unset hooks fall through
+     * to shared. See `loadConfig` for the per-type merge semantics.
+     */
+    hooks: z
+      .object({
+        preSync: z.string().optional(),
+        postSync: z.string().optional(),
+        preRestore: z.string().optional(),
+        postRestore: z.string().optional(),
+      })
+      .partial()
+      .strict()
+      .optional(),
   })
   .strict();
 

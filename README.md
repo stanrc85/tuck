@@ -214,6 +214,21 @@ If you omit `-g` on `tuck add`, the file is tagged with `config.defaultGroups` (
 
 **Host-specific config lives in `~/.tuck/.tuckrc.local.json`**, which is gitignored by default. The shared `.tuckrc.json` can be committed to your dotfiles repo and pulled on every host without leaking per-host values like `defaultGroups`. Load order: defaults → `.tuckrc.json` (shared) → `.tuckrc.local.json` (host). The local file wins per-field. `tuck migrate` writes `defaultGroups` to the local file automatically.
 
+**Allowed fields in `.tuckrc.local.json`** (strict schema rejects anything else):
+
+- `defaultGroups` — per-host groups auto-applied when `-g` is omitted.
+- `hooks` — per-host hook overrides (`preSync`, `postSync`, `preRestore`, `postRestore`). Each hook type is merged independently: a `postRestore` set in the local file replaces the shared `postRestore`, but leaves the other three hooks falling through to `.tuckrc.json`. Lets one host run a kali-only post-restore step without inlining `hostname`-gated shell in the shared command.
+
+```json
+// ~/.tuck/.tuckrc.local.json on the kali host
+{
+  "defaultGroups": ["kali"],
+  "hooks": {
+    "postRestore": "sed -i 's|snippet.toml|snippet-kali.toml|' ~/.config/pet/config.toml"
+  }
+}
+```
+
 If you're upgrading from a setup where `defaultGroups` is already committed inside the shared `.tuckrc.json`, migrate each host by hand:
 
 ```bash

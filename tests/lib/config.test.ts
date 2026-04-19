@@ -180,13 +180,80 @@ describe('config', () => {
       await expect(loadConfig(TEST_TUCK_DIR)).rejects.toThrow(/invalid JSON/i);
     });
 
-    it('rejects unknown fields in local config (strict schema)', async () => {
+    it('rejects unknown top-level fields in local config (strict schema)', async () => {
       vol.writeFileSync(
         localPath,
-        JSON.stringify({ defaultGroups: ['kali'], hooks: { preSync: 'bad' } })
+        JSON.stringify({ defaultGroups: ['kali'], ignore: ['node_modules'] })
       );
 
       await expect(loadConfig(TEST_TUCK_DIR)).rejects.toThrow(ConfigError);
+    });
+
+    it('rejects unknown fields inside local hooks block (strict sub-schema)', async () => {
+      vol.writeFileSync(
+        localPath,
+        JSON.stringify({ hooks: { preMerge: 'invented-hook-type' } })
+      );
+
+      await expect(loadConfig(TEST_TUCK_DIR)).rejects.toThrow(ConfigError);
+    });
+
+    it('local hook replaces the shared hook of the same type', async () => {
+      vol.writeFileSync(
+        sharedPath,
+        JSON.stringify({ hooks: { postRestore: 'shared-cmd' } })
+      );
+      vol.writeFileSync(
+        localPath,
+        JSON.stringify({ hooks: { postRestore: 'local-cmd' } })
+      );
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.hooks.postRestore).toBe('local-cmd');
+    });
+
+    it('shared hook falls through when local does not set that hook type', async () => {
+      vol.writeFileSync(
+        sharedPath,
+        JSON.stringify({
+          hooks: { preSync: 'shared-pre', postRestore: 'shared-post' },
+        })
+      );
+      vol.writeFileSync(
+        localPath,
+        JSON.stringify({ hooks: { postRestore: 'local-post' } })
+      );
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      // preSync not touched by local — still the shared value
+      expect(config.hooks.preSync).toBe('shared-pre');
+      // postRestore overridden per-type
+      expect(config.hooks.postRestore).toBe('local-post');
+    });
+
+    it('applies local-only hooks when shared config file is absent', async () => {
+      vol.writeFileSync(
+        localPath,
+        JSON.stringify({ hooks: { postSync: 'kali-notify' } })
+      );
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.hooks.postSync).toBe('kali-notify');
+      expect(config.hooks.preSync).toBeUndefined();
+    });
+
+    it('local hooks and defaultGroups can coexist in the same file', async () => {
+      vol.writeFileSync(
+        localPath,
+        JSON.stringify({
+          defaultGroups: ['kali'],
+          hooks: { preRestore: 'echo restoring' },
+        })
+      );
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.defaultGroups).toEqual(['kali']);
+      expect(config.hooks.preRestore).toBe('echo restoring');
     });
 
     it('saveLocalConfig writes to the local file and not the shared file', async () => {

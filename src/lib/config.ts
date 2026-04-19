@@ -64,11 +64,16 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
 
   if (!hasShared) {
     // No shared file: use defaults, then layer local overrides on top so a
-    // fresh host still gets its `defaultGroups` from `.tuckrc.local.json`.
+    // fresh host still gets its `defaultGroups` / local hooks from
+    // `.tuckrc.local.json`.
     cachedConfig = {
       ...defaultConfig,
       ...localConfig,
       repository: { ...defaultConfig.repository, path: dir },
+      hooks: {
+        ...defaultConfig.hooks,
+        ...localConfig.hooks,
+      },
     };
     cachedTuckDir = dir;
     return cachedConfig;
@@ -84,8 +89,10 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
     }
 
     // Precedence: defaults → shared (.tuckrc.json) → local (.tuckrc.local.json).
-    // Flat fields in local replace the shared value entirely; nested objects
-    // aren't supported in local today (schema is flat), so no deep-merge needed.
+    // Flat fields in local replace the shared value entirely; nested `hooks`
+    // is merged per-type (local preSync replaces shared preSync, but a hook
+    // unset in local falls through to shared — so you can override one hook
+    // per host without re-stating the others).
     cachedConfig = {
       ...defaultConfig,
       ...result.data,
@@ -98,6 +105,11 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
       files: {
         ...defaultConfig.files,
         ...result.data.files,
+      },
+      hooks: {
+        ...defaultConfig.hooks,
+        ...result.data.hooks,
+        ...localConfig.hooks,
       },
     };
     cachedTuckDir = dir;
