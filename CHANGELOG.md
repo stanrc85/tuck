@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [1.5.0](https://github.com/stanrc85/tuck/compare/v1.4.0...v1.5.0) (2026-04-19)
 
 
 ### Features
 
 * default restore/apply/list/diff to config.defaultGroups when -g is omitted ([c3bfb16](https://github.com/stanrc85/tuck/commit/c3bfb165b405708973267255f1ec6d3f01905164))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.4.0](https://github.com/stanrc85/tuck/compare/v1.3.0...v1.4.0) (2026-04-19)
 
