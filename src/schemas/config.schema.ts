@@ -133,6 +133,25 @@ export type TuckConfigOutput = z.output<typeof tuckConfigSchema>;
 export type ProviderMode = z.infer<typeof providerModeSchema>;
 export type RemoteConfigOutput = z.output<typeof remoteConfigSchema>;
 
+/**
+ * Schema for `.tuckrc.local.json`, the host-specific override file that
+ * layers on top of the shared `.tuckrc.json`. Only host-specific fields are
+ * permitted here; `.strict()` guards against silently applying shared-only
+ * fields from the wrong file.
+ *
+ * Expand deliberately when adding new per-host fields — resist widening this
+ * to match `tuckConfigSchema` wholesale, which would reintroduce the
+ * "committed config leaks across hosts" problem this file exists to fix.
+ */
+export const tuckLocalConfigSchema = z
+  .object({
+    defaultGroups: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type TuckLocalConfigInput = z.input<typeof tuckLocalConfigSchema>;
+export type TuckLocalConfigOutput = z.output<typeof tuckLocalConfigSchema>;
+
 export const defaultConfig: TuckConfigOutput = {
   repository: {
     defaultBranch: 'main',

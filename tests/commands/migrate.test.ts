@@ -85,6 +85,38 @@ describe('tuck migrate', () => {
     expect(config.defaultGroups).toEqual(['work']);
   });
 
+  it('writes defaultGroups to the host-local config, not the shared .tuckrc.json', async () => {
+    // Per-host overrides belong in .tuckrc.local.json (gitignored) so they
+    // don't leak across machines via the shared dotfiles repo.
+    writeManifest(
+      createMockManifest({
+        version: '1.0.0',
+        files: {
+          f1: createMockTrackedFile({ groups: [] }),
+        },
+      })
+    );
+
+    await run(['kali']);
+
+    const localPath = join(TEST_TUCK_DIR, '.tuckrc.local.json');
+    const sharedPath = join(TEST_TUCK_DIR, '.tuckrc.json');
+
+    const localExists = vol.existsSync(localPath);
+    const sharedExists = vol.existsSync(sharedPath);
+
+    expect(localExists).toBe(true);
+    const localContents = JSON.parse(vol.readFileSync(localPath, 'utf-8') as string);
+    expect(localContents.defaultGroups).toEqual(['kali']);
+
+    // Shared config must NOT have been created/modified by migrate — it's
+    // perfectly fine for it to not exist at all in this test.
+    if (sharedExists) {
+      const sharedContents = JSON.parse(vol.readFileSync(sharedPath, 'utf-8') as string);
+      expect(sharedContents.defaultGroups).toBeUndefined();
+    }
+  });
+
   it('leaves already-tagged files untouched while bumping version', async () => {
     writeManifest(
       createMockManifest({

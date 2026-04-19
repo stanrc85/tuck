@@ -7,7 +7,7 @@ import {
   saveManifest,
   requiresMigration,
 } from '../lib/manifest.js';
-import { loadConfig, saveConfig } from '../lib/config.js';
+import { loadConfig, saveLocalConfig } from '../lib/config.js';
 import { CURRENT_MANIFEST_VERSION } from '../schemas/manifest.schema.js';
 import { NotInitializedError, ValidationError } from '../errors.js';
 
@@ -94,11 +94,14 @@ export const runMigrate = async (options: MigrateOptions): Promise<void> => {
   const tagged = applyGroups(manifest, groups);
   await saveManifest(manifest, tuckDir);
 
-  // Seed config.defaultGroups if unset so subsequent `tuck add` calls without
-  // -g default sensibly on this host.
+  // Seed defaultGroups in the host-local config so subsequent `tuck add`/`tuck
+  // sync` calls without -g default sensibly on this host. Writing to
+  // `.tuckrc.local.json` (gitignored) instead of the shared `.tuckrc.json`
+  // prevents this per-host value from leaking to other machines via a synced
+  // dotfiles repo.
   const config = await loadConfig(tuckDir);
   if (!config.defaultGroups || config.defaultGroups.length === 0) {
-    await saveConfig({ defaultGroups: groups }, tuckDir);
+    await saveLocalConfig({ defaultGroups: groups }, tuckDir);
   }
 
   if (process.stdout.isTTY && !options.yes && (options.group?.length ?? 0) === 0) {

@@ -17,6 +17,7 @@ vi.mock('../../src/lib/paths.js', async (importOriginal) => {
     ...original,
     getTuckDir: () => TEST_TUCK_DIR,
     getConfigPath: (dir: string) => join(dir, 'config.json'),
+    getLocalConfigPath: (dir: string) => join(dir, 'config.local.json'),
     pathExists: async (path: string) => {
       try {
         vol.statSync(path);
@@ -36,8 +37,9 @@ vi.mock('cosmiconfig', () => ({
 }));
 
 // Import after mocking
-import { clearConfigCache } from '../../src/lib/config.js';
+import { clearConfigCache, loadConfig, saveLocalConfig } from '../../src/lib/config.js';
 import { defaultConfig } from '../../src/schemas/config.schema.js';
+import { ConfigError } from '../../src/errors.js';
 
 describe('config', () => {
   beforeEach(() => {
@@ -131,6 +133,117 @@ describe('config', () => {
       expect(defaultConfig.ui.colors).toBe(true);
       expect(defaultConfig.ui.emoji).toBe(true);
       expect(defaultConfig.ui.verbose).toBe(false);
+    });
+  });
+
+  // ============================================================================
+  // Local Config (.tuckrc.local.json) Tests
+  // ============================================================================
+
+  describe('local config override', () => {
+    const sharedPath = join(TEST_TUCK_DIR, 'config.json');
+    const localPath = join(TEST_TUCK_DIR, 'config.local.json');
+    const gitignorePath = join(TEST_TUCK_DIR, '.gitignore');
+
+    it('local defaultGroups overrides shared defaultGroups', async () => {
+      vol.writeFileSync(
+        sharedPath,
+        JSON.stringify({ defaultGroups: ['kubuntu'] })
+      );
+      vol.writeFileSync(localPath, JSON.stringify({ defaultGroups: ['kali'] }));
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.defaultGroups).toEqual(['kali']);
+    });
+
+    it('falls back to shared defaultGroups when local is absent', async () => {
+      vol.writeFileSync(
+        sharedPath,
+        JSON.stringify({ defaultGroups: ['kubuntu'] })
+      );
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.defaultGroups).toEqual(['kubuntu']);
+    });
+
+    it('uses defaults when neither shared nor local exists', async () => {
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.defaultGroups).toEqual([]);
+    });
+
+    it('applies local overrides even when shared config file is absent', async () => {
+      vol.writeFileSync(localPath, JSON.stringify({ defaultGroups: ['kali'] }));
+
+      const config = await loadConfig(TEST_TUCK_DIR);
+      expect(config.defaultGroups).toEqual(['kali']);
+    });
+
+    it('rejects malformed JSON in local config with a clear error', async () => {
+      vol.writeFileSync(localPath, '{ not valid json }');
+
+      await expect(loadConfig(TEST_TUCK_DIR)).rejects.toThrow(ConfigError);
+      await expect(loadConfig(TEST_TUCK_DIR)).rejects.toThrow(/invalid JSON/i);
+    });
+
+    it('rejects unknown fields in local config (strict schema)', async () => {
+      vol.writeFileSync(
+        localPath,
+        JSON.stringify({ defaultGroups: ['kali'], hooks: { preSync: 'bad' } })
+      );
+
+      await expect(loadConfig(TEST_TUCK_DIR)).rejects.toThrow(ConfigError);
+    });
+
+    it('saveLocalConfig writes to the local file and not the shared file', async () => {
+      vol.writeFileSync(sharedPath, JSON.stringify({ defaultGroups: ['shared'] }));
+
+      await saveLocalConfig({ defaultGroups: ['kali'] }, TEST_TUCK_DIR);
+
+      const localContents = JSON.parse(vol.readFileSync(localPath, 'utf-8') as string);
+      expect(localContents).toEqual({ defaultGroups: ['kali'] });
+
+      // Shared must be untouched
+      const sharedContents = JSON.parse(vol.readFileSync(sharedPath, 'utf-8') as string);
+      expect(sharedContents).toEqual({ defaultGroups: ['shared'] });
+    });
+
+    it('saveLocalConfig appends .tuckrc.local.json to .gitignore when missing', async () => {
+      vol.writeFileSync(gitignorePath, '# existing entries\n.DS_Store\n');
+
+      await saveLocalConfig({ defaultGroups: ['kali'] }, TEST_TUCK_DIR);
+
+      const gitignore = vol.readFileSync(gitignorePath, 'utf-8') as string;
+      expect(gitignore).toContain('.tuckrc.local.json');
+      expect(gitignore).toContain('.DS_Store');
+    });
+
+    it('saveLocalConfig creates .gitignore when the file does not exist', async () => {
+      // No pre-existing .gitignore
+      await saveLocalConfig({ defaultGroups: ['kali'] }, TEST_TUCK_DIR);
+
+      const gitignore = vol.readFileSync(gitignorePath, 'utf-8') as string;
+      expect(gitignore).toContain('.tuckrc.local.json');
+    });
+
+    it('saveLocalConfig does not duplicate the .gitignore entry when already present', async () => {
+      vol.writeFileSync(gitignorePath, '.tuckrc.local.json\n');
+
+      await saveLocalConfig({ defaultGroups: ['kali'] }, TEST_TUCK_DIR);
+
+      const gitignore = vol.readFileSync(gitignorePath, 'utf-8') as string;
+      const matches = gitignore.match(/\.tuckrc\.local\.json/g) ?? [];
+      expect(matches.length).toBe(1);
+    });
+
+    it('saveLocalConfig invalidates loadConfig cache so subsequent reads see the new value', async () => {
+      vol.writeFileSync(sharedPath, JSON.stringify({ defaultGroups: ['kubuntu'] }));
+      const before = await loadConfig(TEST_TUCK_DIR);
+      expect(before.defaultGroups).toEqual(['kubuntu']);
+
+      await saveLocalConfig({ defaultGroups: ['kali'] }, TEST_TUCK_DIR);
+
+      const after = await loadConfig(TEST_TUCK_DIR);
+      expect(after.defaultGroups).toEqual(['kali']);
     });
   });
 });

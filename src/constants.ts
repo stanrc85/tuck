@@ -22,6 +22,7 @@ export const HOME_DIR = homedir();
 export const DEFAULT_TUCK_DIR = join(HOME_DIR, '.tuck');
 export const MANIFEST_FILE = '.tuckmanifest.json';
 export const CONFIG_FILE = '.tuckrc.json';
+export const LOCAL_CONFIG_FILE = '.tuckrc.local.json';
 export const BACKUP_DIR = join(HOME_DIR, '.tuck-backups');
 export const FILES_DIR = 'files';
 

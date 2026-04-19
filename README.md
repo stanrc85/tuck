@@ -210,7 +210,24 @@ tuck group show work
 
 ### Defaults
 
-If you omit `-g` on `tuck add`, the file is tagged with `config.defaultGroups` (set via `tuck migrate` or edit `~/.tuck/.tuckrc.json`), falling back to your machine's hostname. Set a sensible default once and most `tuck add` calls won't need the flag.
+If you omit `-g` on `tuck add`, the file is tagged with `config.defaultGroups` (set via `tuck migrate`), falling back to your machine's hostname. Set a sensible default once and most `tuck add` calls won't need the flag.
+
+**Host-specific config lives in `~/.tuck/.tuckrc.local.json`**, which is gitignored by default. The shared `.tuckrc.json` can be committed to your dotfiles repo and pulled on every host without leaking per-host values like `defaultGroups`. Load order: defaults → `.tuckrc.json` (shared) → `.tuckrc.local.json` (host). The local file wins per-field. `tuck migrate` writes `defaultGroups` to the local file automatically.
+
+If you're upgrading from a setup where `defaultGroups` is already committed inside the shared `.tuckrc.json`, migrate each host by hand:
+
+```bash
+# On each host — write this host's group to the local (gitignored) file
+echo '{"defaultGroups": ["kali"]}' > ~/.tuck/.tuckrc.local.json
+
+# Add the local filename to the repo's .gitignore (keeps it untracked)
+grep -qxF '.tuckrc.local.json' ~/.tuck/.gitignore \
+  || echo '.tuckrc.local.json' >> ~/.tuck/.gitignore
+
+# Edit ~/.tuck/.tuckrc.json and delete the defaultGroups line (leave other
+# shared settings like hooks/ignore in place), then commit + push the
+# shared change once from any host so every host picks it up on next sync.
+```
 
 `tuck sync` honors `config.defaultGroups` the same way: on a host where `defaultGroups = ["kali"]`, a bare `tuck sync` only inspects kali-tagged files — files tagged for other hosts are left untouched, not re-synced, and not mis-flagged as deleted just because their source doesn't exist on this machine. Pass `-g <name>` to override.
 

@@ -7,6 +7,7 @@ import {
   FILES_DIR,
   MANIFEST_FILE,
   CONFIG_FILE,
+  LOCAL_CONFIG_FILE,
   CATEGORIES,
 } from '../constants.js';
 import { IS_WINDOWS, expandWindowsEnvVars, toPosixPath } from './platform.js';
@@ -60,6 +61,15 @@ export const getManifestPath = (tuckDir: string): string => {
 
 export const getConfigPath = (tuckDir: string): string => {
   return join(tuckDir, CONFIG_FILE);
+};
+
+/**
+ * Path to the host-local config override. Gitignored by default so fields
+ * that vary per machine (e.g. `defaultGroups`) don't leak across hosts when
+ * the shared `.tuckrc.json` is committed.
+ */
+export const getLocalConfigPath = (tuckDir: string): string => {
+  return join(tuckDir, LOCAL_CONFIG_FILE);
 };
 
 export const getFilesDir = (tuckDir: string): string => {

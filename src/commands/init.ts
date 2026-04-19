@@ -79,6 +79,9 @@ Thumbs.db
 *.backup
 *~
 
+# Host-local tuck config (never commit — host-specific overrides)
+.tuckrc.local.json
+
 # Secret files (add patterns for files you want to exclude)
 # *.secret
 # .env.local
