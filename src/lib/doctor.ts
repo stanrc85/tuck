@@ -9,6 +9,7 @@ import type { TuckManifestOutput } from '../schemas/manifest.schema.js';
 import { loadConfig } from './config.js';
 import { getStatus } from './git.js';
 import { loadManifest } from './manifest.js';
+import { detectInstallOrigin } from './updater.js';
 import {
   collapsePath,
   expandPath,
@@ -162,6 +163,97 @@ const checkTtyCapability: DoctorCheck = {
       details: envDetails,
       fix: 'Interactive prompts may hang. Set TUCK_NON_INTERACTIVE=1 to force the plain-log fallback, or run inside a real terminal (e.g. `script -qc "..." /dev/null`).',
     };
+  },
+};
+
+/**
+ * pnpm is only needed when building tuck from source — an end-user running
+ * a published tarball install has no use for it. Skip the check entirely on
+ * global installs (reported as `pass` with "not applicable" so users see the
+ * check ran), warn on dev clones where pnpm is missing.
+ */
+const checkPnpmAvailability: DoctorCheck = {
+  id: 'env.pnpm-availability',
+  category: 'env',
+  run: async () => {
+    const origin = detectInstallOrigin();
+    if (origin.kind === 'global') {
+      return {
+        id: 'env.pnpm-availability',
+        category: 'env',
+        status: 'pass',
+        message: 'pnpm check not applicable — running from a global install',
+      };
+    }
+
+    try {
+      const { stdout } = await execFileAsync('pnpm', ['--version'], { timeout: 2000 });
+      return {
+        id: 'env.pnpm-availability',
+        category: 'env',
+        status: 'pass',
+        message: `pnpm ${stdout.trim()} is available`,
+      };
+    } catch {
+      return {
+        id: 'env.pnpm-availability',
+        category: 'env',
+        status: 'warn',
+        message: 'pnpm is not on PATH — build/lint/test scripts will fail',
+        fix: 'Install pnpm (`npm i -g pnpm` or see https://pnpm.io/installation). pnpm is only needed when building tuck from source.',
+      };
+    }
+  },
+};
+
+/**
+ * `tuck apply <github-user>` and token credential storage lean on the GitHub
+ * CLI when available. Check is gated to `remote.mode === 'github'` — skipping
+ * entirely (with a pass result so it still appears in the report) for local,
+ * gitlab, or custom providers where gh is irrelevant.
+ */
+const checkGhCliAvailability: DoctorCheck = {
+  id: 'env.gh-cli-availability',
+  category: 'env',
+  run: async (context) => {
+    if (!context.config || context.config.remote?.mode !== 'github') {
+      return {
+        id: 'env.gh-cli-availability',
+        category: 'env',
+        status: 'pass',
+        message: 'gh CLI check not applicable — remote provider is not GitHub',
+      };
+    }
+
+    try {
+      await execFileAsync('gh', ['--version'], { timeout: 2000 });
+    } catch {
+      return {
+        id: 'env.gh-cli-availability',
+        category: 'env',
+        status: 'warn',
+        message: 'GitHub CLI (`gh`) is not installed',
+        fix: 'Install gh (https://cli.github.com/) — without it, `tuck apply <user>` won\'t resolve private repos and token setup falls back to manual paste. Tuck works without gh for public repos + SSH/token auth already stored.',
+      };
+    }
+
+    try {
+      await execFileAsync('gh', ['auth', 'status'], { timeout: 3000 });
+      return {
+        id: 'env.gh-cli-availability',
+        category: 'env',
+        status: 'pass',
+        message: 'GitHub CLI is installed and authenticated',
+      };
+    } catch {
+      return {
+        id: 'env.gh-cli-availability',
+        category: 'env',
+        status: 'warn',
+        message: 'GitHub CLI is installed but not authenticated',
+        fix: 'Run `gh auth login` — without auth, gh-dependent code paths (auto-detect existing repos, private clones) fall back to manual flows.',
+      };
+    }
   },
 };
 
@@ -808,9 +900,58 @@ const checkHooksSafety: DoctorCheck = {
   },
 };
 
+/**
+ * Visibility into the hooks trust model. `trustHooks` is a per-invocation
+ * flag (`--trust-hooks` / programmatic option), not a persistent config
+ * field, so a config-based check can't read a stored value — the plan
+ * originally called for that and was reframed in TASK-029. Instead: when
+ * any hook is configured, surface the fact that `--trust-hooks` + scripted
+ * runs bypass the confirmation prompt. No hooks → silent pass.
+ */
+const checkHooksTrustModel: DoctorCheck = {
+  id: 'hooks.trust-model',
+  category: 'hooks',
+  run: async (context) => {
+    if (!context.config) {
+      return {
+        id: 'hooks.trust-model',
+        category: 'hooks',
+        status: 'warn',
+        message: 'Skipped hook trust-model check because config is unavailable',
+      };
+    }
+
+    const hooks = context.config.hooks;
+    const configuredHooks = Object.entries(hooks).filter(
+      ([, command]) => typeof command === 'string' && command.trim().length > 0
+    );
+
+    if (configuredHooks.length === 0) {
+      return {
+        id: 'hooks.trust-model',
+        category: 'hooks',
+        status: 'pass',
+        message: 'No hooks configured — trust model not engaged',
+      };
+    }
+
+    const names = configuredHooks.map(([name]) => name).join(', ');
+    return {
+      id: 'hooks.trust-model',
+      category: 'hooks',
+      status: 'warn',
+      message: `${configuredHooks.length} hook${configuredHooks.length === 1 ? '' : 's'} configured — interactive prompts guard execution, but \`--trust-hooks\` and non-TTY runs bypass them`,
+      details: `configured: ${names}`,
+      fix: 'Review each command for safety. In CI / scripts, only pass `--trust-hooks` when you control the hook source. Remove hooks you don\'t actively need.',
+    };
+  },
+};
+
 const doctorChecks: DoctorCheck[] = [
   checkNodeVersion,
   checkTtyCapability,
+  checkPnpmAvailability,
+  checkGhCliAvailability,
   checkHomeDirectory,
   checkTuckDirectory,
   checkGitDirectory,
@@ -825,6 +966,7 @@ const doctorChecks: DoctorCheck[] = [
   checkSecretScanning,
   checkBackupOnRestore,
   checkHooksSafety,
+  checkHooksTrustModel,
 ];
 
 const buildDoctorSummary = (checks: DoctorCheckResult[]): DoctorSummary => {

@@ -248,6 +248,149 @@ describe('doctor checks', () => {
     });
   });
 
+  describe('pnpm-availability check', () => {
+    const originalOrigin = process.env.TUCK_SELF_UPDATE_ORIGIN;
+    const originalPath = process.env.PATH;
+
+    afterEach(() => {
+      if (originalOrigin === undefined) {
+        delete process.env.TUCK_SELF_UPDATE_ORIGIN;
+      } else {
+        process.env.TUCK_SELF_UPDATE_ORIGIN = originalOrigin;
+      }
+      process.env.PATH = originalPath;
+    });
+
+    const findPnpmCheck = (report: {
+      checks: Array<{ id: string; status: string; message: string; fix?: string }>;
+    }) => report.checks.find((c) => c.id === 'env.pnpm-availability');
+
+    it('passes with "not applicable" when running from a global install', async () => {
+      process.env.TUCK_SELF_UPDATE_ORIGIN = 'global';
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findPnpmCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('not applicable');
+    });
+
+    it('passes when pnpm is on PATH in a dev install', async () => {
+      process.env.TUCK_SELF_UPDATE_ORIGIN = 'dev';
+      // PATH unchanged — tests run via pnpm so the binary is reachable.
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findPnpmCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toMatch(/pnpm \d/);
+    });
+
+    it('warns when pnpm is missing in a dev install', async () => {
+      process.env.TUCK_SELF_UPDATE_ORIGIN = 'dev';
+      process.env.PATH = '/nonexistent';
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findPnpmCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.fix).toContain('pnpm');
+    });
+  });
+
+  describe('gh-cli-availability check', () => {
+    const originalPath = process.env.PATH;
+
+    afterEach(() => {
+      process.env.PATH = originalPath;
+    });
+
+    const findGhCheck = (report: {
+      checks: Array<{ id: string; status: string; message: string; fix?: string }>;
+    }) => report.checks.find((c) => c.id === 'env.gh-cli-availability');
+
+    it('passes with "not applicable" when remote.mode is not github', async () => {
+      await initTestTuck({ config: { remote: { mode: 'local' } } });
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findGhCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('not applicable');
+    });
+
+    it('passes without checking gh when config is absent', async () => {
+      vol.mkdirSync(TEST_HOME, { recursive: true });
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findGhCheck(report);
+
+      expect(check?.status).toBe('pass');
+    });
+
+    it('warns when gh is missing under github remote mode', async () => {
+      await initTestTuck({ config: { remote: { mode: 'github' } } });
+      process.env.PATH = '/nonexistent';
+
+      const report = await runDoctorChecks({ category: 'env' });
+      const check = findGhCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('not installed');
+    });
+  });
+
+  describe('hooks.trust-model check', () => {
+    const findTrustCheck = (report: {
+      checks: Array<{ id: string; status: string; message: string; details?: string; fix?: string }>;
+    }) => report.checks.find((c) => c.id === 'hooks.trust-model');
+
+    it('passes silently when no hooks are configured', async () => {
+      await initTestTuck();
+
+      const report = await runDoctorChecks({ category: 'hooks' });
+      const check = findTrustCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('No hooks');
+    });
+
+    it('warns with names when any hook is configured', async () => {
+      await initTestTuck({
+        config: {
+          hooks: {
+            postRestore: 'echo done',
+            preSync: 'true',
+          },
+        },
+      });
+
+      const report = await runDoctorChecks({ category: 'hooks' });
+      const check = findTrustCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.details).toContain('postRestore');
+      expect(check?.details).toContain('preSync');
+      expect(check?.fix).toContain('--trust-hooks');
+    });
+
+    it('ignores empty-string hook values', async () => {
+      await initTestTuck({
+        config: {
+          hooks: {
+            postRestore: '',
+            preSync: '   ',
+          },
+        },
+      });
+
+      const report = await runDoctorChecks({ category: 'hooks' });
+      const check = findTrustCheck(report);
+
+      expect(check?.status).toBe('pass');
+    });
+  });
+
   describe('branch-tracking check', () => {
     const mockStatus = (overrides: Record<string, unknown>): void => {
       // Both checkGitStatusReadable and checkBranchTracking call getStatus —

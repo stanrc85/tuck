@@ -45,12 +45,16 @@
 
 ### 4) Security Posture
 - Secret scanning config is enabled/reasonable.
-- Hooks trust model warnings (`trustHooks` usage).
+- Hooks trust model surface — `trustHooks` is a per-invocation flag (not a
+  persistent config field), so the check warns whenever any hook command is
+  configured, noting that `--trust-hooks` and scripted runs bypass the
+  confirmation prompt.
 - Backup/snapshot settings present for destructive flows.
 
 ### 5) Hooks and Integrations
 - Hook command strings are syntactically valid and executable context is clear.
-- Optional check: GH CLI availability when configured workflows depend on it.
+- GH CLI availability check (`env.gh-cli-availability`) gated on
+  `config.remote.mode === 'github'` — skipped for local/gitlab/custom providers.
 
 ## Output Shape (JSON)
 ```json
