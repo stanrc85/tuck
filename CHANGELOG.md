@@ -1,3 +1,12 @@
+# [1.4.0](https://github.com/stanrc85/tuck/compare/v1.3.0...v1.4.0) (2026-04-19)
+
+
+### Features
+
+* **config:** split host-local config into .tuckrc.local.json ([a2f6ebd](https://github.com/stanrc85/tuck/commit/a2f6ebd6b4863fb3e8c036d2165b4da7233923c9))
+* **sync:** add --list flag to preview what tuck sync would touch ([dc110df](https://github.com/stanrc85/tuck/commit/dc110dfb4a32dcc619786b1e4821e6365c92c1a6))
+* **sync:** scope tuck sync by host-group via -g flag and defaultGroups ([11cdd31](https://github.com/stanrc85/tuck/commit/11cdd31caba64f1e4302a3dc986db694a0191237))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.3.0](https://github.com/stanrc85/tuck/compare/v1.2.0...v1.3.0) (2026-04-19)
