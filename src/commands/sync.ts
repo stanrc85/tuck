@@ -492,6 +492,54 @@ const scanAndHandleSecrets = async (
   return true;
 };
 
+/**
+ * Preview which tracked files would be synced, honoring the same group filter
+ * precedence as a live sync. Read-only: no pull, no hooks, no commit, no push.
+ * Intended for operators to verify scope — especially on multi-host setups
+ * where a bare `tuck sync` auto-scopes via `config.defaultGroups`.
+ */
+const runSyncList = async (tuckDir: string, options: SyncOptions): Promise<void> => {
+  const groupFilter = await resolveGroupFilter(tuckDir, options);
+  const allFiles = await getAllTrackedFiles(tuckDir);
+  const changes = await detectChanges(tuckDir, groupFilter);
+
+  logger.heading('tuck sync — preview');
+  logger.blank();
+
+  if (groupFilter) {
+    logger.info(
+      `Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`
+    );
+  } else {
+    logger.info('No group filter — every tracked file is in scope');
+  }
+  logger.blank();
+
+  if (changes.length === 0) {
+    logger.success('No changes to sync');
+    return;
+  }
+
+  const sourceToGroups = new Map<string, string[]>();
+  for (const file of Object.values(allFiles)) {
+    sourceToGroups.set(file.source, file.groups ?? []);
+  }
+
+  logger.heading(`${changes.length} file${changes.length === 1 ? '' : 's'} would be synced:`);
+  for (const change of changes) {
+    const groups = sourceToGroups.get(change.source) ?? [];
+    const groupTag = groups.length > 0 ? ` [${groups.join(', ')}]` : '';
+    const statusLabel = change.status === 'deleted' ? ' (source missing — would untrack)' : '';
+    const action = change.status === 'deleted' ? 'delete' : 'modify';
+    logger.file(action, `${change.source}${groupTag}${statusLabel}`);
+  }
+
+  logger.blank();
+  logger.dim(
+    "Run without --list to execute the sync, or pass -g <group> to narrow/widen the scope."
+  );
+};
+
 const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): Promise<void> => {
   prompts.intro('tuck sync');
 
@@ -841,6 +889,11 @@ export const runSync = async (options: SyncOptions = {}): Promise<void> => {
   }
   assertMigrated(manifest);
 
+  if (options.list) {
+    await runSyncList(tuckDir, options);
+    return;
+  }
+
   // Always run interactive sync when called programmatically
   await runInteractiveSync(tuckDir, options);
 };
@@ -859,6 +912,11 @@ export const runSyncCommand = async (
     throw new NotInitializedError();
   }
   assertMigrated(manifest);
+
+  if (options.list) {
+    await runSyncList(tuckDir, options);
+    return;
+  }
 
   // If no options (except --no-push), run interactive
   if (!messageArg && !options.message && !options.noCommit) {
@@ -963,6 +1021,7 @@ export const syncCommand = new Command('sync')
   .option('--no-hooks', 'Skip execution of pre/post sync hooks')
   .option('--trust-hooks', 'Trust and run hooks without confirmation (use with caution)')
   .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
+  .option('--list', 'Preview which tracked files would be synced, then exit (no writes)')
   .option('-f, --force', 'Skip secret scanning (not recommended)')
   .action(async (messageArg: string | undefined, options: SyncOptions) => {
     await runSyncCommand(messageArg, options);

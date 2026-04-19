@@ -135,6 +135,8 @@ export interface SyncOptions {
   force?: boolean; // Skip secret scanning
   /** Filter files by host-group. Repeatable. Falls back to config.defaultGroups when omitted. */
   group?: string[];
+  /** Preview which tracked files would be synced, then exit. No writes, no commit, no push. */
+  list?: boolean;
 }
 
 export interface PushOptions {

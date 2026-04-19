@@ -214,6 +214,20 @@ If you omit `-g` on `tuck add`, the file is tagged with `config.defaultGroups` (
 
 `tuck sync` honors `config.defaultGroups` the same way: on a host where `defaultGroups = ["kali"]`, a bare `tuck sync` only inspects kali-tagged files — files tagged for other hosts are left untouched, not re-synced, and not mis-flagged as deleted just because their source doesn't exist on this machine. Pass `-g <name>` to override.
 
+Unsure what a sync would touch? Run `tuck sync --list` first. It prints the scope, every tracked file that would be modified or untracked, and its group tags — no writes, no commit, no push.
+
+```bash
+$ tuck sync --list
+tuck sync — preview
+
+ℹ Scoped to host-group: kali
+
+3 files would be synced:
+  ~ ~/.zshrc [kali]
+  ~ ~/.gitconfig [kali, shared]
+  - ~/.oldrc [kali] (source missing — would untrack)
+```
+
 ### Migrating from 1.x
 
 If you upgraded from a 1.x manifest (no groups), every command will error with `MigrationRequiredError` until you run:

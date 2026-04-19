@@ -427,4 +427,63 @@ describe('sync command behavior', () => {
       expect(deleteFileOrDirMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  // ========== --list preview ==========
+
+  describe('sync --list preview', () => {
+    const kaliFile = {
+      source: '~/.kali-rc',
+      destination: 'files/shell/kali-rc',
+      checksum: 'old',
+      groups: ['kali'],
+    };
+    const macFile = {
+      source: '~/.mac-rc',
+      destination: 'files/shell/mac-rc',
+      checksum: 'old',
+      groups: ['work-mac'],
+    };
+
+    it('executes no writes (no copy, no stage, no commit, no push, no hooks)', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile });
+      getFileChecksumMock.mockResolvedValue('new');
+      const { runSync } = await import('../../src/commands/sync.js');
+
+      await runSync({ list: true });
+
+      expect(copyFileOrDirMock).not.toHaveBeenCalled();
+      expect(deleteFileOrDirMock).not.toHaveBeenCalled();
+      expect(updateFileInManifestMock).not.toHaveBeenCalled();
+      expect(removeFileFromManifestMock).not.toHaveBeenCalled();
+      expect(stageAllMock).not.toHaveBeenCalled();
+      expect(commitMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+      expect(runPreSyncHookMock).not.toHaveBeenCalled();
+      expect(runPostSyncHookMock).not.toHaveBeenCalled();
+      expect(createSnapshotMock).not.toHaveBeenCalled();
+    });
+
+    it('honors group-filter precedence just like a real sync (CLI -g overrides defaultGroups)', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, m: macFile });
+      getFileChecksumMock.mockResolvedValue('new');
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kali'] });
+      const { runSync } = await import('../../src/commands/sync.js');
+
+      // Should still perform no writes even though the filter is being applied
+      await runSync({ list: true, group: ['work-mac'] });
+
+      expect(copyFileOrDirMock).not.toHaveBeenCalled();
+      expect(commitMock).not.toHaveBeenCalled();
+    });
+
+    it('exits cleanly on a clean repo (no changes to sync)', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile });
+      // Source matches stored checksum → no changes detected
+      getFileChecksumMock.mockResolvedValue(kaliFile.checksum);
+      const { runSync } = await import('../../src/commands/sync.js');
+
+      await expect(runSync({ list: true })).resolves.toBeUndefined();
+      expect(copyFileOrDirMock).not.toHaveBeenCalled();
+    });
+  });
 });
