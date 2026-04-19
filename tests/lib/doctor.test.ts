@@ -349,4 +349,94 @@ describe('doctor checks', () => {
       expect(check?.message).toContain('could not be read');
     });
   });
+
+  describe('legacy-default-groups check', () => {
+    const findLegacyCheck = (report: {
+      checks: Array<{ id: string; status: string; message: string; fix?: string; details?: string }>;
+    }) => report.checks.find((c) => c.id === 'repo.legacy-default-groups');
+
+    it('passes when shared config has no defaultGroups field', async () => {
+      await initTestTuck({ config: { defaultGroups: [] } });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findLegacyCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('No legacy');
+    });
+
+    it('passes when defaultGroups is an empty array', async () => {
+      await initTestTuck();
+      // createMockConfig sets defaultGroups: undefined by default — the raw file
+      // after JSON.stringify also omits it. Assert the pass branch fires either way.
+      vol.writeFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        JSON.stringify({ repository: { path: TEST_TUCK_DIR }, defaultGroups: [] })
+      );
+      clearConfigCache();
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findLegacyCheck(report);
+
+      expect(check?.status).toBe('pass');
+    });
+
+    it('warns when shared config has a non-empty defaultGroups array', async () => {
+      await initTestTuck();
+      vol.writeFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        JSON.stringify({ repository: { path: TEST_TUCK_DIR }, defaultGroups: ['kali'] })
+      );
+      clearConfigCache();
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findLegacyCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.details).toContain('"kali"');
+      expect(check?.fix).toContain('.tuckrc.local.json');
+    });
+
+    it('passes when tuck directory is absent (nothing to check)', async () => {
+      vol.mkdirSync(TEST_HOME, { recursive: true });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findLegacyCheck(report);
+
+      expect(check?.status).toBe('pass');
+    });
+
+    it('passes without double-reporting when shared config is malformed', async () => {
+      await initTestTuck();
+      vol.writeFileSync(join(TEST_TUCK_DIR, '.tuckrc.json'), 'not { valid json');
+      clearConfigCache();
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const legacyCheck = findLegacyCheck(report);
+
+      // checkConfigLoadable already fails loudly on malformed JSON; this check
+      // stays quiet so the user sees one clear error, not two.
+      expect(legacyCheck?.status).toBe('pass');
+      expect(legacyCheck?.message).toContain('Skipped');
+    });
+
+    it('surfaces all configured groups in the details string', async () => {
+      await initTestTuck();
+      vol.writeFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        JSON.stringify({
+          repository: { path: TEST_TUCK_DIR },
+          defaultGroups: ['kali', 'work'],
+        })
+      );
+      clearConfigCache();
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findLegacyCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.details).toContain('"kali"');
+      expect(check?.details).toContain('"work"');
+    });
+  });
 });

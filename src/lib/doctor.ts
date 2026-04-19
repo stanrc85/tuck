@@ -1,5 +1,9 @@
+import { execFile } from 'child_process';
+import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
+import { promisify } from 'util';
+import { CONFIG_FILE } from '../constants.js';
 import type { TuckConfigOutput } from '../schemas/config.schema.js';
 import type { TuckManifestOutput } from '../schemas/manifest.schema.js';
 import { loadConfig } from './config.js';
@@ -17,6 +21,8 @@ import {
   validateSafeManifestDestination,
   validateSafeSourcePath,
 } from './paths.js';
+
+const execFileAsync = promisify(execFile);
 
 export const DOCTOR_CATEGORIES = ['env', 'repo', 'manifest', 'security', 'hooks'] as const;
 
@@ -444,6 +450,100 @@ const checkConfigLoadable: DoctorCheck = {
   },
 };
 
+/**
+ * Catches the v1 → v2 migration landmine from TASK-033: `defaultGroups` is a
+ * per-host value, but v1 wrote it into the shared `.tuckrc.json` which gets
+ * committed and pushed by `tuck sync`, then pulled onto other hosts, making
+ * every machine think it belongs to the first host's groups.
+ *
+ * Reads the RAW shared config (not the merged view — merged would hide a
+ * legitimately-migrated host where local override masks the leaked shared
+ * value). Warns only when the shared file has a non-empty `defaultGroups`
+ * AND is tracked in git (an untracked file can't leak).
+ */
+const checkLegacyDefaultGroups: DoctorCheck = {
+  id: 'repo.legacy-default-groups',
+  category: 'repo',
+  run: async (context) => {
+    if (!context.hasTuckDir || !context.hasConfigFile) {
+      return {
+        id: 'repo.legacy-default-groups',
+        category: 'repo',
+        status: 'pass',
+        message: 'No shared config present — nothing to check',
+      };
+    }
+
+    let raw: unknown;
+    try {
+      const content = await readFile(context.configPath, 'utf-8');
+      raw = JSON.parse(content);
+    } catch {
+      // A broken .tuckrc.json is already surfaced by checkConfigLoadable; don't
+      // double-report. Pass here so we don't drown the user in two errors for
+      // the same underlying issue.
+      return {
+        id: 'repo.legacy-default-groups',
+        category: 'repo',
+        status: 'pass',
+        message: 'Skipped — shared config could not be read',
+      };
+    }
+
+    const rawObj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : null;
+    const defaultGroups = rawObj?.defaultGroups;
+    const hasLeak = Array.isArray(defaultGroups) && defaultGroups.length > 0;
+
+    if (!hasLeak) {
+      return {
+        id: 'repo.legacy-default-groups',
+        category: 'repo',
+        status: 'pass',
+        message: 'No legacy `defaultGroups` in shared config',
+      };
+    }
+
+    // Non-empty defaultGroups in shared config. Now check whether the file is
+    // tracked in git — if it's untracked, the value won't propagate on sync.
+    let tracked = false;
+    try {
+      const { stdout } = await execFileAsync('git', ['ls-files', '--', CONFIG_FILE], {
+        cwd: context.tuckDir,
+      });
+      tracked = stdout.trim().length > 0;
+    } catch {
+      // Git missing / not a repo / read error — can't confirm propagation risk.
+      // Err toward warning: the leak is still present in the working copy and
+      // will bite the moment git comes back online or sync runs.
+      tracked = true;
+    }
+
+    const groupsList = (defaultGroups as string[]).map((g) => `"${g}"`).join(', ');
+
+    if (!tracked) {
+      return {
+        id: 'repo.legacy-default-groups',
+        category: 'repo',
+        status: 'warn',
+        message:
+          '`defaultGroups` is set in the shared `.tuckrc.json` (not tracked in git) — still better to move it to `.tuckrc.local.json` so future `git add` runs don\'t reintroduce the leak',
+        details: `defaultGroups = [${groupsList}]`,
+        fix: 'Move `defaultGroups` to `~/.tuck/.tuckrc.local.json` (gitignored) and remove it from `.tuckrc.json`. See README "Host Groups > Defaults" for the one-shot steps.',
+      };
+    }
+
+    return {
+      id: 'repo.legacy-default-groups',
+      category: 'repo',
+      status: 'warn',
+      message:
+        '`defaultGroups` is set in the shared `.tuckrc.json` AND is tracked in git — this leaks per-host config across machines on every `tuck sync`',
+      details: `defaultGroups = [${groupsList}] (value propagates to every host that pulls the shared repo)`,
+      fix: 'Move `defaultGroups` to `~/.tuck/.tuckrc.local.json` (gitignored) and remove it from the shared file, then commit + push the shared edit once. See README "Host Groups > Defaults" for the exact shell steps.',
+    };
+  },
+};
+
 const checkManifestPathSafety: DoctorCheck = {
   id: 'manifest.path-safety',
   category: 'manifest',
@@ -718,6 +818,7 @@ const doctorChecks: DoctorCheck[] = [
   checkBranchTracking,
   checkManifestLoadable,
   checkConfigLoadable,
+  checkLegacyDefaultGroups,
   checkManifestPathSafety,
   checkManifestDuplicateSources,
   checkManifestDuplicateDestinations,
