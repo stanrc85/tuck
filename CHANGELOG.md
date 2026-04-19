@@ -1,3 +1,12 @@
+# [1.3.0](https://github.com/stanrc85/tuck/compare/v1.2.0...v1.3.0) (2026-04-19)
+
+
+### Features
+
+* **doctor:** add env.tty-capability check ([77d8254](https://github.com/stanrc85/tuck/commit/77d82547602e345afb5cb6f556567e122cfb3824))
+* **doctor:** add repo.branch-tracking check ([a8466aa](https://github.com/stanrc85/tuck/commit/a8466aab215ae35dc0c78a0fb8d2bbb9a39710ae))
+* **self-update:** add tuck self-update command ([d3f9552](https://github.com/stanrc85/tuck/commit/d3f9552441ad095874f6fd1bd3de7cb0d33cae8c))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.2.0](https://github.com/stanrc85/tuck/compare/v1.1.0...v1.2.0) (2026-04-18)
