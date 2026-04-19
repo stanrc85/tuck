@@ -217,6 +217,82 @@ const checkGitStatusReadable: DoctorCheck = {
   },
 };
 
+const checkBranchTracking: DoctorCheck = {
+  id: 'repo.branch-tracking',
+  category: 'repo',
+  run: async (context) => {
+    if (!context.hasTuckDir || !context.hasGitDir) {
+      return {
+        id: 'repo.branch-tracking',
+        category: 'repo',
+        status: 'warn',
+        message: 'Skipped branch-tracking check because repository is unavailable',
+      };
+    }
+
+    let status;
+    try {
+      status = await getStatus(context.tuckDir);
+    } catch {
+      // checkGitStatusReadable already surfaces the underlying failure — don't
+      // double-fail on the same root cause.
+      return {
+        id: 'repo.branch-tracking',
+        category: 'repo',
+        status: 'warn',
+        message: 'Skipped branch-tracking check because git status could not be read',
+      };
+    }
+
+    if (!status.tracking) {
+      return {
+        id: 'repo.branch-tracking',
+        category: 'repo',
+        status: 'warn',
+        message: `Branch '${status.branch}' has no upstream configured`,
+        fix: `Run \`tuck push --set-upstream origin ${status.branch}\` to publish and track, or set one with \`git branch --set-upstream-to=<remote>/<branch>\``,
+      };
+    }
+
+    if (status.behind > 0 && status.ahead > 0) {
+      return {
+        id: 'repo.branch-tracking',
+        category: 'repo',
+        status: 'warn',
+        message: `Branch '${status.branch}' has diverged from '${status.tracking}' (${status.ahead} ahead, ${status.behind} behind)`,
+        fix: 'Run `tuck pull` (rebase or merge) to reconcile before pushing',
+      };
+    }
+
+    if (status.behind > 0) {
+      return {
+        id: 'repo.branch-tracking',
+        category: 'repo',
+        status: 'warn',
+        message: `Branch '${status.branch}' is ${status.behind} commit${status.behind === 1 ? '' : 's'} behind '${status.tracking}'`,
+        fix: 'Run `tuck pull` before making further changes',
+      };
+    }
+
+    if (status.ahead > 0) {
+      return {
+        id: 'repo.branch-tracking',
+        category: 'repo',
+        status: 'pass',
+        message: `Branch '${status.branch}' is ${status.ahead} commit${status.ahead === 1 ? '' : 's'} ahead of '${status.tracking}'`,
+        details: 'Run `tuck push` to publish local commits',
+      };
+    }
+
+    return {
+      id: 'repo.branch-tracking',
+      category: 'repo',
+      status: 'pass',
+      message: `Branch '${status.branch}' is up to date with '${status.tracking}'`,
+    };
+  },
+};
+
 const checkManifestLoadable: DoctorCheck = {
   id: 'repo.manifest-loadable',
   category: 'repo',
@@ -573,6 +649,7 @@ const doctorChecks: DoctorCheck[] = [
   checkTuckDirectory,
   checkGitDirectory,
   checkGitStatusReadable,
+  checkBranchTracking,
   checkManifestLoadable,
   checkConfigLoadable,
   checkManifestPathSafety,

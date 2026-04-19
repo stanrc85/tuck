@@ -2,24 +2,28 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { vol } from 'memfs';
 import { join } from 'path';
 import { runDoctorChecks, getDoctorExitCode } from '../../src/lib/doctor.js';
+import { getStatus } from '../../src/lib/git.js';
 import { clearManifestCache } from '../../src/lib/manifest.js';
 import { clearConfigCache } from '../../src/lib/config.js';
 import { initTestTuck, TEST_HOME, TEST_TUCK_DIR } from '../utils/testHelpers.js';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
 
 vi.mock('../../src/lib/git.js', () => ({
-  getStatus: vi.fn().mockResolvedValue({
-    isRepo: true,
-    branch: 'main',
-    ahead: 0,
-    behind: 0,
-    staged: [],
-    modified: [],
-    untracked: [],
-    deleted: [],
-    hasChanges: false,
-  }),
+  getStatus: vi.fn(),
 }));
+
+const DEFAULT_GIT_STATUS = {
+  isRepo: true,
+  branch: 'main',
+  tracking: 'origin/main',
+  ahead: 0,
+  behind: 0,
+  staged: [],
+  modified: [],
+  untracked: [],
+  deleted: [],
+  hasChanges: false,
+};
 
 describe('doctor checks', () => {
   const originalHome = process.env.HOME;
@@ -31,6 +35,8 @@ describe('doctor checks', () => {
     clearConfigCache();
     process.env.HOME = originalHome;
     process.env.USERPROFILE = originalUserProfile;
+    vi.mocked(getStatus).mockReset();
+    vi.mocked(getStatus).mockResolvedValue({ ...DEFAULT_GIT_STATUS });
   });
 
   afterEach(() => {
@@ -132,5 +138,107 @@ describe('doctor checks', () => {
 
     expect(tuckDirCheck?.status).toBe('fail');
     expect(tuckDirCheck?.message).toContain('not a directory');
+  });
+
+  describe('branch-tracking check', () => {
+    const mockStatus = (overrides: Record<string, unknown>): void => {
+      // Both checkGitStatusReadable and checkBranchTracking call getStatus —
+      // use the permanent default so both see the same shape.
+      vi.mocked(getStatus).mockResolvedValue({ ...DEFAULT_GIT_STATUS, ...overrides });
+    };
+
+    const findBranchCheck = (report: { checks: Array<{ id: string; status: string; message: string; fix?: string }> }) =>
+      report.checks.find((c) => c.id === 'repo.branch-tracking');
+
+    it('passes when branch is up to date with upstream', async () => {
+      await initTestTuck();
+      mockStatus({});
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain("up to date with 'origin/main'");
+    });
+
+    it('warns when branch has no upstream configured', async () => {
+      await initTestTuck();
+      mockStatus({ tracking: undefined });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('no upstream configured');
+      expect(check?.fix).toContain('--set-upstream');
+    });
+
+    it('passes with details when branch is ahead only', async () => {
+      await initTestTuck();
+      mockStatus({ ahead: 3 });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('pass');
+      expect(check?.message).toContain('3 commits ahead');
+      expect(check?.details).toContain('tuck push');
+    });
+
+    it('warns when branch is behind upstream', async () => {
+      await initTestTuck();
+      mockStatus({ behind: 2 });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('2 commits behind');
+      expect(check?.fix).toContain('tuck pull');
+    });
+
+    it('warns when branch has diverged from upstream', async () => {
+      await initTestTuck();
+      mockStatus({ ahead: 2, behind: 3 });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('diverged');
+      expect(check?.message).toContain('2 ahead, 3 behind');
+    });
+
+    it('pluralizes the commit count correctly for single-commit cases', async () => {
+      await initTestTuck();
+      mockStatus({ behind: 1 });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.message).toContain('1 commit behind');
+      expect(check?.message).not.toContain('1 commits');
+    });
+
+    it('skips gracefully when tuck directory is absent', async () => {
+      vol.mkdirSync(TEST_HOME, { recursive: true });
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('repository is unavailable');
+    });
+
+    it('skips without double-failing when getStatus throws', async () => {
+      await initTestTuck();
+      vi.mocked(getStatus).mockRejectedValue(new Error('boom'));
+
+      const report = await runDoctorChecks({ category: 'repo' });
+      const check = findBranchCheck(report);
+
+      expect(check?.status).toBe('warn');
+      expect(check?.message).toContain('could not be read');
+    });
   });
 });
