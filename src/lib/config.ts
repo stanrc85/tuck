@@ -10,7 +10,7 @@ import {
 } from '../schemas/config.schema.js';
 import { getConfigPath, getLocalConfigPath, pathExists, getTuckDir } from './paths.js';
 import { ConfigError } from '../errors.js';
-import { BACKUP_DIR, LOCAL_CONFIG_FILE } from '../constants.js';
+import { LOCAL_CONFIG_FILE } from '../constants.js';
 
 let cachedConfig: TuckConfigOutput | null = null;
 let cachedTuckDir: string | null = null;
@@ -98,7 +98,6 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
       files: {
         ...defaultConfig.files,
         ...result.data.files,
-        backupDir: result.data.files?.backupDir || BACKUP_DIR,
       },
     };
     cachedTuckDir = dir;

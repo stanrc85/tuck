@@ -20,7 +20,6 @@ export const createMockConfig = (overrides?: Partial<TuckConfigOutput>): TuckCon
     files: {
       strategy: 'copy',
       backupOnRestore: true,
-      backupDir: '/test-home/.tuck-backups',
       ...overrides?.files,
     },
     categories: overrides?.categories ?? {},

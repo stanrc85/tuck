@@ -69,7 +69,7 @@ describe('hooks', () => {
     it('should return success if no hook is configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -85,7 +85,7 @@ describe('hooks', () => {
     it('should execute hook command with trustHooks option', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {
           preSync: 'echo "test"',
         },
@@ -112,7 +112,7 @@ describe('hooks', () => {
     it('should call runHook with preSync type', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -129,7 +129,7 @@ describe('hooks', () => {
     it('should call runHook with postSync type', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -146,7 +146,7 @@ describe('hooks', () => {
     it('should call runHook with preRestore type', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -163,7 +163,7 @@ describe('hooks', () => {
     it('should call runHook with postRestore type', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -184,7 +184,7 @@ describe('hooks', () => {
     it('should return true when hook is configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {
           preSync: 'echo "pre-sync"',
         },
@@ -201,7 +201,7 @@ describe('hooks', () => {
     it('should return false when hook is not configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -222,7 +222,7 @@ describe('hooks', () => {
     it('should return hook command when configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {
           postSync: 'brew bundle',
         },
@@ -239,7 +239,7 @@ describe('hooks', () => {
     it('should return undefined when hook is not configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -260,7 +260,7 @@ describe('hooks', () => {
     it('should return true when any hook is configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {
           postRestore: 'source ~/.zshrc',
         },
@@ -277,7 +277,7 @@ describe('hooks', () => {
     it('should return false when no hooks are configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},
@@ -298,7 +298,7 @@ describe('hooks', () => {
     it('should return all configured hooks', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {
           preSync: 'echo pre',
           postSync: 'echo post',
@@ -321,7 +321,7 @@ describe('hooks', () => {
     it('should return all undefined when no hooks configured', async () => {
       vi.mocked(loadConfig).mockResolvedValue({
         repository: { path: TEST_TUCK_DIR },
-        files: { backupDir: 'backups', symlink: false },
+        files: { symlink: false },
         hooks: {},
         templates: {},
         encryption: {},

@@ -21,7 +21,6 @@ import {
 } from '../lib/manifest.js';
 import { loadConfig } from '../lib/config.js';
 import { copyFileOrDir, createSymlink } from '../lib/files.js';
-import { createBackup } from '../lib/backup.js';
 import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { runPreRestoreHook, runPostRestoreHook, type HookOptions } from '../lib/hooks.js';
@@ -173,10 +172,11 @@ const restoreFilesInternal = async (
   await runPreRestoreHook(tuckDir, hookOptions);
 
   // Pre-restore Time Machine snapshot of host paths that already exist, so
-  // `tuck undo` can roll back an unwanted restore. Skipped on dry-run, and
-  // only captures paths that exist (no point snapshotting files that don't
-  // yet exist on disk).
-  if (!options.dryRun) {
+  // `tuck undo` can roll back an unwanted restore. Skipped on dry-run and when
+  // `backupOnRestore` is disabled (either via config or `--no-backup`). Only
+  // captures paths that exist (no point snapshotting files that don't yet
+  // exist on disk).
+  if (!options.dryRun && shouldBackup) {
     const existingHostPaths: string[] = [];
     for (const file of files) {
       if (file.existsAtTarget) {
@@ -218,13 +218,6 @@ const restoreFilesInternal = async (
         logger.file('add', `${file.source} (would create)`);
       }
       continue;
-    }
-
-    // Create backup if needed
-    if (shouldBackup && file.existsAtTarget) {
-      await withSpinner(`Backing up ${file.source}...`, async () => {
-        await createBackup(targetPath, config.files.backupDir, tuckDir);
-      });
     }
 
     // Restore file

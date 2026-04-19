@@ -125,7 +125,6 @@ describe('config command', () => {
         files: {
           strategy: 'copy',
           backupOnRestore: true,
-          backupDir: '.backups',
         },
         ui: {
           colors: true,

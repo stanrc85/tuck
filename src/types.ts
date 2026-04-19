@@ -27,7 +27,6 @@ export interface TuckConfig {
   files: {
     strategy: FileStrategy;
     backupOnRestore: boolean;
-    backupDir: string;
   };
   categories: Record<
     string,

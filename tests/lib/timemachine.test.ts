@@ -67,13 +67,17 @@ import {
   formatSnapshotKind,
   pruneSnapshotsByRetention,
   createPreApplySnapshot,
+  migrateTimemachineLocation,
+  resetTimemachineMigrationState,
 } from '../../src/lib/timemachine.js';
 
-const TIMEMACHINE_DIR = join(TEST_HOME, '.tuck', 'backups');
+const TIMEMACHINE_DIR = join(TEST_HOME, '.tuck-backups');
+const LEGACY_TIMEMACHINE_DIR = join(TEST_HOME, '.tuck', 'backups');
 
 describe('timemachine', () => {
   beforeEach(() => {
     vol.reset();
+    resetTimemachineMigrationState();
     vol.mkdirSync(TEST_HOME, { recursive: true });
     vol.mkdirSync(join(TEST_HOME, '.tuck'), { recursive: true });
   });
@@ -567,6 +571,80 @@ describe('timemachine', () => {
       expect(deleted).toBe(0);
       const remaining = await listSnapshots();
       expect(remaining.length).toBe(1);
+    });
+  });
+
+  // ============================================================================
+  // migrateTimemachineLocation Tests
+  // ============================================================================
+
+  describe('migrateTimemachineLocation', () => {
+    it('no-ops when legacy location does not exist', async () => {
+      await migrateTimemachineLocation(join(TEST_HOME, '.tuck'));
+
+      expect(vol.existsSync(LEGACY_TIMEMACHINE_DIR)).toBe(false);
+      expect(vol.existsSync(TIMEMACHINE_DIR)).toBe(false);
+    });
+
+    it('moves snapshots from legacy location to new location', async () => {
+      const legacySnap = join(LEGACY_TIMEMACHINE_DIR, '2026-04-01-120000');
+      vol.mkdirSync(legacySnap, { recursive: true });
+      vol.writeFileSync(
+        join(legacySnap, 'metadata.json'),
+        JSON.stringify({ id: '2026-04-01-120000', timestamp: '', reason: '', files: [], machine: '' })
+      );
+      vol.writeFileSync(join(legacySnap, 'marker'), 'legacy');
+
+      await migrateTimemachineLocation(join(TEST_HOME, '.tuck'));
+
+      const movedSnap = join(TIMEMACHINE_DIR, '2026-04-01-120000');
+      expect(vol.existsSync(movedSnap)).toBe(true);
+      expect(vol.readFileSync(join(movedSnap, 'marker'), 'utf-8')).toBe('legacy');
+      expect(vol.existsSync(LEGACY_TIMEMACHINE_DIR)).toBe(false);
+    });
+
+    it('is a no-op on second invocation (idempotency via module flag)', async () => {
+      const legacySnap = join(LEGACY_TIMEMACHINE_DIR, '2026-04-01-120000');
+      vol.mkdirSync(legacySnap, { recursive: true });
+      vol.writeFileSync(join(legacySnap, 'marker'), 'legacy');
+
+      await migrateTimemachineLocation(join(TEST_HOME, '.tuck'));
+      expect(vol.existsSync(join(TIMEMACHINE_DIR, '2026-04-01-120000'))).toBe(true);
+
+      // Simulate user re-populating legacy (e.g. second legacy snapshot added
+      // by a still-running v1.x process). Second call should skip because the
+      // module-level flag has already fired — don't want double-migration.
+      vol.mkdirSync(join(LEGACY_TIMEMACHINE_DIR, '2026-04-02-120000'), { recursive: true });
+
+      await migrateTimemachineLocation(join(TEST_HOME, '.tuck'));
+
+      expect(vol.existsSync(join(LEGACY_TIMEMACHINE_DIR, '2026-04-02-120000'))).toBe(true);
+      expect(vol.existsSync(join(TIMEMACHINE_DIR, '2026-04-02-120000'))).toBe(false);
+    });
+
+    it('skips a legacy snapshot whose ID already exists in the new location', async () => {
+      const id = '2026-04-01-120000';
+      vol.mkdirSync(join(LEGACY_TIMEMACHINE_DIR, id), { recursive: true });
+      vol.writeFileSync(join(LEGACY_TIMEMACHINE_DIR, id, 'marker'), 'legacy');
+      vol.mkdirSync(join(TIMEMACHINE_DIR, id), { recursive: true });
+      vol.writeFileSync(join(TIMEMACHINE_DIR, id, 'marker'), 'new');
+
+      await migrateTimemachineLocation(join(TEST_HOME, '.tuck'));
+
+      // Newer-layout version wins; legacy duplicate is left in place (not clobbered).
+      expect(vol.readFileSync(join(TIMEMACHINE_DIR, id, 'marker'), 'utf-8')).toBe('new');
+    });
+
+    it('createSnapshot triggers migration on first call', async () => {
+      const legacySnap = join(LEGACY_TIMEMACHINE_DIR, '2026-04-01-120000');
+      vol.mkdirSync(legacySnap, { recursive: true });
+      vol.writeFileSync(join(legacySnap, 'marker'), 'legacy');
+
+      vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'content');
+      await createSnapshot([join(TEST_HOME, '.zshrc')], 'after-migration');
+
+      expect(vol.existsSync(join(TIMEMACHINE_DIR, '2026-04-01-120000', 'marker'))).toBe(true);
+      expect(vol.existsSync(LEGACY_TIMEMACHINE_DIR)).toBe(false);
     });
   });
 });

@@ -70,7 +70,6 @@ src/
 │   ├── git.ts        # Git operations wrapper
 │   ├── files.ts      # File system operations
 │   ├── fileTracking.ts # File tracking utilities
-│   ├── backup.ts     # Backup functionality
 │   ├── hooks.ts      # Pre/post hook execution
 │   ├── github.ts     # GitHub CLI integration
 │   ├── timemachine.ts # Snapshot/time-machine backups

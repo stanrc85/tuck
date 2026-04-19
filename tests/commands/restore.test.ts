@@ -10,7 +10,6 @@ const getTrackedFileBySourceMock = vi.fn();
 const loadConfigMock = vi.fn();
 const copyFileOrDirMock = vi.fn();
 const createSymlinkMock = vi.fn();
-const createBackupMock = vi.fn();
 const runPreRestoreHookMock = vi.fn();
 const runPostRestoreHookMock = vi.fn();
 const restoreSecretsMock = vi.fn();
@@ -86,10 +85,6 @@ vi.mock('../../src/lib/files.js', () => ({
   createSymlink: createSymlinkMock,
 }));
 
-vi.mock('../../src/lib/backup.js', () => ({
-  createBackup: createBackupMock,
-}));
-
 vi.mock('../../src/lib/hooks.js', () => ({
   runPreRestoreHook: runPreRestoreHookMock,
   runPostRestoreHook: runPostRestoreHookMock,
@@ -123,7 +118,6 @@ describe('restore command behavior', () => {
     });
     copyFileOrDirMock.mockResolvedValue(undefined);
     createSymlinkMock.mockResolvedValue(undefined);
-    createBackupMock.mockResolvedValue(undefined);
     runPreRestoreHookMock.mockResolvedValue(undefined);
     runPostRestoreHookMock.mockResolvedValue(undefined);
     getSecretCountMock.mockResolvedValue(0);

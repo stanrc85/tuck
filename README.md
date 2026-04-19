@@ -303,7 +303,7 @@ Before any deletion, `tuck clean` prints every orphan file (with its size) and e
 
 ## Time Machine & Undo
 
-tuck takes an automatic snapshot of any files it's about to overwrite or delete, so you can always roll back. Snapshots live in `~/.tuck/backups/` and are tagged with the operation that created them:
+tuck takes an automatic snapshot of any files it's about to overwrite or delete, so you can always roll back. Snapshots live in `~/.tuck-backups/` — **outside** the synced `~/.tuck/` repo so they stay per-host and never leak across machines. Each snapshot is tagged with the operation that created it:
 
 | Kind      | Created before                                                           |
 | --------- | ------------------------------------------------------------------------ |

@@ -46,7 +46,6 @@ export const tuckConfigSchema = z.object({
     .object({
       strategy: fileStrategySchema.default('copy'),
       backupOnRestore: z.boolean().default(true),
-      backupDir: z.string().optional(),
     })
     .partial()
     .default({}),

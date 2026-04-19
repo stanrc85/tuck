@@ -518,8 +518,7 @@ Configuration is stored in `~/.tuck/.tuckrc.json`.
   },
   "files": {
     "strategy": "copy",
-    "backupOnRestore": true,
-    "backupDir": "~/.tuck-backups"
+    "backupOnRestore": true
   },
   "ui": {
     "colors": true,
@@ -554,7 +553,6 @@ Configuration is stored in `~/.tuck/.tuckrc.json`.
 | `repository.autoPush` | boolean | false | Auto-push on sync |
 | `files.strategy` | string | copy | File strategy: copy or symlink |
 | `files.backupOnRestore` | boolean | true | Backup before restore |
-| `files.backupDir` | string | ~/.tuck-backups | Backup location |
 | `ui.colors` | boolean | true | Enable colored output |
 | `ui.emoji` | boolean | true | Enable emoji in output |
 | `ui.verbose` | boolean | false | Verbose logging |

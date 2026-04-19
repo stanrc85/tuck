@@ -55,12 +55,6 @@ const CONFIG_KEYS: ConfigKeyInfo[] = [
     description: 'Create backups before restore',
     section: 'files',
   },
-  {
-    path: 'files.backupDir',
-    type: 'string',
-    description: 'Backup directory path',
-    section: 'files',
-  },
   // UI settings
   { path: 'ui.colors', type: 'boolean', description: 'Enable colored output', section: 'ui' },
   { path: 'ui.emoji', type: 'boolean', description: 'Enable emoji in output', section: 'ui' },

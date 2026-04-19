@@ -1,12 +1,92 @@
+import { execFile } from 'child_process';
 import { join, dirname, relative, resolve, sep } from 'path';
-import { readdir, readFile, writeFile, rm, stat } from 'fs/promises';
+import { readdir, readFile, writeFile, rm, stat, rename } from 'fs/promises';
 import { copy, ensureDir, pathExists } from 'fs-extra';
 import { homedir } from 'os';
+import { promisify } from 'util';
 import { expandPath, pathExists as checkPathExists } from './paths.js';
 import { loadConfig } from './config.js';
+import { BACKUP_DIR, DEFAULT_TUCK_DIR } from '../constants.js';
 import { BackupError } from '../errors.js';
 
-const TIMEMACHINE_DIR = join(homedir(), '.tuck', 'backups');
+const execFileAsync = promisify(execFile);
+
+/**
+ * Snapshots live outside `~/.tuck/` so they stay per-host and never leak into
+ * the synced dotfiles repo. The v1.x location was `~/.tuck/backups/`; see
+ * `migrateTimemachineLocation` below for the one-time move.
+ */
+const TIMEMACHINE_DIR = expandPath(BACKUP_DIR);
+const LEGACY_TIMEMACHINE_DIR = join(homedir(), '.tuck', 'backups');
+
+let migrationAttempted = false;
+
+/**
+ * One-time migration from the v1.x `~/.tuck/backups/` location to the
+ * per-host `~/.tuck-backups/` location introduced in v2.0.0. Moves any
+ * existing snapshots, best-effort untracks `backups/` from the tuck git repo
+ * (so the next `tuck sync` stops committing them), then removes the empty
+ * legacy directory. Idempotent and safe to call from every `createSnapshot`.
+ */
+export const migrateTimemachineLocation = async (
+  tuckDir: string = DEFAULT_TUCK_DIR
+): Promise<void> => {
+  if (migrationAttempted) return;
+  migrationAttempted = true;
+
+  if (!(await pathExists(LEGACY_TIMEMACHINE_DIR))) {
+    return;
+  }
+
+  try {
+    await ensureDir(TIMEMACHINE_DIR);
+    const entries = await readdir(LEGACY_TIMEMACHINE_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      const src = join(LEGACY_TIMEMACHINE_DIR, entry.name);
+      const dest = join(TIMEMACHINE_DIR, entry.name);
+      if (await pathExists(dest)) {
+        // Destination already has a snapshot with this ID — skip to avoid
+        // clobbering a newer-layout snapshot with a legacy one of the same name.
+        continue;
+      }
+      await rename(src, dest).catch(async () => {
+        // Cross-device rename fails with EXDEV; fall back to copy + remove.
+        await copy(src, dest, { overwrite: false });
+        await rm(src, { recursive: true, force: true });
+      });
+    }
+  } catch {
+    // Best-effort migration. If it fails, new snapshots still write to the new
+    // location; legacy snapshots stay put and can be moved manually.
+    return;
+  }
+
+  // Best-effort: untrack `backups/` from the tuck repo if git previously
+  // committed it. Silences `git rm` stderr; failure is fine (not a git repo,
+  // nothing tracked, etc.).
+  try {
+    await execFileAsync('git', ['rm', '--cached', '-r', '-f', '--ignore-unmatch', 'backups/'], {
+      cwd: tuckDir,
+    });
+  } catch {
+    // ignore
+  }
+
+  // Remove the empty legacy directory.
+  try {
+    await rm(LEGACY_TIMEMACHINE_DIR, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+};
+
+/**
+ * Reset the module-level migration flag. Test-only escape hatch so each
+ * test case gets a fresh migration attempt.
+ */
+export const resetTimemachineMigrationState = (): void => {
+  migrationAttempted = false;
+};
 
 /**
  * Categorises a snapshot by the operation that created it. Drives the
@@ -123,6 +203,8 @@ export const createSnapshot = async (
   reason: string,
   options: CreateSnapshotOptions = {}
 ): Promise<Snapshot> => {
+  await migrateTimemachineLocation();
+
   const snapshotId = generateSnapshotId();
   const snapshotPath = getSnapshotPath(snapshotId);
   const kind: SnapshotKind = options.kind ?? 'manual';
@@ -198,6 +280,8 @@ export const createPreApplySnapshot = async (
  * List all available snapshots
  */
 export const listSnapshots = async (): Promise<Snapshot[]> => {
+  await migrateTimemachineLocation();
+
   if (!(await pathExists(TIMEMACHINE_DIR))) {
     return [];
   }
