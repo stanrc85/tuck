@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.0.0](https://github.com/stanrc85/tuck/compare/v1.5.0...v2.0.0) (2026-04-19)
 
 
@@ -34,8 +36,6 @@ post-upgrade invocation; no user action required. `config.files.backupDir`
 is no longer read (silently stripped on config load).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [1.5.0](https://github.com/stanrc85/tuck/compare/v1.4.0...v1.5.0) (2026-04-19)
 
