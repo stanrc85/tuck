@@ -22,6 +22,7 @@ import {
   migrateCommand,
   groupCommand,
   cleanCommand,
+  selfUpdateCommand,
 } from './commands/index.js';
 import { handleError } from './errors.js';
 import { VERSION, DESCRIPTION } from './constants.js';
@@ -66,6 +67,7 @@ program.addCommand(ignoreCommand);
 program.addCommand(migrateCommand);
 program.addCommand(groupCommand);
 program.addCommand(cleanCommand);
+program.addCommand(selfUpdateCommand);
 
 // Default action when no command is provided
 const runDefaultAction = async (): Promise<void> => {

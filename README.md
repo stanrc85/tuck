@@ -146,6 +146,19 @@ tuck restore --all
 - `--strict`: Treat warnings as non-zero exit
 - `--category <env|repo|manifest|security|hooks>`: Run one check group
 
+### Maintenance
+
+| Command             | Description                                                          |
+| ------------------- | -------------------------------------------------------------------- |
+| `tuck self-update`  | Update tuck to the latest GitHub release of `stanrc85/tuck`          |
+
+`tuck self-update` flags:
+- `--check`: Report update status without installing (exit 1 if an update is available, 0 if up to date — handy for scripts)
+- `-y`, `--yes`: Apply the update without prompting
+- `--tag <tag>`: Install a specific release tag (e.g. `--tag v1.2.0`), including older tags for a downgrade/pin
+
+Under the hood it runs `sudo npm install -g https://github.com/stanrc85/tuck/releases/download/<tag>/tuck.tgz` (or without `sudo` when already root or on Windows). Running from a dev checkout is refused — use `git pull && pnpm build` in that case.
+
 ## How It Works
 
 tuck stores your dotfiles in `~/.tuck`, organized by category:

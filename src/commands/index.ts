@@ -19,3 +19,4 @@ export { ignoreCommand } from './ignore.js';
 export { migrateCommand } from './migrate.js';
 export { groupCommand } from './group.js';
 export { cleanCommand } from './clean.js';
+export { selfUpdateCommand } from './self-update.js';
