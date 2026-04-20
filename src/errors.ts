@@ -57,7 +57,8 @@ export class FileAlreadyTrackedError extends TuckError {
 
 export class GitError extends TuckError {
   constructor(message: string, gitError?: string) {
-    super(`Git operation failed: ${message}`, 'GIT_ERROR', gitError ? [gitError] : undefined);
+    const detail = gitError ? ` — ${gitError}` : '';
+    super(`Git operation failed: ${message}${detail}`, 'GIT_ERROR', gitError ? [gitError] : undefined);
   }
 }
 
