@@ -18,6 +18,7 @@ import {
   secretsCommand,
   encryptionCommand,
   doctorCommand,
+  bootstrapCommand,
 } from '../../src/commands/index.js';
 
 const buildProgram = (): Command => {
@@ -45,6 +46,7 @@ const buildProgram = (): Command => {
   program.addCommand(secretsCommand);
   program.addCommand(encryptionCommand);
   program.addCommand(doctorCommand);
+  program.addCommand(bootstrapCommand);
 
   return program;
 };
@@ -56,10 +58,11 @@ describe('CLI smoke', () => {
 
     expect(names).toContain('doctor');
     expect(names).toContain('apply');
+    expect(names).toContain('bootstrap');
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('parses doctor help and apply help', async () => {
+  it('parses doctor help, apply help, and bootstrap help', async () => {
     const program = buildProgram();
 
     await expect(
@@ -68,6 +71,10 @@ describe('CLI smoke', () => {
 
     await expect(
       program.parseAsync(['node', 'tuck', 'apply', '--help'], { from: 'user' })
+    ).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
+
+    await expect(
+      program.parseAsync(['node', 'tuck', 'bootstrap', '--help'], { from: 'user' })
     ).rejects.toMatchObject({ code: 'commander.helpDisplayed' });
   });
 
