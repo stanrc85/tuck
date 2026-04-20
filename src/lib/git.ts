@@ -198,6 +198,15 @@ export const pull = async (
 
     if (options?.rebase) {
       args.push('--rebase');
+      // `git pull --rebase` refuses outright on any unstaged change, even
+      // incidental dirt the rebase wouldn't touch. Tuck writes to the
+      // tracked .gitignore on first bootstrap (ensureBootstrapStateGitignored
+      // / ensureLocalConfigGitignored append to it on upgraders), which
+      // would otherwise block every subsequent `tuck sync` / `tuck update`.
+      // --autostash stashes before the rebase and pops after, so the
+      // rebase sees a clean tree. Matches `pull.rebase = preserve` UX git
+      // users expect.
+      args.push('--autostash');
     }
 
     const remote = options?.remote || 'origin';

@@ -262,6 +262,18 @@ describe('git', () => {
     it('should pull with rebase option', async () => {
       await expect(pull(TEST_TUCK_DIR, { rebase: true })).resolves.not.toThrow();
     }, 30000); // Longer timeout for Windows CI
+
+    it('should pass --rebase and --autostash when rebase is requested', async () => {
+      await pull(TEST_TUCK_DIR, { rebase: true });
+      const args = mockGitInstance.pull.mock.calls[0]?.[2];
+      expect(args).toEqual(expect.arrayContaining(['--rebase', '--autostash']));
+    });
+
+    it('should not pass --autostash when rebase is not requested', async () => {
+      await pull(TEST_TUCK_DIR);
+      const args = mockGitInstance.pull.mock.calls[0]?.[2];
+      expect(args).not.toContain('--autostash');
+    });
   });
 
   describe('fetch', () => {
