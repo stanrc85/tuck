@@ -8,8 +8,17 @@ import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
  * that falls through the interpolator (it only matches `${VAR}` names it
  * knows) and bash expands it at run time.
  *
- * Version is a manual pin — bump when rolling the registry forward.
- * Ported from deploy_dots.sh:312–340 (per TASK-022 notes).
+ * Install destination mirrors deploy_dots.sh:324–329: prefer
+ * `/usr/local/bin/` when sudo credentials are already cached (so the
+ * binary is on the system PATH for every user), else fall back to
+ * `$HOME/.local/bin/` (no sudo required).
+ *
+ * Version is a manual pin. deploy_dots.sh uses `releases/latest/download`
+ * for yazi; we pin so definitionHash drift surfaces in the picker when
+ * we bump. Accept a minor reproducibility divergence from the script
+ * here — the tuck bootstrap model prefers pinned.
+ *
+ * Ported from deploy_dots.sh:311–340.
  */
 export const yazi: ToolDefinition = {
   id: 'yazi',
@@ -25,9 +34,12 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "$url" -o "$tmp/yazi.zip"
 unzip -q "$tmp/yazi.zip" -d "$tmp/extract"
-mkdir -p "$HOME/.local/bin"
-cp "$tmp/extract"/yazi-*/yazi "$HOME/.local/bin/"
-cp "$tmp/extract"/yazi-*/ya "$HOME/.local/bin/"`,
+if sudo -n true 2>/dev/null; then
+  sudo mv "$tmp/extract"/yazi-*/ya "$tmp/extract"/yazi-*/yazi /usr/local/bin/
+else
+  mkdir -p "$HOME/.local/bin"
+  mv "$tmp/extract"/yazi-*/ya "$tmp/extract"/yazi-*/yazi "$HOME/.local/bin/"
+fi`,
   update: '@install',
   detect: {
     paths: ['~/.config/yazi'],

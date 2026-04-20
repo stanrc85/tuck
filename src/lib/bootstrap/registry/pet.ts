@@ -9,13 +9,16 @@ import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
  * picker as "outdated" when we bump it. Check pet's GitHub releases and
  * bump here when rolling the registry forward.
  *
- * Ported from deploy_dots.sh:201–218 (per TASK-022 notes).
+ * `dpkg -i` falls back to `apt -f install -y` on failure so missing
+ * dependencies auto-install, matching the deploy_dots.sh:238 pattern.
+ *
+ * Ported from deploy_dots.sh:220–246.
  */
 export const pet: ToolDefinition = {
   id: 'pet',
   description: 'CLI snippet manager',
   category: 'shell',
-  version: '0.3.7',
+  version: '1.0.1',
   requires: [],
   check: `command -v pet >/dev/null 2>&1 && pet --version 2>/dev/null | grep -q "\${VERSION}"`,
   install: `set -e
@@ -23,7 +26,7 @@ url="https://github.com/knqyf263/pet/releases/download/v\${VERSION}/pet_\${VERSI
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "$url" -o "$tmp/pet.deb"
-sudo dpkg -i "$tmp/pet.deb"`,
+sudo dpkg -i "$tmp/pet.deb" || sudo apt-get -f install -y`,
   update: '@install',
   detect: {
     paths: ['~/.config/pet'],
