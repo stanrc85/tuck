@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.2.2](https://github.com/stanrc85/tuck/compare/v2.2.1...v2.2.2) (2026-04-20)
 
 
 ### Bug Fixes
 
 * **git:** autostash on pull --rebase to survive incidental workdir dirt ([28c0f98](https://github.com/stanrc85/tuck/commit/28c0f98116b9204f599f82bf277f00eb12e63658))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.2.1](https://github.com/stanrc85/tuck/compare/v2.2.0...v2.2.1) (2026-04-20)
 
