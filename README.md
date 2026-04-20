@@ -438,11 +438,16 @@ Disable a built-in with `[registry] disabled = [...]` or override it by defining
 
 ### Your own `bootstrap.toml`
 
-`bootstrap.toml` is **optional** — if the file doesn't exist, `tuck bootstrap` just uses the built-in registry above. Create one only when you want to add your own tools, define bundles, or disable built-ins. A fully-annotated starter ships with tuck; copy it and edit to taste:
+`bootstrap.toml` is **optional** — if the file doesn't exist, `tuck bootstrap` just uses the built-in registry above. Create one only when you want to add your own tools, define bundles, or disable built-ins. Two annotated examples ship with tuck:
 
 ```bash
-# Find the installed tuck package and copy the example
+# Minimal starter — field reference + a couple of canned examples
 cp "$(npm root -g)/@prnv/tuck/templates/bootstrap.toml.example" ~/.tuck/bootstrap.toml
+
+# Full Debian/Ubuntu/Kali dev-workstation setup — bulk apt tier, Node
+# toolchain, tealdeer, ZimFW, zsh-fzf-history-search, chsh helper, plus
+# ready-to-use `kali` / `full` / `minimal` bundles
+cp "$(npm root -g)/@prnv/tuck/templates/bootstrap.toml.full.example" ~/.tuck/bootstrap.toml
 ```
 
 Minimal shape:
