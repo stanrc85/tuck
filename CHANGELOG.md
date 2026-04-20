@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.3.0](https://github.com/stanrc85/tuck/compare/v2.2.2...v2.3.0) (2026-04-20)
 
 
 ### Features
 
 * **groups:** gate sync/push on host group assignment + prompt during restore ([bcfb9aa](https://github.com/stanrc85/tuck/commit/bcfb9aa35e0d1e2db9922049aeb4247df4c04813))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.2.2](https://github.com/stanrc85/tuck/compare/v2.2.1...v2.2.2) (2026-04-20)
 
