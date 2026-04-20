@@ -1,3 +1,12 @@
+## [2.2.1](https://github.com/stanrc85/tuck/compare/v2.2.0...v2.2.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* **bootstrap:** drop unknown ripgrep from minimal bundle in full.example ([fce5065](https://github.com/stanrc85/tuck/commit/fce5065e800f2935c1fc9be25a1b1afe5f45981e))
+* **bootstrap:** neovim-plugins check reflects actual lazy install state ([5d2084e](https://github.com/stanrc85/tuck/commit/5d2084eb04968b1f07ca4c30ebe00fba6af89301))
+* **errors:** surface underlying git error in GitError message ([4652239](https://github.com/stanrc85/tuck/commit/46522395b189eb3bb647840988c08404d2f9573a))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.2.0](https://github.com/stanrc85/tuck/compare/v2.1.1...v2.2.0) (2026-04-20)
