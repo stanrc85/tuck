@@ -1,0 +1,115 @@
+# ==============================================================================
+#  bootstrap.toml — declarative tool catalog for `tuck bootstrap`
+# ==============================================================================
+#
+#  This file is OPTIONAL. If absent, `tuck bootstrap` runs with just the
+#  built-in registry (fzf, eza, bat, neovim, neovim-plugins, pet, yazi).
+#  Place your copy at ~/.tuck/bootstrap.toml — or pass --file <path>.
+#
+#  Each [[tool]] block declares one installable CLI. Fields:
+#    id           Required. kebab/snake-case identifier; must be unique across
+#                 your catalog AND the built-in registry (user entries with
+#                 the same id override built-ins).
+#    description  Required. One-line summary shown in the picker.
+#    category     Optional. Free-form grouping key for picker section headers.
+#    version      Optional. Interpolated as ${VERSION} in install/update.
+#                 Omit for apt-managed tools (let the distro track versions).
+#    requires     Optional. Other tool ids that must install first. Resolved
+#                 transitively; cycles and missing refs fail fast.
+#    check        Optional. Shell command — exit 0 means "already installed
+#                 at the expected version"; non-zero means "needs install".
+#    install      Required. Shell script to install the tool.
+#    update       Optional. Run by `tuck bootstrap update`. "@install" or
+#                 omitted means re-run the install script.
+#    detect       Optional. { paths = [...], rcReferences = [...] }. Signals
+#                 that the tool is already configured on this host. Drives
+#                 which tools are pre-checked in the interactive picker.
+#
+#  Variable interpolation in `check`/`install`/`update` scripts:
+#    ${VERSION}   Value of this tool's `version` field.
+#    ${ARCH}      amd64 / arm64 / armhf  (Debian-style)
+#    ${OS}        linux / darwin / windows
+#    ${HOME}      User home directory.
+#    ${TUCK_DIR}  Absolute path to the tuck data directory.
+#
+#  Anything else — ${PATH}, $(uname -m), $HOME — passes through untouched,
+#  so the shell expands it at run time. tuck does NOT do arbitrary env-var
+#  reach-through.
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# Example 1: apt package (no version pin, update via --only-upgrade)
+# ------------------------------------------------------------------------------
+[[tool]]
+id = "ripgrep"
+description = "recursive grep, fast"
+category = "shell"
+check = "command -v rg >/dev/null 2>&1"
+install = "sudo apt-get install -y ripgrep"
+update = "sudo apt-get install -y --only-upgrade ripgrep"
+detect = { paths = [], rcReferences = ["rg"] }
+
+[[tool]]
+id = "zoxide"
+description = "smarter cd with frecency"
+category = "shell"
+check = "command -v zoxide >/dev/null 2>&1"
+install = "sudo apt-get install -y zoxide"
+update = "sudo apt-get install -y --only-upgrade zoxide"
+detect = { paths = [], rcReferences = ["zoxide init"] }
+
+
+# ------------------------------------------------------------------------------
+# Example 2: version-pinned GitHub release download
+# ------------------------------------------------------------------------------
+[[tool]]
+id = "my-tool"
+description = "example version-pinned tool"
+category = "shell"
+version = "2.1.0"
+check = "command -v my-tool >/dev/null 2>&1 && my-tool --version | grep -q '${VERSION}'"
+install = """
+set -e
+url="https://example.com/releases/v${VERSION}/my-tool-${OS}-${ARCH}.tar.gz"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "$url" -o "$tmp/my-tool.tar.gz"
+tar -xzf "$tmp/my-tool.tar.gz" -C "$tmp"
+mkdir -p "$HOME/.local/bin"
+mv "$tmp/my-tool" "$HOME/.local/bin/"
+"""
+update = "@install"
+detect = { paths = ["~/.config/my-tool"], rcReferences = [] }
+
+
+# ------------------------------------------------------------------------------
+# Example 3: tool that depends on another tool
+# ------------------------------------------------------------------------------
+[[tool]]
+id = "my-plugin-manager"
+description = "plugin layer for my-tool"
+requires = ["my-tool"]                    # installs my-tool first if not present
+check = "test -f $HOME/.config/my-tool/plugins.lock"
+install = "my-tool plugin sync"
+update = "my-tool plugin update"
+
+
+# ------------------------------------------------------------------------------
+# Bundles: named collections invoked with `tuck bootstrap --bundle <name>`
+# Members can reference built-in registry tools AND entries in this file.
+# ------------------------------------------------------------------------------
+[bundles]
+essentials = ["fzf", "ripgrep", "zoxide", "neovim"]
+kali       = ["fzf", "ripgrep", "zoxide", "neovim", "neovim-plugins", "pet", "yazi"]
+minimal    = ["fzf", "ripgrep"]
+
+
+# ------------------------------------------------------------------------------
+# Registry overrides: opt out of specific built-ins.
+# Use when you want to supply your own `[[tool]]` for one of fzf/eza/bat/
+# neovim/neovim-plugins/pet/yazi (user entries always override built-ins
+# with the same id; `disabled` only affects the built-in overlay).
+# ------------------------------------------------------------------------------
+[registry]
+disabled = []                             # e.g. ["yazi"] to drop the built-in

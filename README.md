@@ -416,7 +416,14 @@ Disable a built-in with `[registry] disabled = [...]` or override it by defining
 
 ### Your own `bootstrap.toml`
 
-`bootstrap.toml` is **optional** — if the file doesn't exist, `tuck bootstrap` just uses the built-in registry above. Create one only when you want to add your own tools, define bundles, or disable built-ins. Place it at `~/.tuck/bootstrap.toml` (or pass `--file <path>`):
+`bootstrap.toml` is **optional** — if the file doesn't exist, `tuck bootstrap` just uses the built-in registry above. Create one only when you want to add your own tools, define bundles, or disable built-ins. A fully-annotated starter ships with tuck; copy it and edit to taste:
+
+```bash
+# Find the installed tuck package and copy the example
+cp "$(npm root -g)/@prnv/tuck/templates/bootstrap.toml.example" ~/.tuck/bootstrap.toml
+```
+
+Minimal shape:
 
 ```toml
 [[tool]]
