@@ -18,8 +18,9 @@ import {
   getTrackedFileBySource,
   assertMigrated,
   fileMatchesGroups,
+  getAllGroups,
 } from '../lib/manifest.js';
-import { loadConfig } from '../lib/config.js';
+import { loadConfig, saveLocalConfig } from '../lib/config.js';
 import { copyFileOrDir, createSymlink } from '../lib/files.js';
 import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
@@ -382,6 +383,64 @@ const displaySecretSummary = (result: RestoreResult): void => {
 };
 
 /**
+ * On a multi-group repo, the first successful restore on a new host is the
+ * right moment to ask which group(s) this machine belongs to — the manifest
+ * is now on disk, so the candidate groups are discoverable. Persists the
+ * selection to `.tuckrc.local.json`, which pairs with the TASK-046 sync/push
+ * gate: without this, those commands would refuse on the next invocation.
+ *
+ * Silent no-op when the host is already assigned, the repo has ≤1 groups,
+ * the run is a dry-run, or the caller isn't interactive (non-interactive
+ * paths emit an advisory warning instead of prompting).
+ */
+const maybePromptForGroupAssignment = async (
+  tuckDir: string,
+  options: RestoreOptions
+): Promise<void> => {
+  if (options.dryRun) return;
+
+  const config = await loadConfig(tuckDir);
+  if (config?.defaultGroups && config.defaultGroups.length > 0) return;
+
+  const allGroups = await getAllGroups(tuckDir);
+  if (allGroups.length <= 1) return;
+
+  if (!isInteractive()) {
+    logger.blank();
+    logger.warning('Host has no default group assigned on a multi-group repo.');
+    logger.info(`Available groups: ${allGroups.join(', ')}`);
+    logger.info('Sync/push will refuse until this is set. Run `tuck restore --all` interactively, or:');
+    logger.info(`  tuck config set defaultGroups ${allGroups[0]}`);
+    return;
+  }
+
+  logger.blank();
+  prompts.log.info(
+    `This host has no default group assigned, but the repo has ${allGroups.length} groups.`
+  );
+
+  const preselected = (options.group ?? []).filter((g) => allGroups.includes(g));
+  const selected = await prompts.multiselect<string>(
+    'Which group(s) does this host belong to? (saved to .tuckrc.local.json)',
+    allGroups.map((g) => ({ value: g, label: g })),
+    {
+      required: false,
+      initialValues: preselected.length > 0 ? preselected : undefined,
+    }
+  );
+
+  if (!selected || selected.length === 0) {
+    logger.info(`Skipped — set later with \`tuck config set defaultGroups ${allGroups[0]}\``);
+    return;
+  }
+
+  await saveLocalConfig({ defaultGroups: selected });
+  logger.success(
+    `Host assigned to group${selected.length > 1 ? 's' : ''}: ${selected.join(', ')}`
+  );
+};
+
+/**
  * Run restore programmatically (exported for use by other commands)
  */
 export const runRestore = async (options: RestoreOptions): Promise<void> => {
@@ -400,22 +459,27 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
   if (options.all) {
     // Prepare files to restore
     const filterGroups = await resolveGroupFilter(tuckDir, options);
-  const files = await prepareFilesToRestore(tuckDir, undefined, filterGroups);
+    const files = await prepareFilesToRestore(tuckDir, undefined, filterGroups);
 
     if (files.length === 0) {
+      // Don't early-return: we still want to offer group assignment on a fresh
+      // unassigned host where "no files" may be *caused by* the missing group.
       logger.warning('No files to restore');
-      return;
+    } else {
+      // Restore files with progress
+      const result = await restoreFilesInternal(tuckDir, files, options);
+
+      logger.blank();
+      displaySecretSummary(result);
+      logger.success(
+        `Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`
+      );
     }
-
-    // Restore files with progress
-    const result = await restoreFilesInternal(tuckDir, files, options);
-
-    logger.blank();
-    displaySecretSummary(result);
-    logger.success(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
   } else {
     await runInteractiveRestore(tuckDir, options);
   }
+
+  await maybePromptForGroupAssignment(tuckDir, options);
 };
 
 const runRestoreCommand = async (paths: string[], options: RestoreOptions): Promise<void> => {
@@ -433,6 +497,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   // If no paths and no --all, run interactive
   if (paths.length === 0 && !options.all) {
     await runInteractiveRestore(tuckDir, options);
+    await maybePromptForGroupAssignment(tuckDir, options);
     return;
   }
 
@@ -446,6 +511,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
 
   if (files.length === 0) {
     logger.warning('No files to restore');
+    await maybePromptForGroupAssignment(tuckDir, options);
     return;
   }
 
@@ -466,6 +532,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   } else {
     displaySecretSummary(result);
     logger.success(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
+    await maybePromptForGroupAssignment(tuckDir, options);
   }
 };
 

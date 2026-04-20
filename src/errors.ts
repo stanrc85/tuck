@@ -80,6 +80,21 @@ export class ManifestError extends TuckError {
   }
 }
 
+export class GroupRequiredError extends TuckError {
+  constructor(availableGroups: string[]) {
+    const list = availableGroups.join(', ');
+    super(
+      `This host has no default group assigned, but the repo has multiple groups (${list}). Refusing to sync without one.`,
+      'GROUP_REQUIRED',
+      [
+        'Run `tuck restore --all` to pick a group interactively (saved to .tuckrc.local.json)',
+        `Or set it manually: tuck config set defaultGroups <${availableGroups[0] ?? 'name'}>`,
+        'Or pass a one-shot override: tuck sync -g <name>',
+      ]
+    );
+  }
+}
+
 export class MigrationRequiredError extends TuckError {
   constructor(reason?: string) {
     super(

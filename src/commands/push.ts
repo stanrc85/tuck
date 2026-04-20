@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { prompts, logger, withSpinner, colors as c } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
 import { loadManifest, assertMigrated } from '../lib/manifest.js';
+import { assertHostGroupAssigned } from '../lib/groupFilter.js';
 import { checkLocalMode, showLocalModeWarningForPush } from '../lib/remoteChecks.js';
 import {
   push,
@@ -143,6 +144,7 @@ const runPush = async (options: PushOptions): Promise<void> => {
     throw new NotInitializedError();
   }
   assertMigrated(manifest);
+  await assertHostGroupAssigned(tuckDir);
 
   // Check for local-only mode
   if (await checkLocalMode(tuckDir)) {

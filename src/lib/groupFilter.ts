@@ -1,4 +1,6 @@
 import { loadConfig } from './config.js';
+import { getAllGroups } from './manifest.js';
+import { GroupRequiredError } from '../errors.js';
 
 /**
  * Resolve the host-group filter for a command invocation.
@@ -25,4 +27,36 @@ export const resolveGroupFilter = async (
     return config.defaultGroups;
   }
   return undefined;
+};
+
+/**
+ * Refuse to proceed when the repo uses host-groups but this host hasn't been
+ * assigned one. Protects write-side commands (`tuck sync`, `tuck push`) from
+ * silently contributing cross-host file noise.
+ *
+ * Passes when any of:
+ *   - caller supplied `-g/--group` (one-shot override)
+ *   - `config.defaultGroups` is non-empty (host has been assigned)
+ *   - manifest has ≤1 distinct groups (no ambiguity — single- or zero-group
+ *     repos are unaffected, keeping the check backwards-compatible)
+ *
+ * Throws `GroupRequiredError` otherwise. The error points at
+ * `tuck restore --all` because that flow now includes the assignment prompt.
+ */
+export const assertHostGroupAssigned = async (
+  tuckDir: string,
+  options: { group?: string[] } = {}
+): Promise<void> => {
+  if (options.group && options.group.length > 0) {
+    return;
+  }
+  const config = await loadConfig(tuckDir);
+  if (config?.defaultGroups && config.defaultGroups.length > 0) {
+    return;
+  }
+  const allGroups = await getAllGroups(tuckDir);
+  if (allGroups.length <= 1) {
+    return;
+  }
+  throw new GroupRequiredError(allGroups);
 };

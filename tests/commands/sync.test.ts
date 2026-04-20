@@ -7,6 +7,7 @@ const getAllTrackedFilesMock = vi.fn();
 const updateFileInManifestMock = vi.fn();
 const removeFileFromManifestMock = vi.fn();
 const getTrackedFileBySourceMock = vi.fn();
+const getAllGroupsMock = vi.fn();
 const pathExistsMock = vi.fn();
 const copyFileOrDirMock = vi.fn();
 const getFileChecksumMock = vi.fn();
@@ -84,6 +85,7 @@ vi.mock('../../src/lib/manifest.js', () => ({
   removeFileFromManifest: removeFileFromManifestMock,
   getTrackedFileBySource: getTrackedFileBySourceMock,
   assertMigrated: vi.fn(),
+  getAllGroups: getAllGroupsMock,
   // Real semantics inlined so group-filter tests exercise the actual behavior
   // instead of a blanket-true stub.
   fileMatchesGroups: (
@@ -182,6 +184,9 @@ describe('sync command behavior', () => {
     hasRemoteMock.mockResolvedValue(false);
     commitMock.mockResolvedValue('abc123def456');
     loadConfigMock.mockResolvedValue({ defaultGroups: [] });
+    // Default: single-group repo so the TASK-046 sync gate is a no-op. Tests
+    // that want to exercise the gate override with `getAllGroupsMock.mockResolvedValueOnce([...])`.
+    getAllGroupsMock.mockResolvedValue(['default']);
     validateSafeSourcePathMock.mockImplementation(() => {});
     validateSafeManifestDestinationMock.mockImplementation(() => {});
     validatePathWithinRootMock.mockImplementation(() => {});
@@ -425,6 +430,90 @@ describe('sync command behavior', () => {
 
       expect(removeFileFromManifestMock).toHaveBeenCalledTimes(1);
       expect(deleteFileOrDirMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ========== TASK-046 host-group assignment gate ==========
+
+  describe('host-group assignment gate', () => {
+    // Protects multi-group repos from hosts that haven't been assigned —
+    // otherwise resolveGroupFilter would return undefined and sync would
+    // churn every file across every host's tag.
+    const kaliFile = {
+      source: '~/.kali-rc',
+      destination: 'files/shell/kali-rc',
+      checksum: 'old',
+      groups: ['kali'],
+    };
+    const kubuntuFile = {
+      source: '~/.kubuntu-rc',
+      destination: 'files/shell/kubuntu-rc',
+      checksum: 'old',
+      groups: ['kubuntu'],
+    };
+
+    it('refuses sync when manifest has >1 groups + no -g + no defaultGroups', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, u: kubuntuFile });
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({ defaultGroups: [] });
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await expect(
+        runSyncCommand('sync: unassigned', { noCommit: true, noHooks: true, scan: false, pull: false })
+      ).rejects.toThrow(/no default group assigned/);
+
+      // Gate fires before any work
+      expect(copyFileOrDirMock).not.toHaveBeenCalled();
+      expect(commitMock).not.toHaveBeenCalled();
+    });
+
+    it('allows sync when -g is passed as a one-shot override', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, u: kubuntuFile });
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({ defaultGroups: [] });
+      getFileChecksumMock.mockResolvedValue('new');
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await runSyncCommand('sync: one-shot', {
+        noCommit: true,
+        noHooks: true,
+        scan: false,
+        pull: false,
+        group: ['kali'],
+      });
+
+      // Kali file syncs; no throw
+      expect(copyFileOrDirMock).toHaveBeenCalled();
+    });
+
+    it('allows sync when defaultGroups is set for the host', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile, u: kubuntuFile });
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kali'] });
+      getFileChecksumMock.mockResolvedValue('new');
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await runSyncCommand('sync: assigned', {
+        noCommit: true,
+        noHooks: true,
+        scan: false,
+        pull: false,
+      });
+
+      expect(copyFileOrDirMock).toHaveBeenCalled();
+    });
+
+    it('no-ops on single-group repos (gate is multi-group-only)', async () => {
+      // Legacy / single-group repos must keep working even with empty defaults.
+      getAllTrackedFilesMock.mockResolvedValue({ k: kaliFile });
+      getAllGroupsMock.mockResolvedValue(['default']);
+      loadConfigMock.mockResolvedValue({ defaultGroups: [] });
+      getFileChecksumMock.mockResolvedValue('new');
+      const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+      await expect(
+        runSyncCommand('sync: single-group', { noCommit: true, noHooks: true, scan: false, pull: false })
+      ).resolves.toBeUndefined();
     });
   });
 

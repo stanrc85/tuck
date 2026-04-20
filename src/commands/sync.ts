@@ -20,7 +20,7 @@ import {
   assertMigrated,
   fileMatchesGroups,
 } from '../lib/manifest.js';
-import { resolveGroupFilter } from '../lib/groupFilter.js';
+import { resolveGroupFilter, assertHostGroupAssigned } from '../lib/groupFilter.js';
 import { stageAll, commit, getStatus, push, hasRemote, fetch, pull } from '../lib/git.js';
 import {
   copyFileOrDir,
@@ -890,6 +890,7 @@ export const runSyncCommand = async (
     throw new NotInitializedError();
   }
   assertMigrated(manifest);
+  await assertHostGroupAssigned(tuckDir, options);
 
   if (options.list) {
     await runSyncList(tuckDir, options);

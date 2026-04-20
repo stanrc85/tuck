@@ -3,11 +3,17 @@ import { join, sep } from 'path';
 import { NotInitializedError, NonInteractivePromptError } from '../../src/errors.js';
 
 const isInteractiveMock = vi.fn(() => true);
+const multiselectMock = vi.fn();
+const loggerWarningMock = vi.fn();
+const loggerInfoMock = vi.fn();
+const loggerSuccessMock = vi.fn();
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
 const getTrackedFileBySourceMock = vi.fn();
+const getAllGroupsMock = vi.fn();
 const loadConfigMock = vi.fn();
+const saveLocalConfigMock = vi.fn();
 const copyFileOrDirMock = vi.fn();
 const createSymlinkMock = vi.fn();
 const runPreRestoreHookMock = vi.fn();
@@ -23,7 +29,7 @@ vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
     outro: vi.fn(),
-    multiselect: vi.fn(),
+    multiselect: multiselectMock,
     select: vi.fn(),
     confirm: vi.fn(),
     cancel: vi.fn(),
@@ -37,9 +43,9 @@ vi.mock('../../src/ui/index.js', () => ({
     },
   },
   logger: {
-    warning: vi.fn(),
-    info: vi.fn(),
-    success: vi.fn(),
+    warning: loggerWarningMock,
+    info: loggerInfoMock,
+    success: loggerSuccessMock,
     heading: vi.fn(),
     blank: vi.fn(),
     file: vi.fn(),
@@ -70,6 +76,7 @@ vi.mock('../../src/lib/manifest.js', () => ({
   getAllTrackedFiles: getAllTrackedFilesMock,
   getTrackedFileBySource: getTrackedFileBySourceMock,
   assertMigrated: vi.fn(),
+  getAllGroups: getAllGroupsMock,
   fileMatchesGroups: (
     _file: unknown,
     groups: string[] | undefined
@@ -78,6 +85,7 @@ vi.mock('../../src/lib/manifest.js', () => ({
 
 vi.mock('../../src/lib/config.js', () => ({
   loadConfig: loadConfigMock,
+  saveLocalConfig: saveLocalConfigMock,
 }));
 
 vi.mock('../../src/lib/files.js', () => ({
@@ -116,6 +124,10 @@ describe('restore command behavior', () => {
         backupOnRestore: true,
       },
     });
+    // Default: single-group repo so the TASK-047 assignment prompt is a no-op
+    // in tests that don't care about it. Tests override with mockResolvedValueOnce.
+    getAllGroupsMock.mockResolvedValue(['default']);
+    saveLocalConfigMock.mockResolvedValue(undefined);
     copyFileOrDirMock.mockResolvedValue(undefined);
     createSymlinkMock.mockResolvedValue(undefined);
     runPreRestoreHookMock.mockResolvedValue(undefined);
@@ -268,5 +280,144 @@ describe('restore command behavior', () => {
     await runRestore({ all: true, noHooks: true, noSecrets: true, dryRun: true });
 
     expect(createSnapshotMock).not.toHaveBeenCalled();
+  });
+
+  // ========== TASK-047 group-assignment prompt ==========
+
+  describe('group-assignment prompt on successful restore', () => {
+    const seedMultiGroupManifest = () => {
+      getAllTrackedFilesMock.mockResolvedValue({
+        zshrc: {
+          source: '~/.zshrc',
+          destination: 'files/shell/zshrc',
+          category: 'shell',
+          groups: ['kali'],
+        },
+      });
+    };
+
+    it('prompts + persists when manifest has >1 groups and defaults are empty', async () => {
+      seedMultiGroupManifest();
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: [],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+      multiselectMock.mockResolvedValue(['kali']);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(multiselectMock).toHaveBeenCalledTimes(1);
+      expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kali'] });
+    });
+
+    it('pre-selects options.group values when the user passed -g', async () => {
+      // Manifest contains a file in both groups so resolveGroupFilter with -g kali
+      // returns the file (the file must match the filter to actually be restored,
+      // otherwise runRestore short-circuits with "no files to restore").
+      getAllTrackedFilesMock.mockResolvedValue({
+        zshrc: {
+          source: '~/.zshrc',
+          destination: 'files/shell/zshrc',
+          category: 'shell',
+          groups: ['kali', 'kubuntu'],
+        },
+      });
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: [],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+      multiselectMock.mockResolvedValue(['kali']);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true, group: ['kali'] });
+
+      // multiselect is called with (message, options, config) — config has initialValues
+      expect(multiselectMock).toHaveBeenCalled();
+      const config = multiselectMock.mock.calls[0][2];
+      expect(config?.initialValues).toEqual(['kali']);
+    });
+
+    it('does NOT prompt on single-group repos', async () => {
+      seedMultiGroupManifest();
+      getAllGroupsMock.mockResolvedValue(['default']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: [],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(multiselectMock).not.toHaveBeenCalled();
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('does NOT prompt when defaultGroups is already set', async () => {
+      seedMultiGroupManifest();
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: ['kali'],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(multiselectMock).not.toHaveBeenCalled();
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('does NOT prompt on --dry-run (no state changes on a preview)', async () => {
+      seedMultiGroupManifest();
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: [],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true, dryRun: true });
+
+      expect(multiselectMock).not.toHaveBeenCalled();
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('emits warning + skips prompt when non-interactive', async () => {
+      isInteractiveMock.mockReturnValue(false);
+      seedMultiGroupManifest();
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: [],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(multiselectMock).not.toHaveBeenCalled();
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+      expect(loggerWarningMock).toHaveBeenCalledWith(
+        expect.stringContaining('no default group assigned')
+      );
+    });
+
+    it('skips persistence when user submits an empty multiselect (Esc / no selection)', async () => {
+      seedMultiGroupManifest();
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        defaultGroups: [],
+        files: { strategy: 'copy', backupOnRestore: true },
+      });
+      multiselectMock.mockResolvedValue([]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(multiselectMock).toHaveBeenCalledTimes(1);
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
   });
 });
