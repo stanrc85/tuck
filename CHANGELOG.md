@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.1.0](https://github.com/stanrc85/tuck/compare/v2.0.0...v2.1.0) (2026-04-20)
 
 
@@ -15,8 +17,6 @@
 * **bootstrap:** add state file and detection modules ([0b09b0a](https://github.com/stanrc85/tuck/commit/0b09b0a1209c8e6c9d60d87e0c967039786e3533))
 * **bootstrap:** add tuck bootstrap command with picker + flag modes ([af99034](https://github.com/stanrc85/tuck/commit/af9903460f78c7950a45b1b6df5f0e9b0e5a939f))
 * **bootstrap:** populate built-in registry with 7 tool entries ([e29b0ff](https://github.com/stanrc85/tuck/commit/e29b0ff8d5a956a5aa165dbcf083895e6311c2f6))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.0.0](https://github.com/stanrc85/tuck/compare/v1.5.0...v2.0.0) (2026-04-19)
 
