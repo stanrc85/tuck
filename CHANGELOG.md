@@ -1,3 +1,10 @@
+# [2.4.0](https://github.com/stanrc85/tuck/compare/v2.3.2...v2.4.0) (2026-04-20)
+
+
+### Features
+
+* **bootstrap:** install neovim from GitHub stable tag instead of apt ([23a9f79](https://github.com/stanrc85/tuck/commit/23a9f792aaa97f850011338735fafc71b22d860c))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.3.2](https://github.com/stanrc85/tuck/compare/v2.3.1...v2.3.2) (2026-04-20)
