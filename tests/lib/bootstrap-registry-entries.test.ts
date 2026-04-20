@@ -179,14 +179,17 @@ describe('check command shape (structural — no execution)', () => {
     }
   });
 
-  it('checks use `command -v` or `test -f` form (not a heuristic)', () => {
+  it('checks use `command -v` or `test -f/-d` form (not a heuristic)', () => {
     // Guards against a future edit introducing a check that happens to
     // `rm -rf` something — structural, not semantic, but catches egregious
     // drifts from the pattern.
     for (const tool of BUILT_IN_TOOLS) {
       const check = tool.check ?? '';
-      const ok = check.includes('command -v') || check.includes('test -f');
-      expect(ok, `${tool.id} check doesn't follow command-v/test-f pattern: ${check}`).toBe(true);
+      const ok =
+        check.includes('command -v') ||
+        check.includes('test -f') ||
+        check.includes('test -d');
+      expect(ok, `${tool.id} check doesn't follow command-v/test-f/-d pattern: ${check}`).toBe(true);
     }
   });
 });

@@ -19,9 +19,15 @@ import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
  *     - `Lazy! sync` — pulls new commits for every plugin; fast when
  *       nothing has changed.
  *
- * `check` uses presence of `lazy-lock.json` as a proxy for "plugins
- * have been synced at least once." Re-run with `--rerun neovim-plugins`
- * to pick up plugin changes after editing `~/.config/nvim/lua/plugins/`.
+ * `check` probes lazy.nvim's *runtime* plugin dir
+ * (`~/.local/share/nvim/lazy/nvim-treesitter`) — that directory is only
+ * created by a real `lazy.sync()` run, so it's a reliable
+ * "plugins have actually been installed" signal. Earlier versions used
+ * `~/.config/nvim/lazy-lock.json`, but users who track that file in their
+ * dotfiles repo get it restored by `tuck restore` before bootstrap runs,
+ * which made the check pass without any plugins ever being installed.
+ * Re-run with `--rerun neovim-plugins` to pick up plugin changes after
+ * editing `~/.config/nvim/lua/plugins/`.
  *
  * Ported from deploy_dots.sh:292–309 (configure_nvim + sync_nvim).
  */
@@ -30,7 +36,7 @@ export const neovimPlugins: ToolDefinition = {
   description: 'sync lazy.nvim-managed neovim plugins',
   category: 'editors',
   requires: ['neovim'],
-  check: 'test -f "$HOME/.config/nvim/lazy-lock.json"',
+  check: 'test -d "$HOME/.local/share/nvim/lazy/nvim-treesitter"',
   install: `set -e
 if command -v npm >/dev/null 2>&1; then
   sudo npm install -g tree-sitter-cli
