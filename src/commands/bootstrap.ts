@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import { join } from 'path';
 import { prompts, isInteractive } from '../ui/index.js';
-import { getTuckDir } from '../lib/paths.js';
+import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
+import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
 import { mergeWithRegistry } from '../lib/bootstrap/registry/index.js';
 import { detectTool } from '../lib/bootstrap/detect.js';
 import {
@@ -73,11 +74,21 @@ export const runBootstrap = async (
   options: BootstrapOptions = {}
 ): Promise<RunBootstrapResult> => {
   const tuckDir = getTuckDir();
+  const explicitFile = options.file !== undefined;
   const configPath = options.file ?? join(tuckDir, 'bootstrap.toml');
 
   prompts.intro('tuck bootstrap');
 
-  const config = await loadBootstrapConfig(configPath);
+  // bootstrap.toml is optional: absent at the default location → run with
+  // just the built-in registry (so users who only want fzf/eza/pet/etc.
+  // don't need to hand-create an empty file). An explicit `--file` that
+  // points at a missing path is a user typo — still errors loudly.
+  let config;
+  if (!explicitFile && !(await pathExists(configPath))) {
+    config = bootstrapConfigSchema.parse({});
+  } else {
+    config = await loadBootstrapConfig(configPath);
+  }
   const catalog = mergeWithRegistry(config);
 
   if (catalog.length === 0) {

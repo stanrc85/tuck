@@ -101,10 +101,22 @@ describe('runBootstrap (command layer)', () => {
   });
 
   describe('error paths', () => {
-    it('throws BootstrapError when bootstrap.toml is missing', async () => {
-      // No file written to TEST_TUCK_DIR.
+    it('runs with only built-ins when bootstrap.toml is absent at the default path', async () => {
+      // No bootstrap.toml at TEST_TUCK_DIR; should fall through to the
+      // built-in catalog rather than erroring. Users who only want the
+      // built-ins shouldn't have to create an empty file.
+      const result = await runBootstrap({ all: true, dryRun: true });
+      expect(result.plan).not.toBeNull();
+      const ids = result.plan!.ordered.map((t) => t.id);
+      expect(ids).toContain('fzf');
+      expect(ids).toContain('neovim');
+    });
+
+    it('throws BootstrapError when --file is explicit but missing', async () => {
+      // Explicit --file is a deliberate "load this file" ask; a missing
+      // path there is a user typo worth failing loudly for.
       await expect(
-        runBootstrap({ all: true, dryRun: true })
+        runBootstrap({ file: '/nope/does/not/exist.toml', all: true, dryRun: true })
       ).rejects.toBeInstanceOf(BootstrapError);
     });
 

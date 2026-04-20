@@ -416,7 +416,7 @@ Disable a built-in with `[registry] disabled = [...]` or override it by defining
 
 ### Your own `bootstrap.toml`
 
-Place it at `~/.tuck/bootstrap.toml` (or pass `--file <path>`):
+`bootstrap.toml` is **optional** — if the file doesn't exist, `tuck bootstrap` just uses the built-in registry above. Create one only when you want to add your own tools, define bundles, or disable built-ins. Place it at `~/.tuck/bootstrap.toml` (or pass `--file <path>`):
 
 ```toml
 [[tool]]
