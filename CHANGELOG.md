@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.1.1](https://github.com/stanrc85/tuck/compare/v2.1.0...v2.1.1) (2026-04-20)
 
 
@@ -5,8 +7,6 @@
 
 * **bootstrap:** gitignore .bootstrap-state.json so install state stays per-host ([ceb6d8a](https://github.com/stanrc85/tuck/commit/ceb6d8afb4acce1747175ffcc1219a1999114957))
 * **bootstrap:** make bootstrap.toml optional when using the default path ([9745cb6](https://github.com/stanrc85/tuck/commit/9745cb62725328c76c80c2d6ae4e1b050d8df5f6))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.1.0](https://github.com/stanrc85/tuck/compare/v2.0.0...v2.1.0) (2026-04-20)
 
