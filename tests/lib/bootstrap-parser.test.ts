@@ -143,24 +143,20 @@ install = "y"
     }
   });
 
-  it('rejects a bundle that references an unknown tool', () => {
-    const bad = `
+  it('does NOT pre-validate bundle cross-refs (plan-time handles it)', () => {
+    // Bundles may legitimately reference built-in registry tools that
+    // aren't in the user's `[[tool]]` array. Validation happens at plan
+    // time (against the merged catalog), not at parse time.
+    const config = parseBootstrapConfig(`
 [[tool]]
 id = "fzf"
 description = "fuzzy"
 install = "apt install fzf"
 
 [bundles]
-kali = ["fzf", "ghost-tool"]
-`;
-    try {
-      parseBootstrapConfig(bad);
-      expect.fail('expected throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(BootstrapError);
-      expect((err as Error).message).toContain('ghost-tool');
-      expect((err as Error).message).toContain('kali');
-    }
+kali = ["fzf", "pet-from-builtin-registry"]
+`);
+    expect(config.bundles.kali).toEqual(['fzf', 'pet-from-builtin-registry']);
   });
 
   it('does NOT pre-validate `requires` cross-refs (resolver handles it)', () => {

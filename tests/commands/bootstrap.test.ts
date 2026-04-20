@@ -43,10 +43,14 @@ describe('runBootstrap (command layer)', () => {
       writeBootstrapToml(SIMPLE_TOML);
       const result = await runBootstrap({ all: true, dryRun: true });
       expect(result.dryRun).toBe(true);
-      expect(result.plan?.ordered.map((t) => t.id).sort()).toEqual(['eza', 'fzf', 'pet']);
+      // User tools must all be present. Built-in registry adds more entries
+      // on top, so we assert containment rather than exact length.
+      const ids = result.plan!.ordered.map((t) => t.id);
+      expect(ids).toContain('eza');
+      expect(ids).toContain('fzf');
+      expect(ids).toContain('pet');
       // fzf must precede pet (pet requires fzf).
-      const order = result.plan!.ordered.map((t) => t.id);
-      expect(order.indexOf('fzf')).toBeLessThan(order.indexOf('pet'));
+      expect(ids.indexOf('fzf')).toBeLessThan(ids.indexOf('pet'));
       expect(result.counts).toBeNull();
     });
 
@@ -109,11 +113,21 @@ describe('runBootstrap (command layer)', () => {
       vol.mkdirSync('/test-home/custom/path', { recursive: true });
       vol.writeFileSync(customPath, SIMPLE_TOML);
       const result = await runBootstrap({ file: customPath, all: true, dryRun: true });
-      expect(result.plan?.ordered).toHaveLength(3);
+      // User tools from the custom path appear in the plan (plus built-ins).
+      const ids = result.plan!.ordered.map((t) => t.id);
+      expect(ids).toContain('fzf');
+      expect(ids).toContain('pet');
+      expect(ids).toContain('eza');
     });
 
     it('empty catalog exits cleanly without error', async () => {
-      writeBootstrapToml(''); // empty file parses to { tool: [], bundles: {}, registry: {...} }
+      // Disable every built-in so the resulting merged catalog is truly empty.
+      // Hardcoded list mirrors BUILT_IN_TOOLS; if a new built-in lands, this
+      // test reminds the author to include it here (or rethink the test).
+      writeBootstrapToml(`
+[registry]
+disabled = ["fzf", "eza", "bat", "neovim", "neovim-plugins", "pet", "yazi"]
+`);
       const result = await runBootstrap({ all: true, dryRun: true });
       expect(result).toEqual({ plan: null, counts: null, dryRun: false });
     });

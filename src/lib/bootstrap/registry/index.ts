@@ -2,18 +2,34 @@ import type {
   BootstrapConfig,
   ToolDefinition,
 } from '../../../schemas/bootstrap.schema.js';
+import { fzf } from './fzf.js';
+import { eza } from './eza.js';
+import { bat } from './bat.js';
+import { neovim } from './neovim.js';
+import { neovimPlugins } from './neovim-plugins.js';
+import { pet } from './pet.js';
+import { yazi } from './yazi.js';
 
 /**
- * Built-in tool catalog overlaid onto the user's `bootstrap.toml`. Kept
- * empty for TASK-021; TASK-022 will populate it with entries for fzf,
- * eza, bat, neovim, neovim-plugins, pet, and yazi (plain TS modules so
- * each entry can use arch/OS helpers without re-parsing TOML).
+ * Built-in tool catalog overlaid onto the user's `bootstrap.toml`. Each
+ * entry is a plain TS module under this directory so it can use arch/OS
+ * helpers without re-parsing TOML. Users who want to customise any
+ * built-in override it with their own `[[tool]]` entry (user wins) or
+ * drop it via `[registry] disabled = [...]`.
  *
  * Exposed as a frozen array so downstream code can't mutate it in place
  * by accident. Tests that need a different built-in set inject via
  * `mergeWithRegistry(config, { builtIns })`.
  */
-export const BUILT_IN_TOOLS: readonly ToolDefinition[] = Object.freeze([]);
+export const BUILT_IN_TOOLS: readonly ToolDefinition[] = Object.freeze([
+  fzf,
+  eza,
+  bat,
+  neovim,
+  neovimPlugins,
+  pet,
+  yazi,
+]);
 
 export interface MergeOptions {
   /** Override the built-in list. Primarily used by tests. */

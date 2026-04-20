@@ -90,10 +90,12 @@ describe('mergeWithRegistry', () => {
   });
 
   it('defaults to the real BUILT_IN_TOOLS when options.builtIns is omitted', () => {
-    // TASK-021 ships an empty registry; TASK-022 will populate it. This test
-    // pins the contract that the registry is accessible without injection.
+    // Pins the contract that `mergeWithRegistry` is usable without
+    // injecting builtIns (real callers use this path). The specific
+    // built-in ids are covered by `bootstrap-registry-entries.test.ts`
+    // so this test just asserts "user tool is present + registry ran."
     const result = mergeWithRegistry(config({ tool: [tool('only-user')] }));
-    expect(result.map((t) => t.id)).toEqual(['only-user']);
-    expect(BUILT_IN_TOOLS).toEqual([]);
+    expect(result.map((t) => t.id)).toContain('only-user');
+    expect(result.length).toBeGreaterThan(1); // user tool + built-ins overlaid
   });
 });

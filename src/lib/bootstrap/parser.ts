@@ -14,12 +14,13 @@ import { pathExists } from '../paths.js';
  * Three failure modes, all surfaced as `BootstrapError`:
  *   1. TOML syntax (forwards smol-toml's line/column + code excerpt).
  *   2. Schema validation (per-field Zod issues, flattened for readability).
- *   3. Cross-reference (duplicate tool IDs, bundle members pointing at
- *      unknown tools). `requires` cross-refs are intentionally NOT checked
- *      here — the resolver sees the merged catalog (user + built-in
- *      registry) and can tell "unknown in this file" from "missing
- *      entirely". Splitting those checks keeps the parser honest about
- *      what it can see in isolation.
+ *   3. Duplicate tool IDs within the file.
+ *
+ * Bundle-member cross-refs and `requires` cross-refs are intentionally
+ * NOT checked here — at parse time we don't see the built-in registry,
+ * so a bundle like `kali = ["fzf"]` would false-positive on "unknown
+ * tool" when `fzf` is a legitimate built-in. Validation happens at plan
+ * time (see `planBootstrap`), which sees the fully-merged catalog.
  *
  * `sourcePath` is cosmetic — shown in error messages so users can jump
  * straight to the file. Omit when parsing ad-hoc strings (tests).
@@ -52,7 +53,6 @@ export const parseBootstrapConfig = (content: string, sourcePath?: string): Boot
 
   const config = result.data;
   assertUniqueToolIds(config, fileLabel);
-  assertBundleMembersExist(config, fileLabel);
 
   return config;
 };
@@ -115,22 +115,3 @@ const assertUniqueToolIds = (config: BootstrapConfig, fileLabel: string): void =
   }
 };
 
-const assertBundleMembersExist = (config: BootstrapConfig, fileLabel: string): void => {
-  const toolIds = new Set(config.tool.map((t) => t.id));
-  const problems: string[] = [];
-
-  for (const [bundleName, memberIds] of Object.entries(config.bundles)) {
-    for (const memberId of memberIds) {
-      if (!toolIds.has(memberId)) {
-        problems.push(`bundles.${bundleName} references unknown tool "${memberId}"`);
-      }
-    }
-  }
-
-  if (problems.length > 0) {
-    throw new BootstrapError(
-      `Invalid bundle reference(s) in ${fileLabel}: ${problems.join('; ')}`,
-      ['Add a matching [[tool]] entry, or remove the reference from the bundle']
-    );
-  }
-};
