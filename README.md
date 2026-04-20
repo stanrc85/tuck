@@ -81,6 +81,9 @@ tuck apply username
 # Or clone your own and restore
 tuck init --from github.com/you/dotfiles
 tuck restore --all
+
+# Install the CLI tools your dotfiles expect
+tuck bootstrap --bundle <your-bundle>
 ```
 
 ## Commands
@@ -151,11 +154,22 @@ tuck restore --all
 | Command             | Description                                                          |
 | ------------------- | -------------------------------------------------------------------- |
 | `tuck self-update`  | Update tuck to the latest GitHub release of `stanrc85/tuck`          |
+| `tuck bootstrap`    | Install CLI tools declared in `bootstrap.toml` (and a built-in set)  |
 
 `tuck self-update` flags:
 - `--check`: Report update status without installing (exit 1 if an update is available, 0 if up to date — handy for scripts)
 - `-y`, `--yes`: Apply the update without prompting
 - `--tag <tag>`: Install a specific release tag (e.g. `--tag v1.2.0`), including older tags for a downgrade/pin
+
+`tuck bootstrap` flags:
+- `--all`: Install every tool in the merged catalog (skip the picker)
+- `--bundle <name>`: Install a named bundle from `[bundles]` (skip the picker)
+- `--tools <ids>`: Comma/space-separated list of tool ids to install (skip the picker)
+- `--rerun <ids>`: Force-reinstall specific tools, ignoring their `check` probe
+- `--dry-run`: Print the resolved install order without executing anything
+- `-y`, `--yes`: Pre-check `sudo -n true` when the script needs sudo so non-interactive runs fail fast instead of hanging on a password prompt
+- `--no-detect`: In the picker, show a flat alphabetical list and ignore detection signals
+- `-f`, `--file <path>`: Use a `bootstrap.toml` at a custom location (default: `~/.tuck/bootstrap.toml`)
 
 Under the hood it runs `sudo npm install -g https://github.com/stanrc85/tuck/releases/download/<tag>/tuck.tgz` (or without `sudo` when already root or on Windows). Running from a dev checkout is refused — use `git pull && pnpm build` in that case.
 
@@ -363,6 +377,102 @@ Snapshots are pruned automatically after each new one is created. Defaults keep 
 ```
 
 Set either value to `0` to disable that dimension.
+
+## Bootstrapping Tools
+
+`tuck bootstrap` installs CLI tools on a fresh machine from a declarative catalog. Think of it as the orchestration half of "new-machine setup" — dotfiles come from `tuck apply` / `tuck restore`; the CLIs those dotfiles expect come from `tuck bootstrap`.
+
+### Quick start
+
+```bash
+# Interactive picker — detected tools pre-checked
+tuck bootstrap
+
+# See the plan without running anything
+tuck bootstrap --all --dry-run
+
+# Install one or more tools by id
+tuck bootstrap --tools neovim,pet
+
+# Install a named bundle
+tuck bootstrap --bundle kali
+```
+
+### Built-in catalog
+
+These come with tuck and don't need anything in your `bootstrap.toml`:
+
+| Tool              | Source                                                                 | Notes                                                     |
+| ----------------- | ---------------------------------------------------------------------- | --------------------------------------------------------- |
+| `fzf`             | `apt` package                                                          | Fuzzy finder                                              |
+| `eza`             | `apt` package (Debian trixie / Ubuntu 24.04+)                          | Modern `ls` replacement                                   |
+| `bat`             | `apt` package + `batcat → bat` symlink                                 | Symlinks to `/usr/local/bin` if sudo cached, else `~/.local/bin` |
+| `neovim`          | `apt` package                                                          | Editor                                                    |
+| `neovim-plugins`  | `nvim --headless` with lazy.nvim sync + treesitter parser install      | Requires `neovim`. Install is heavy (first-run cold compile); update is just `Lazy! sync` |
+| `pet`             | `curl` from GitHub release `.deb` + `dpkg -i`                          | Version-pinned. Snippet manager (`knqyf263/pet`)          |
+| `yazi`            | `curl` from GitHub release zip, extract to `/usr/local/bin` or `~/.local/bin` | Version-pinned. Terminal file manager (`sxyazi/yazi`) |
+
+Disable a built-in with `[registry] disabled = [...]` or override it by defining your own `[[tool]]` with the same `id` — user tools always win.
+
+### Your own `bootstrap.toml`
+
+Place it at `~/.tuck/bootstrap.toml` (or pass `--file <path>`):
+
+```toml
+[[tool]]
+id = "ripgrep"
+description = "recursive grep"
+category = "shell"
+requires = []                              # other tool ids this one needs first
+check = "command -v rg >/dev/null 2>&1"    # exit 0 = already installed, skip
+install = "sudo apt-get install -y ripgrep"
+update = "sudo apt-get install -y --only-upgrade ripgrep"
+detect = { paths = [], rcReferences = ["rg"] }   # picker hints
+
+[[tool]]
+id = "my-custom-tool"
+description = "something local"
+version = "2.1.0"                           # interpolated as ${VERSION}
+install = """
+curl -fsSL https://example.com/tool-v${VERSION}-${OS}-${ARCH}.tar.gz | tar -xz -C /tmp
+mv /tmp/tool /usr/local/bin/
+"""
+update = "@install"                         # @install or omitted → re-run install
+
+[bundles]
+kali      = ["ripgrep", "fzf", "pet", "neovim", "neovim-plugins"]
+minimal   = ["ripgrep", "fzf"]
+```
+
+### Variable interpolation
+
+Exactly five tokens are substituted in `check`, `install`, and `update` strings:
+
+| Token          | Value                                                             |
+| -------------- | ----------------------------------------------------------------- |
+| `${VERSION}`   | The tool's `version` field (throws if referenced and unset)       |
+| `${ARCH}`      | `amd64` / `arm64` / `armhf` (Debian-style; from `os.arch()`)      |
+| `${OS}`        | `linux` / `darwin` / `windows`                                    |
+| `${HOME}`      | User home directory                                               |
+| `${TUCK_DIR}`  | Absolute path to the tuck data directory                          |
+
+Anything else — `${PATH}`, `$(uname -m)`, `$HOME` — passes through untouched so the shell expands it at run time. tuck deliberately does **not** do arbitrary env-var reach-through.
+
+### Dependencies and order
+
+`requires` targets are resolved transitively. Pick `neovim-plugins` and `neovim` is pulled in automatically, installed first, and tagged `(dep)` in the output. Cycles and unknown ids fail fast with the participating tool names in the error.
+
+### State and drift detection
+
+Successful installs are recorded in `~/.tuck/.bootstrap-state.json` (per-host; never synced) with a SHA-256 hash of the normalized tool definition. If the definition changes in a later tuck release (or in your `bootstrap.toml`), the picker surfaces the tool as "outdated." Re-run with `--rerun <id>` to force a reinstall ignoring its `check` probe.
+
+### Sudo handling
+
+Every `sudo <cmd>` line prompts interactively as usual. Under `--yes`, tuck pre-checks `sudo -n true` whenever the script contains `sudo` — if credentials aren't cached, you get one clear error ("run `sudo -v` first, or configure NOPASSWD") instead of a mystery hang.
+
+### Failure containment
+
+A single tool's install failing doesn't abort the run. Dependents of a failed tool are marked `skipped-dep-failed` and the loop continues. Final summary reports `N installed, M failed, K skipped` with per-tool detail, and tuck exits non-zero if anything failed so CI pipelines catch it.
 
 ## Git Providers
 
