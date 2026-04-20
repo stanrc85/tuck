@@ -236,10 +236,11 @@ full = [
 ]
 
 # `minimal` — just the CLI toolchain, no shell-framework side-effects.
-# Good for servers or ephemeral containers.
+# Good for servers or ephemeral containers. (Add `"dev-utilities"` if you
+# also want ripgrep/zoxide/fastfetch and the rest of the utility bulk.)
 minimal = [
   "system-prereqs",
-  "fzf", "ripgrep", "fd", "bat", "neovim",
+  "fzf", "fd", "bat", "neovim",
 ]
 
 
