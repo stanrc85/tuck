@@ -428,6 +428,7 @@ These come with tuck and don't need anything in your `bootstrap.toml`:
 | `fzf`             | `apt` package                                                          | Fuzzy finder                                              |
 | `eza`             | `apt` package (Debian trixie / Ubuntu 24.04+)                          | Modern `ls` replacement                                   |
 | `bat`             | `apt` package + `batcat → bat` symlink                                 | Symlinks to `/usr/local/bin` if sudo cached, else `~/.local/bin` |
+| `fd`              | `apt` package (`fd-find`) + `fdfind → fd` symlink                      | Same symlink pattern as `bat` (sudo-cached vs `~/.local/bin`)    |
 | `neovim`          | `apt` package                                                          | Editor                                                    |
 | `neovim-plugins`  | `nvim --headless` with lazy.nvim sync + treesitter parser install      | Requires `neovim`. Install is heavy (first-run cold compile); update is just `Lazy! sync` |
 | `pet`             | `curl` from GitHub release `.deb` + `dpkg -i`                          | Version-pinned. Snippet manager (`knqyf263/pet`)          |

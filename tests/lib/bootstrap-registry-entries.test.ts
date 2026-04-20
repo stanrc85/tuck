@@ -11,7 +11,7 @@ import {
 import { resolveInstallOrder } from '../../src/lib/bootstrap/resolver.js';
 import { TEST_HOME } from '../setup.js';
 
-const expectedIds = ['fzf', 'eza', 'bat', 'neovim', 'neovim-plugins', 'pet', 'yazi'];
+const expectedIds = ['fzf', 'eza', 'bat', 'fd', 'neovim', 'neovim-plugins', 'pet', 'yazi'];
 
 const byId = Object.fromEntries(BUILT_IN_TOOLS.map((t) => [t.id, t]));
 
@@ -24,7 +24,7 @@ const vars: BootstrapVars = {
 };
 
 describe('BUILT_IN_TOOLS catalog', () => {
-  it('exposes exactly the seven ids listed in TASK-022', () => {
+  it('exposes the expected built-in ids', () => {
     expect(BUILT_IN_TOOLS.map((t) => t.id).sort()).toEqual([...expectedIds].sort());
   });
 

@@ -138,7 +138,7 @@ describe('runBootstrap (command layer)', () => {
       // test reminds the author to include it here (or rethink the test).
       writeBootstrapToml(`
 [registry]
-disabled = ["fzf", "eza", "bat", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
       const result = await runBootstrap({ all: true, dryRun: true });
       expect(result).toEqual({ plan: null, counts: null, dryRun: false });
