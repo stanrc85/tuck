@@ -18,13 +18,18 @@ import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
  * we bump. Accept a minor reproducibility divergence from the script
  * here — the tuck bootstrap model prefers pinned.
  *
+ * Yazi switched from SemVer to CalVer (YY.M.DD) in late 2024, and the
+ * plugin API shifted with it — pinning at 0.4.0 left fresh hosts unable
+ * to load plugins authored against the CalVer API. Bump when the plugin
+ * ecosystem settles on another breaking rev.
+ *
  * Ported from deploy_dots.sh:311–340.
  */
 export const yazi: ToolDefinition = {
   id: 'yazi',
   description: 'terminal file manager',
   category: 'shell',
-  version: '0.4.0',
+  version: '26.1.22',
   requires: [],
   check: `command -v yazi >/dev/null 2>&1 && yazi --version 2>/dev/null | grep -q "\${VERSION}"`,
   install: `set -e
