@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.3.1](https://github.com/stanrc85/tuck/compare/v2.3.0...v2.3.1) (2026-04-20)
 
 
 ### Bug Fixes
 
 * **bootstrap:** survive nvim-treesitter API drift in neovim-plugins install ([e238816](https://github.com/stanrc85/tuck/commit/e238816ceb2915d17e5b7beff2ca9cb3763d6736))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.3.0](https://github.com/stanrc85/tuck/compare/v2.2.2...v2.3.0) (2026-04-20)
 
