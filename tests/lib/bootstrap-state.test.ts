@@ -105,6 +105,40 @@ describe('bootstrap state', () => {
       await saveBootstrapState(state, freshDir);
       expect(vol.existsSync(getBootstrapStatePath(freshDir))).toBe(true);
     });
+
+    it('appends .bootstrap-state.json to .gitignore on save (creates if missing)', async () => {
+      const state = emptyBootstrapState();
+      await saveBootstrapState(state, TEST_TUCK_DIR);
+      const gitignore = vol.readFileSync(join(TEST_TUCK_DIR, '.gitignore'), 'utf-8') as string;
+      expect(gitignore).toContain(STATE_FILE);
+    });
+
+    it('does not duplicate the .gitignore entry on subsequent saves', async () => {
+      await saveBootstrapState(emptyBootstrapState(), TEST_TUCK_DIR);
+      await saveBootstrapState(emptyBootstrapState(), TEST_TUCK_DIR);
+      const gitignore = vol.readFileSync(join(TEST_TUCK_DIR, '.gitignore'), 'utf-8') as string;
+      const occurrences = gitignore.split(STATE_FILE).length - 1;
+      expect(occurrences).toBe(1);
+    });
+
+    it('preserves existing .gitignore contents when adding the entry', async () => {
+      const gitignorePath = join(TEST_TUCK_DIR, '.gitignore');
+      vol.writeFileSync(gitignorePath, 'node_modules\n.DS_Store\n');
+      await saveBootstrapState(emptyBootstrapState(), TEST_TUCK_DIR);
+      const gitignore = vol.readFileSync(gitignorePath, 'utf-8') as string;
+      expect(gitignore).toContain('node_modules');
+      expect(gitignore).toContain('.DS_Store');
+      expect(gitignore).toContain(STATE_FILE);
+    });
+
+    it('no-ops if .bootstrap-state.json is already in .gitignore', async () => {
+      const gitignorePath = join(TEST_TUCK_DIR, '.gitignore');
+      const before = `node_modules\n${STATE_FILE}\n`;
+      vol.writeFileSync(gitignorePath, before);
+      await saveBootstrapState(emptyBootstrapState(), TEST_TUCK_DIR);
+      const after = vol.readFileSync(gitignorePath, 'utf-8') as string;
+      expect(after).toBe(before);
+    });
   });
 
   describe('recordToolInstalled', () => {

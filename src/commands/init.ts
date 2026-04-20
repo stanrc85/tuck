@@ -82,6 +82,9 @@ Thumbs.db
 # Host-local tuck config (never commit — host-specific overrides)
 .tuckrc.local.json
 
+# Per-host bootstrap install state (never commit — varies per machine)
+.bootstrap-state.json
+
 # Secret files (add patterns for files you want to exclude)
 # *.secret
 # .env.local

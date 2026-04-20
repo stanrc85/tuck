@@ -8,6 +8,42 @@ import { BootstrapError } from '../../errors.js';
 import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
 
 /**
+ * Append `.bootstrap-state.json` to the tuck repo's `.gitignore` if
+ * missing. Called whenever state is saved so users whose `.tuck/` was
+ * initialized before this rule landed automatically get the gitignore
+ * update on first bootstrap. Mirrors `ensureLocalConfigGitignored` in
+ * `src/lib/config.ts` — same class of "per-host state leaking via sync"
+ * bug fixed the same way. Idempotent; best-effort.
+ */
+const ensureBootstrapStateGitignored = async (tuckDir: string): Promise<void> => {
+  const gitignorePath = join(tuckDir, '.gitignore');
+  let existing = '';
+  if (await pathExists(gitignorePath)) {
+    try {
+      existing = await readFile(gitignorePath, 'utf-8');
+    } catch {
+      return;
+    }
+  }
+
+  const lines = existing.split(/\r?\n/).map((l) => l.trim());
+  if (lines.includes(STATE_FILE)) {
+    return;
+  }
+
+  const separator = existing.trim() ? '\n\n' : '';
+  const updated =
+    existing.trim() +
+    `${separator}# Per-host bootstrap install state (never commit — varies per machine)\n${STATE_FILE}\n`;
+
+  try {
+    await writeFile(gitignorePath, updated, 'utf-8');
+  } catch {
+    // Best effort — not worth blocking a state-file write on gitignore flakiness.
+  }
+};
+
+/**
  * Persistent record of "what's installed on this host" for `tuck bootstrap`.
  * Lives at `~/.tuck/.bootstrap-state.json` (per-host; never synced). See
  * TASK-021 for the shape. Missing file is indistinguishable from "nothing
@@ -105,6 +141,8 @@ export const saveBootstrapState = async (
       `Failed to write ${path}: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+
+  await ensureBootstrapStateGitignored(tuckDir);
 };
 
 export interface RecordToolOptions {
