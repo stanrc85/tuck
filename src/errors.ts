@@ -364,6 +364,12 @@ export class KeystoreError extends TuckError {
   }
 }
 
+export class BootstrapError extends TuckError {
+  constructor(message: string, suggestions?: string[]) {
+    super(`Bootstrap error: ${message}`, 'BOOTSTRAP_ERROR', suggestions);
+  }
+}
+
 // ============================================================================
 // Error Handler
 // ============================================================================
