@@ -1,3 +1,10 @@
+## [2.3.2](https://github.com/stanrc85/tuck/compare/v2.3.1...v2.3.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* **bootstrap:** bump yazi pin to v26.1.22 to match CalVer plugin API ([4abd92b](https://github.com/stanrc85/tuck/commit/4abd92b4bc6e919026b9487fa33dafa87ab8c853))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.3.1](https://github.com/stanrc85/tuck/compare/v2.3.0...v2.3.1) (2026-04-20)
