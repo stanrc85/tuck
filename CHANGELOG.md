@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.2.0](https://github.com/stanrc85/tuck/compare/v2.1.1...v2.2.0) (2026-04-20)
 
 
@@ -5,8 +7,6 @@
 
 * add tuck update umbrella and tuck bootstrap update subcommand ([6abb424](https://github.com/stanrc85/tuck/commit/6abb4247e57141beea25043bcceac08ac92a0aa6))
 * **bootstrap:** add fd built-in with fdfind symlink ([4914f07](https://github.com/stanrc85/tuck/commit/4914f07bd203946ed529e8344015923cb9b1f8b0))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.1.1](https://github.com/stanrc85/tuck/compare/v2.1.0...v2.1.1) (2026-04-20)
 
