@@ -275,6 +275,20 @@ export const getDiff = async (
   }
 };
 
+/**
+ * Return the SHA of HEAD, or null if the dir isn't a repo / has no commits.
+ * Used by `tuck update` to detect whether a pull actually changed anything.
+ */
+export const getHeadSha = async (dir: string): Promise<string | null> => {
+  try {
+    const git = createGit(dir);
+    const sha = await git.revparse(['HEAD']);
+    return sha.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
 export const getCurrentBranch = async (dir: string): Promise<string> => {
   try {
     const git = createGit(dir);

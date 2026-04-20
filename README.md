@@ -151,10 +151,12 @@ tuck bootstrap --bundle <your-bundle>
 
 ### Maintenance
 
-| Command             | Description                                                          |
-| ------------------- | -------------------------------------------------------------------- |
-| `tuck self-update`  | Update tuck to the latest GitHub release of `stanrc85/tuck`          |
-| `tuck bootstrap`    | Install CLI tools declared in `bootstrap.toml` (and a built-in set)  |
+| Command                    | Description                                                                |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `tuck self-update`         | Update tuck to the latest GitHub release of `stanrc85/tuck`                |
+| `tuck bootstrap`           | Install CLI tools declared in `bootstrap.toml` (and a built-in set)        |
+| `tuck bootstrap update`    | Re-run the `update` block for tools previously installed via `bootstrap`   |
+| `tuck update`              | One-shot umbrella: self-update → pull dotfiles → restore → bootstrap update |
 
 `tuck self-update` flags:
 - `--check`: Report update status without installing (exit 1 if an update is available, 0 if up to date — handy for scripts)
@@ -171,7 +173,26 @@ tuck bootstrap --bundle <your-bundle>
 - `--no-detect`: In the picker, show a flat alphabetical list and ignore detection signals
 - `-f`, `--file <path>`: Use a `bootstrap.toml` at a custom location (default: `~/.tuck/bootstrap.toml`)
 
-Under the hood it runs `sudo npm install -g https://github.com/stanrc85/tuck/releases/download/<tag>/tuck.tgz` (or without `sudo` when already root or on Windows). Running from a dev checkout is refused — use `git pull && pnpm build` in that case.
+`tuck bootstrap update` flags:
+- `--all`: Update every installed tool (skip the picker)
+- `--tools <ids>`: Comma/space-separated list of tool ids to update (skip the picker)
+- `--check`: Report which installed tools have pending updates (version bump or definition drift) without doing anything; exit 1 if any are pending, 0 otherwise
+- `--dry-run`: Print the planned update order without executing
+- `-y`, `--yes`: Same sudo pre-check as `tuck bootstrap`
+- `-f`, `--file <path>`: Alternate `bootstrap.toml` location
+
+The picker shows only tools present in the install state file (`~/.tuck/.bootstrap-state.json`). Tools with pending updates are pre-selected; fully up-to-date tools can still be force-updated by toggling them on. Tools in state but missing from the current catalog are flagged as orphaned and skipped (no definition = nothing to run).
+
+`tuck update` flags:
+- `--no-self`: Skip the `tuck self-update` phase
+- `--no-pull`: Skip the `git pull` phase on `~/.tuck/`
+- `--no-restore`: Skip the `tuck restore --all` phase (which is itself only run when the pull brought in new commits)
+- `--no-tools`: Skip the `tuck bootstrap update --all` phase
+- `-y`, `--yes`: Forward `--yes` to both self-update and bootstrap update
+
+When the self-update phase applies a new version, `tuck update` re-execs the freshly-installed binary with `--no-self` so the remaining phases (pull / restore / tools) run under the new code, not the stale in-memory copy. The re-exec carries forward every other flag and sets `TUCK_UPDATE_RESUMED=1` as a loop guard.
+
+Under the hood `tuck self-update` runs `sudo npm install -g https://github.com/stanrc85/tuck/releases/download/<tag>/tuck.tgz` (or without `sudo` when already root or on Windows). Running from a dev checkout is refused — use `git pull && pnpm build` in that case.
 
 ## How It Works
 

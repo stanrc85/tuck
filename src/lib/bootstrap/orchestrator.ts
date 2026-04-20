@@ -1,7 +1,7 @@
 import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
 import type { BootstrapVars } from './interpolator.js';
 import { resolveInstallOrder } from './resolver.js';
-import { runCheck, runInstall, type RunOptions } from './runner.js';
+import { runCheck, runInstall, runUpdate, type RunOptions } from './runner.js';
 import { computeDefinitionHash, recordToolInstalled } from './state.js';
 
 /**
@@ -95,10 +95,11 @@ export interface ToolOutcome {
   id: string;
   status:
     | 'installed'
+    | 'updated'
     | 'failed'
     | 'skipped-already-installed'
     | 'skipped-dep-failed';
-  /** Present for `installed` and `failed`. */
+  /** Present for `installed`/`updated` and `failed`. */
   exitCode?: number;
   /** Human-readable extra info (e.g. signal name) for failed outcomes. */
   detail?: string;
@@ -109,12 +110,12 @@ export interface ExecuteOptions {
   vars: Omit<BootstrapVars, 'VERSION'>;
   /** Ids whose `check` should be skipped (`--rerun <id>`). */
   force?: Set<string>;
-  /** Forwarded to `runCheck` / `runInstall`. */
+  /** Forwarded to `runCheck` / `runInstall` / `runUpdate`. */
   runOptions?: RunOptions;
   /** Fired after each tool completes — for live progress UI. */
   onToolDone?: (outcome: ToolOutcome) => void;
   /**
-   * Persist successful installs to `~/.tuck/.bootstrap-state.json`.
+   * Persist successful installs/updates to `~/.tuck/.bootstrap-state.json`.
    * Default true; set false for dry runs or tests that don't want disk
    * writes. `persist` is deliberately not gated on `runOptions.dryRun`
    * because the picker may want a "preview only" mode without dry-run
@@ -122,12 +123,23 @@ export interface ExecuteOptions {
    */
   persist?: boolean;
   tuckDir?: string;
+  /**
+   * Which phase to run. `'install'` is the default and preserves the
+   * `tuck bootstrap` semantics: run `check` first, skip-if-installed,
+   * otherwise execute `tool.install`. `'update'` unconditionally runs
+   * `tool.update` (or falls back to `tool.install` when `update` is
+   * `@install` or omitted — see `runner.runUpdate`), never skipping
+   * on `check`. The `force` set is ignored under `'update'` because
+   * `check` is already bypassed.
+   */
+  phase?: 'install' | 'update';
 }
 
 export interface ExecuteResult {
   outcomes: ToolOutcome[];
   counts: {
     installed: number;
+    updated: number;
     failed: number;
     skipped: number;
   };
@@ -158,6 +170,7 @@ export const executeBootstrap = async (
     onToolDone,
     persist = true,
     tuckDir,
+    phase = 'install',
   } = options;
 
   const outcomes: ToolOutcome[] = [];
@@ -174,7 +187,9 @@ export const executeBootstrap = async (
 
     const toolVars: BootstrapVars = { ...vars, VERSION: tool.version };
 
-    if (!force.has(tool.id) && tool.check) {
+    // `check` gating only applies to install — update intentionally re-runs
+    // even when the tool is already present (upgrading is the whole point).
+    if (phase === 'install' && !force.has(tool.id) && tool.check) {
       const installed = await runCheck(tool, toolVars, runOptions);
       if (installed) {
         const outcome: ToolOutcome = { id: tool.id, status: 'skipped-already-installed' };
@@ -184,11 +199,15 @@ export const executeBootstrap = async (
       }
     }
 
-    const result = await runInstall(tool, toolVars, runOptions);
+    const result =
+      phase === 'update'
+        ? await runUpdate(tool, toolVars, runOptions)
+        : await runInstall(tool, toolVars, runOptions);
     if (result.ok) {
+      const status: ToolOutcome['status'] = phase === 'update' ? 'updated' : 'installed';
       const outcome: ToolOutcome = {
         id: tool.id,
-        status: 'installed',
+        status,
         exitCode: result.exitCode ?? 0,
       };
       if (persist) {
@@ -216,6 +235,7 @@ export const executeBootstrap = async (
     outcomes,
     counts: {
       installed: outcomes.filter((o) => o.status === 'installed').length,
+      updated: outcomes.filter((o) => o.status === 'updated').length,
       failed: outcomes.filter((o) => o.status === 'failed').length,
       skipped: outcomes.filter((o) => o.status.startsWith('skipped')).length,
     },

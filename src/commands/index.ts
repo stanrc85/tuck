@@ -21,3 +21,4 @@ export { groupCommand } from './group.js';
 export { cleanCommand } from './clean.js';
 export { selfUpdateCommand } from './self-update.js';
 export { bootstrapCommand } from './bootstrap.js';
+export { updateCommand } from './update.js';

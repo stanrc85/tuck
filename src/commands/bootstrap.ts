@@ -20,6 +20,7 @@ import { loadBootstrapState } from '../lib/bootstrap/state.js';
 import { runCheck } from '../lib/bootstrap/runner.js';
 import type { BootstrapConfig, ToolDefinition } from '../schemas/bootstrap.schema.js';
 import { BootstrapError, NonInteractivePromptError } from '../errors.js';
+import { bootstrapUpdateCommand } from './bootstrap-update.js';
 
 export interface BootstrapOptions {
   /** Override location of `bootstrap.toml`. Defaults to `<tuckDir>/bootstrap.toml`. */
@@ -52,7 +53,8 @@ export const bootstrapCommand = new Command('bootstrap')
   .option('--no-detect', 'In the picker, ignore detection signals and show a flat list')
   .action(async (options: BootstrapOptions) => {
     await runBootstrap(options);
-  });
+  })
+  .addCommand(bootstrapUpdateCommand);
 
 /**
  * Shape returned from `runBootstrap`. Tests inspect `plan` (dry-run) or

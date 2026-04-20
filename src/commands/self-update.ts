@@ -107,7 +107,18 @@ const resolveTargetRelease = async (options: SelfUpdateOptions): Promise<Release
   }
 };
 
-export const runSelfUpdate = async (options: SelfUpdateOptions = {}): Promise<void> => {
+export interface SelfUpdateResult {
+  /** True iff an install actually ran and completed successfully. */
+  updated: boolean;
+  /** Resolved target version string (undefined when no release was fetched). */
+  targetVersion?: string;
+  /** True when the user said "no" at the confirm prompt. */
+  cancelled?: boolean;
+}
+
+export const runSelfUpdate = async (
+  options: SelfUpdateOptions = {}
+): Promise<SelfUpdateResult> => {
   prompts.intro('tuck self-update');
 
   const origin = detectInstallOrigin();
@@ -133,13 +144,13 @@ export const runSelfUpdate = async (options: SelfUpdateOptions = {}): Promise<vo
       logger.success(`tuck is up to date (${c.bold(current)})`);
       prompts.outro('Nothing to do.');
       process.exitCode = 0;
-      return;
+      return { updated: false, targetVersion: target.version };
     }
     if (cmp === 0 && options.tag) {
       logger.info(`tuck is already on ${c.bold(current)} (matches --tag ${target.tag})`);
       prompts.outro('Nothing to do.');
       process.exitCode = 0;
-      return;
+      return { updated: false, targetVersion: target.version };
     }
     const arrow = cmp < 0 ? '→' : '↓';
     const verb = cmp < 0 ? 'Update available' : 'Downgrade target';
@@ -149,14 +160,14 @@ export const runSelfUpdate = async (options: SelfUpdateOptions = {}): Promise<vo
     logger.dim(`  ${target.htmlUrl}`);
     prompts.outro('Run `tuck self-update` to apply.');
     process.exitCode = 1;
-    return;
+    return { updated: false, targetVersion: target.version };
   }
 
   // Regular flow.
   if (cmp >= 0 && !options.tag) {
     logger.success(`Already on latest (${c.bold(current)})`);
     prompts.outro('Nothing to do.');
-    return;
+    return { updated: false, targetVersion: target.version };
   }
 
   if (!target.tarballUrl) {
@@ -190,7 +201,7 @@ export const runSelfUpdate = async (options: SelfUpdateOptions = {}): Promise<vo
     );
     if (!confirmed) {
       logger.info('Cancelled.');
-      return;
+      return { updated: false, targetVersion: target.version, cancelled: true };
     }
   }
 
@@ -199,6 +210,7 @@ export const runSelfUpdate = async (options: SelfUpdateOptions = {}): Promise<vo
   logger.blank();
   logger.success(`Installed tuck ${target.version}`);
   prompts.outro('Run `tuck --version` in a new shell to confirm.');
+  return { updated: true, targetVersion: target.version };
 };
 
 export const selfUpdateCommand = new Command('self-update')

@@ -151,7 +151,7 @@ describe('executeBootstrap', () => {
       tuckDir: TEST_TUCK_DIR,
     });
 
-    expect(result.counts).toEqual({ installed: 1, failed: 0, skipped: 0 });
+    expect(result.counts).toEqual({ installed: 1, updated: 0, failed: 0, skipped: 0 });
     expect(result.outcomes[0]?.status).toBe('installed');
     expect(calls[0]?.cmd).toBe('bash');
 
@@ -173,7 +173,7 @@ describe('executeBootstrap', () => {
       tuckDir: TEST_TUCK_DIR,
     });
 
-    expect(result.counts).toEqual({ installed: 0, failed: 0, skipped: 1 });
+    expect(result.counts).toEqual({ installed: 0, updated: 0, failed: 0, skipped: 1 });
     expect(result.outcomes[0]?.status).toBe('skipped-already-installed');
     // Only the check should have spawned — no install.
     expect(calls).toHaveLength(1);
@@ -248,7 +248,7 @@ describe('executeBootstrap', () => {
       tuckDir: TEST_TUCK_DIR,
     });
 
-    expect(result.counts).toEqual({ installed: 0, failed: 1, skipped: 0 });
+    expect(result.counts).toEqual({ installed: 0, updated: 0, failed: 1, skipped: 0 });
     expect(result.outcomes[0]).toEqual({ id: 'pet', status: 'failed', exitCode: 42 });
 
     // State file must not be created for a failed install.
@@ -273,7 +273,7 @@ describe('executeBootstrap', () => {
       tuckDir: TEST_TUCK_DIR,
     });
 
-    expect(result.counts).toEqual({ installed: 0, failed: 1, skipped: 1 });
+    expect(result.counts).toEqual({ installed: 0, updated: 0, failed: 1, skipped: 1 });
     const byId = Object.fromEntries(result.outcomes.map((o) => [o.id, o.status]));
     expect(byId).toEqual({ a: 'failed', b: 'skipped-dep-failed' });
     // Only one spawn — b never launches because its dep failed.
@@ -369,6 +369,109 @@ describe('executeBootstrap', () => {
     });
 
     void callIdx;
-    expect(result.counts).toEqual({ installed: 1, failed: 1, skipped: 2 });
+    expect(result.counts).toEqual({ installed: 1, updated: 0, failed: 1, skipped: 2 });
+  });
+
+  describe("phase: 'update'", () => {
+    it('runs update script (not install) and marks outcome as updated', async () => {
+      const { spawn, calls } = makeSpawnMock([{ match: () => true, exitCode: 0 }]);
+      const plan = planBootstrap({
+        catalog: [tool('pet', { install: 'install-pet', update: 'apt-get upgrade -y pet' })],
+        selectedIds: ['pet'],
+      });
+
+      const result = await executeBootstrap({
+        plan,
+        vars: baseVars,
+        runOptions: { spawnImpl: spawn, log: () => {} },
+        tuckDir: TEST_TUCK_DIR,
+        phase: 'update',
+      });
+
+      expect(result.counts).toEqual({ installed: 0, updated: 1, failed: 0, skipped: 0 });
+      expect(result.outcomes[0]?.status).toBe('updated');
+      // The single spawn should be the update script, not the install.
+      expect(String(calls[0]?.args[1])).toContain('upgrade');
+    });
+
+    it('falls back to install when update is omitted', async () => {
+      const { spawn, calls } = makeSpawnMock([{ match: () => true, exitCode: 0 }]);
+      const plan = planBootstrap({
+        catalog: [tool('pet', { install: 'install-pet' })],
+        selectedIds: ['pet'],
+      });
+
+      await executeBootstrap({
+        plan,
+        vars: baseVars,
+        runOptions: { spawnImpl: spawn, log: () => {} },
+        tuckDir: TEST_TUCK_DIR,
+        phase: 'update',
+      });
+
+      expect(String(calls[0]?.args[1])).toBe('install-pet');
+    });
+
+    it('skips the check phase — update always runs even when check would pass', async () => {
+      // If check gating applied under update, this test would short-circuit on
+      // check=0 and never spawn the update script. Two spawn calls = check
+      // DID NOT run as a gate; one spawn call = only update fired (what we want).
+      const { spawn, calls } = makeSpawnMock([{ match: () => true, exitCode: 0 }]);
+      const plan = planBootstrap({
+        catalog: [
+          tool('pet', {
+            check: 'command -v pet',
+            install: 'install-pet',
+            update: 'update-pet',
+          }),
+        ],
+        selectedIds: ['pet'],
+      });
+
+      await executeBootstrap({
+        plan,
+        vars: baseVars,
+        runOptions: { spawnImpl: spawn, log: () => {} },
+        tuckDir: TEST_TUCK_DIR,
+        phase: 'update',
+      });
+
+      // Only the update spawn, not check + something-else.
+      expect(calls).toHaveLength(1);
+      expect(String(calls[0]?.args[1])).toBe('update-pet');
+    });
+
+    it('bumps state entry on successful update', async () => {
+      const { spawn } = makeSpawnMock([{ match: () => true, exitCode: 0 }]);
+      // Seed a prior state entry so we can observe the definitionHash bump.
+      const { recordToolInstalled, computeDefinitionHash } = await import(
+        '../../src/lib/bootstrap/state.js'
+      );
+      const oldTool = tool('pet', { install: 'old-install', version: '1.0.0' });
+      await recordToolInstalled('pet', computeDefinitionHash(oldTool), {
+        version: '1.0.0',
+        tuckDir: TEST_TUCK_DIR,
+        now: new Date('2025-01-01'),
+      });
+
+      const newTool = tool('pet', {
+        install: 'install-pet',
+        update: 'update-pet',
+        version: '1.1.0',
+      });
+      const plan = planBootstrap({ catalog: [newTool], selectedIds: ['pet'] });
+
+      await executeBootstrap({
+        plan,
+        vars: baseVars,
+        runOptions: { spawnImpl: spawn, log: () => {} },
+        tuckDir: TEST_TUCK_DIR,
+        phase: 'update',
+      });
+
+      const state = await loadBootstrapState(TEST_TUCK_DIR);
+      expect(state.tools.pet?.version).toBe('1.1.0');
+      expect(state.tools.pet?.definitionHash).toBe(computeDefinitionHash(newTool));
+    });
   });
 });
