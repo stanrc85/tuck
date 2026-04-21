@@ -20,7 +20,13 @@ export const pet: ToolDefinition = {
   category: 'shell',
   version: '1.0.1',
   requires: [],
-  check: `command -v pet >/dev/null 2>&1 && pet --version 2>/dev/null | grep -q "\${VERSION}"`,
+  // Just test for presence — version drift is surfaced by the state.json
+  // definition-hash mechanism in the picker, and pet's `--version` output
+  // format isn't stable across releases (older versions emit
+  // `pet version X.Y.Z`, newer ones route it through stderr on some
+  // builds). A grep against the rendered version was producing spurious
+  // "not installed" results on re-runs — reinstall-on-every-restore.
+  check: 'command -v pet >/dev/null 2>&1',
   install: `set -e
 url="https://github.com/knqyf263/pet/releases/download/v\${VERSION}/pet_\${VERSION}_linux_\${ARCH}.deb"
 tmp="$(mktemp -d)"

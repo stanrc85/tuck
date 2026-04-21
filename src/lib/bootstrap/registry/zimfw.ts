@@ -26,8 +26,16 @@ export const zimfw: ToolDefinition = {
   description: 'modular zsh framework',
   category: 'shell',
   requires: ['zsh'],
+  // Run through zsh -c so `~/.zshenv` is sourced (zsh does this on every
+  // invocation) and any user-set ZDOTDIR / ZIM_HOME is honoured. Without
+  // this, a user with an XDG-style zshenv (`ZDOTDIR=~/.config/zsh`) gets
+  // zimfw installed to `~/.config/zsh/.zim` by the upstream installer,
+  // but our check looks at plain `~/.zim` and reports missing every run.
+  // The `command -v zsh` guard makes the check still return non-zero on
+  // fresh hosts where zsh isn't installed yet (restore-tail check runs
+  // in parallel across all tools without install ordering).
   check:
-    'if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then exit 0; fi; test -d "$HOME/.zim"',
+    'if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then exit 0; fi; command -v zsh >/dev/null 2>&1 && zsh -c \'test -d "${ZIM_HOME:-${ZDOTDIR:-$HOME}/.zim}"\'',
   install: `set -e
 if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then
   echo "Skipping ZimFW on Kali (Kali ships its own zsh setup)."

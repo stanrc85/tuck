@@ -30,6 +30,14 @@ if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
     mkdir -p "$HOME/.local/bin"
     ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
   fi
+fi
+# Rebuild bat's theme+syntax cache so any restored files under
+# ~/.config/bat/{themes,syntaxes} are actually known to bat — without
+# this, \`bat --theme=DraculaPRO\` reports "unknown theme" even though
+# the .tmTheme file is on disk.
+BAT_BIN="$(command -v bat 2>/dev/null || command -v batcat 2>/dev/null || true)"
+if [ -n "$BAT_BIN" ]; then
+  "$BAT_BIN" cache --build >/dev/null 2>&1 || true
 fi`,
   update: `set -e
 sudo apt-get install -y --only-upgrade bat
@@ -40,6 +48,10 @@ if ! command -v bat >/dev/null 2>&1 && command -v batcat >/dev/null 2>&1; then
     mkdir -p "$HOME/.local/bin"
     ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
   fi
+fi
+BAT_BIN="$(command -v bat 2>/dev/null || command -v batcat 2>/dev/null || true)"
+if [ -n "$BAT_BIN" ]; then
+  "$BAT_BIN" cache --build >/dev/null 2>&1 || true
 fi`,
   detect: {
     paths: ['~/.config/bat'],

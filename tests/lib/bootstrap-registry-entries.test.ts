@@ -90,6 +90,48 @@ describe('registry requires graph', () => {
     expect(zimfw.install).toContain('Skipping ZimFW on Kali');
   });
 
+  it('zimfw check honours ZDOTDIR via zsh -c so XDG-style setups work', () => {
+    // A user whose ~/.zshenv sets ZDOTDIR=~/.config/zsh gets zimfw
+    // installed to ~/.config/zsh/.zim by upstream (which reads
+    // ${ZDOTDIR:-${HOME}}/.zim). A plain `test -d "$HOME/.zim"` check
+    // would then report missing on every restore-tail run. We run the
+    // check through `zsh -c` so zsh sources ~/.zshenv and honours the
+    // computed ZIM_HOME path.
+    const zimfw = byId.zimfw!;
+    expect(zimfw.check).toContain("zsh -c");
+    expect(zimfw.check).toContain('ZIM_HOME:-${ZDOTDIR:-$HOME}/.zim');
+    // Fresh-host guard: if zsh isn't installed yet, the check must still
+    // return non-zero (not try to run `zsh -c` and error out in a weird
+    // way).
+    expect(zimfw.check).toContain('command -v zsh');
+  });
+
+  it('pet check is a plain presence test — version drift is tracked via state.json', () => {
+    // An earlier version grep'd `pet --version` for a version-literal
+    // match; the output format isn't stable across pet releases (newer
+    // versions route it through stderr on some builds), producing false
+    // negatives and reinstall-on-every-restore. Version drift is handled
+    // by the state.json definition-hash mechanism in the picker — check
+    // only needs to confirm the binary is present.
+    const pet = byId.pet!;
+    expect(pet.check).toBe('command -v pet >/dev/null 2>&1');
+    expect(pet.check).not.toContain('--version');
+    expect(pet.check).not.toContain('grep');
+  });
+
+  it('bat install+update rebuild the theme cache so restored themes are registered', () => {
+    // bat needs `bat cache --build` after new .tmTheme files land in
+    // ~/.config/bat/themes — otherwise `bat --theme=Foo` reports
+    // "unknown theme" even with the file on disk. Fallback to batcat is
+    // needed because on Debian the apt package ships as `batcat` and our
+    // own symlink may not be in PATH yet during the install script.
+    const bat = byId.bat!;
+    expect(bat.install).toContain('cache --build');
+    expect(bat.install).toContain('BAT_BIN=');
+    expect(bat.install).toContain('batcat');
+    expect(bat.update).toContain('cache --build');
+  });
+
   it('zimfw install pre-sets SHELL so the upstream installer skips its own chsh', () => {
     // The upstream zimfw install.zsh runs `chsh -s` itself when $SHELL
     // isn't zsh; under our `curl | zsh` pipe chsh's stdin is the closed
