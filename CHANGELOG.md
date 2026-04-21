@@ -1,3 +1,10 @@
+## [2.10.3](https://github.com/stanrc85/tuck/compare/v2.10.2...v2.10.3) (2026-04-21)
+
+
+### Bug Fixes
+
+* **bootstrap:** bat cache rebuild, pet check simplification, zimfw XDG path ([e3743dc](https://github.com/stanrc85/tuck/commit/e3743dc2e0bf95cf986508ebbff27d18ded27f93))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.10.2](https://github.com/stanrc85/tuck/compare/v2.10.1...v2.10.2) (2026-04-21)
