@@ -23,6 +23,7 @@ const expectedIds = [
   'yazi',
   'zsh',
   'zimfw',
+  'tealdeer',
 ];
 
 const byId = Object.fromEntries(BUILT_IN_TOOLS.map((t) => [t.id, t]));
@@ -277,6 +278,18 @@ describe('detection fixtures', () => {
     vol.mkdirSync(join(TEST_HOME, '.config/zsh'), { recursive: true });
     vol.writeFileSync(join(TEST_HOME, '.config/zsh/.zimrc'), 'zmodule asciiship');
     const result = await detectTool(byId.zimfw!);
+    expect(result.detected).toBe(true);
+  });
+
+  it('tealdeer detects via ~/.config/tealdeer', async () => {
+    vol.mkdirSync(join(TEST_HOME, '.config/tealdeer'), { recursive: true });
+    const result = await detectTool(byId.tealdeer!);
+    expect(result.detected).toBe(true);
+  });
+
+  it('tealdeer detects via an rc reference to tldr', async () => {
+    vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'alias help=tldr');
+    const result = await detectTool(byId.tealdeer!);
     expect(result.detected).toBe(true);
   });
 
