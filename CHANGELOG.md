@@ -1,3 +1,10 @@
+# [2.15.0](https://github.com/stanrc85/tuck/compare/v2.14.0...v2.15.0) (2026-04-21)
+
+
+### Features
+
+* **bootstrap:** install mason-tool-installer ensure_installed list in neovim-plugins ([4466214](https://github.com/stanrc85/tuck/commit/44662149ef035b4848e81ea9d093aadfb23dbed0))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.14.0](https://github.com/stanrc85/tuck/compare/v2.13.0...v2.14.0) (2026-04-21)
