@@ -1,3 +1,10 @@
+# [2.11.0](https://github.com/stanrc85/tuck/compare/v2.10.3...v2.11.0) (2026-04-21)
+
+
+### Features
+
+* **bootstrap:** scan restored rc content for rcReferences; zimfw dual path ([b186743](https://github.com/stanrc85/tuck/commit/b1867435fee39568415218c1f19e5356834ddfbc))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.10.3](https://github.com/stanrc85/tuck/compare/v2.10.2...v2.10.3) (2026-04-21)
