@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.10.0](https://github.com/stanrc85/tuck/compare/v2.9.0...v2.10.0) (2026-04-21)
 
 
 ### Features
 
 * **bootstrap:** add zsh and zimfw as built-in registry tools ([616939f](https://github.com/stanrc85/tuck/commit/616939f85e30180917357b4151d20859408af628))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.9.0](https://github.com/stanrc85/tuck/compare/v2.8.1...v2.9.0) (2026-04-21)
 
