@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.6.0](https://github.com/stanrc85/tuck/compare/v2.5.0...v2.6.0) (2026-04-21)
 
 
@@ -11,8 +13,6 @@
 * **bootstrap:** add bundle subcommand for CLI-driven [bundles] edits ([d96cc9b](https://github.com/stanrc85/tuck/commit/d96cc9bfae3af4404ac784362e9d3fc0c2349dd0))
 * **bootstrap:** add ripgrep as a built-in tool ([581e320](https://github.com/stanrc85/tuck/commit/581e3201488a4429468ad80a7846a4f0ec440f1a))
 * **restore:** prompt to install missing tool deps at restore tail ([549627e](https://github.com/stanrc85/tuck/commit/549627e210bd4ad8e406b7a2070af7120fd411aa))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.5.0](https://github.com/stanrc85/tuck/compare/v2.4.0...v2.5.0) (2026-04-21)
 
