@@ -199,4 +199,53 @@ describe('config command', () => {
       expect(loadedConfig.hooks.postSync).toBeUndefined();
     });
   });
+
+  describe('parseValue array coercion', () => {
+    it('wraps scalar input as single-item array when schema expects z.array(z.string())', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('kubuntu', 'defaultGroups')).toEqual(['kubuntu']);
+    });
+
+    it('splits comma-separated input into an array of trimmed values', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('kali, kubuntu , ubuntu', 'defaultGroups')).toEqual([
+        'kali',
+        'kubuntu',
+        'ubuntu',
+      ]);
+    });
+
+    it('passes through an already-JSON array literal unchanged', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('["kali","ubuntu"]', 'defaultGroups')).toEqual(['kali', 'ubuntu']);
+    });
+
+    it('drops empty segments from comma-split', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('kubuntu,,', 'defaultGroups')).toEqual(['kubuntu']);
+      expect(parseValue('', 'defaultGroups')).toEqual([]);
+    });
+
+    it('does not wrap scalar when schema key is not an array', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('main', 'repository.defaultBranch')).toBe('main');
+      expect(parseValue('true', 'repository.autoCommit')).toBe(true);
+    });
+
+    it('preserves legacy no-key behavior (raw string fallback)', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('kubuntu')).toBe('kubuntu');
+      expect(parseValue('["a","b"]')).toEqual(['a', 'b']);
+    });
+
+    it('works for nested array keys like ignore', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('*.log,*.tmp', 'ignore')).toEqual(['*.log', '*.tmp']);
+    });
+
+    it('returns null for unknown key paths (falls through to raw parse)', async () => {
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('hello', 'nonexistent.path')).toBe('hello');
+    });
+  });
 });

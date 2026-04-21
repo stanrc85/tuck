@@ -78,8 +78,10 @@ vi.mock('../../src/lib/osDetect.js', () => ({
   detectOsGroup: detectOsGroupMock,
 }));
 
+const getAllGroupsMock = vi.fn();
 vi.mock('../../src/lib/manifest.js', () => ({
   createManifest: createManifestMock,
+  getAllGroups: getAllGroupsMock,
 }));
 
 vi.mock('../../src/lib/git.js', () => ({
@@ -155,6 +157,7 @@ describe('init command behavior', () => {
     saveLocalConfigMock.mockResolvedValue(undefined);
     loadConfigMock.mockResolvedValue({ defaultGroups: [] });
     detectOsGroupMock.mockResolvedValue(null);
+    getAllGroupsMock.mockResolvedValue([]);
   });
 
   it('clones from remote and backfills missing manifest/config', async () => {
@@ -205,12 +208,21 @@ describe('init command behavior', () => {
       expect(saveLocalConfigMock).not.toHaveBeenCalled();
     });
 
-    it('skips silently when detectOsGroup returns null (unknown / non-Linux)', async () => {
+    it('skips silently when nothing detected and no repo groups', async () => {
       pathExistsMock.mockResolvedValue(false);
       detectOsGroupMock.mockResolvedValueOnce(null);
-      const { runInit } = await import('../../src/commands/init.js');
-      await runInit({ from: 'https://github.com/acme/dotfiles.git' });
-      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+      getAllGroupsMock.mockResolvedValueOnce([]);
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        const ui = await import('../../src/ui/index.js');
+        expect(ui.prompts.select).not.toHaveBeenCalled();
+        expect(saveLocalConfigMock).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
     });
 
     it('logs advisory and skips save on non-TTY (CI)', async () => {
@@ -230,33 +242,103 @@ describe('init command behavior', () => {
       }
     });
 
-    it('writes saveLocalConfig when user confirms the prompt', async () => {
+    it('non-TTY logs repo-groups advisory when detection empty but manifest has groups', async () => {
       pathExistsMock.mockResolvedValue(false);
-      detectOsGroupMock.mockResolvedValueOnce('kali');
+      detectOsGroupMock.mockResolvedValueOnce(null);
+      getAllGroupsMock.mockResolvedValueOnce(['kali', 'kubuntu']);
       const originalIsTTY = process.stdout.isTTY;
-      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
-      const ui = await import('../../src/ui/index.js');
-      (ui.prompts.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(true);
+      Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
       try {
         const { runInit } = await import('../../src/commands/init.js');
         await runInit({ from: 'https://github.com/acme/dotfiles.git' });
-        expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kali'] });
+        expect(saveLocalConfigMock).not.toHaveBeenCalled();
+        expect(loggerInfoMock).toHaveBeenCalledWith(
+          expect.stringContaining('Repo groups: kali, kubuntu')
+        );
       } finally {
         Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
       }
     });
 
-    it('does not write when user declines the prompt', async () => {
+    it('saves the chosen existing manifest group when user picks from the list', async () => {
       pathExistsMock.mockResolvedValue(false);
       detectOsGroupMock.mockResolvedValueOnce('ubuntu');
+      getAllGroupsMock.mockResolvedValueOnce(['kali', 'kubuntu']);
       const originalIsTTY = process.stdout.isTTY;
       Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
       const ui = await import('../../src/ui/index.js');
-      (ui.prompts.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+      (ui.prompts.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('kubuntu');
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        const selectCall = (ui.prompts.select as ReturnType<typeof vi.fn>).mock.calls[0];
+        const options = selectCall[1] as Array<{ value: string; label: string; hint?: string }>;
+        expect(options.map((o) => o.value)).toEqual([
+          'ubuntu',
+          'kali',
+          'kubuntu',
+          '__custom__',
+          '__skip__',
+        ]);
+        expect(options[0].hint).toBe('detected');
+        expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kubuntu'] });
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('prompts for custom name and saves the entered value', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce('ubuntu');
+      getAllGroupsMock.mockResolvedValueOnce([]);
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('__custom__');
+      (ui.prompts.text as ReturnType<typeof vi.fn>).mockResolvedValueOnce('kubuntu');
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(ui.prompts.text).toHaveBeenCalled();
+        expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kubuntu'] });
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('does not write when user picks Skip', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce('ubuntu');
+      getAllGroupsMock.mockResolvedValueOnce([]);
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('__skip__');
       try {
         const { runInit } = await import('../../src/commands/init.js');
         await runInit({ from: 'https://github.com/acme/dotfiles.git' });
         expect(saveLocalConfigMock).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('deduplicates detected OS against manifest groups (detected wins)', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce('kali');
+      getAllGroupsMock.mockResolvedValueOnce(['kali', 'kubuntu']);
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('kali');
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        const selectCall = (ui.prompts.select as ReturnType<typeof vi.fn>).mock.calls[0];
+        const options = selectCall[1] as Array<{ value: string; label: string; hint?: string }>;
+        const kaliEntries = options.filter((o) => o.value === 'kali');
+        expect(kaliEntries).toHaveLength(1);
+        expect(kaliEntries[0].hint).toBe('detected');
       } finally {
         Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
       }

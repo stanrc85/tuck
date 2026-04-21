@@ -1,12 +1,13 @@
 import { Command } from 'commander';
 import { spawn } from 'child_process';
+import { z } from 'zod';
 import { prompts, logger, banner, colors as c } from '../ui/index.js';
 import { getTuckDir, getConfigPath, collapsePath } from '../lib/paths.js';
 import { loadConfig, saveConfig, resetConfig } from '../lib/config.js';
 import { loadManifest } from '../lib/manifest.js';
 import { addRemote, removeRemote, hasRemote } from '../lib/git.js';
 import { NotInitializedError, ConfigError } from '../errors.js';
-import type { TuckConfigOutput } from '../schemas/config.schema.js';
+import { tuckConfigSchema, type TuckConfigOutput } from '../schemas/config.schema.js';
 import { setupProvider } from '../lib/providerSetup.js';
 import { describeProviderConfig, getProvider } from '../lib/providers/index.js';
 
@@ -147,14 +148,54 @@ const setNestedValue = (obj: Record<string, unknown>, path: string, value: unkno
   current[keys[keys.length - 1]] = value;
 };
 
-const parseValue = (value: string): unknown => {
-  // Try to parse as JSON
-  try {
-    return JSON.parse(value);
-  } catch {
-    // Return as string if not valid JSON
-    return value;
+const unwrapSchema = (schema: z.ZodTypeAny): z.ZodTypeAny => {
+  let current = schema;
+  while (
+    current instanceof z.ZodOptional ||
+    current instanceof z.ZodDefault ||
+    current instanceof z.ZodNullable
+  ) {
+    current = current._def.innerType;
   }
+  return current;
+};
+
+const resolveSchemaAtPath = (
+  rootSchema: z.ZodTypeAny,
+  path: string
+): z.ZodTypeAny | null => {
+  let current = unwrapSchema(rootSchema);
+  for (const key of path.split('.')) {
+    if (!(current instanceof z.ZodObject)) return null;
+    const shape = current.shape as Record<string, z.ZodTypeAny>;
+    if (!(key in shape)) return null;
+    current = unwrapSchema(shape[key]);
+  }
+  return current;
+};
+
+export const parseValue = (value: string, key?: string): unknown => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    parsed = value;
+  }
+
+  // Auto-coerce scalar input into an array when the schema expects one —
+  // `tuck config set defaultGroups kubuntu` or `...kubuntu,linux` should Just Work
+  // without making users hand-craft JSON array literals.
+  if (key && typeof parsed === 'string') {
+    const fieldSchema = resolveSchemaAtPath(tuckConfigSchema, key);
+    if (fieldSchema instanceof z.ZodArray) {
+      return parsed
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+  }
+
+  return parsed;
 };
 
 const runConfigGet = async (key: string): Promise<void> => {
@@ -189,7 +230,7 @@ const runConfigSet = async (key: string, value: string): Promise<void> => {
   const tuckDir = getTuckDir();
   const config = await loadConfig(tuckDir);
 
-  const parsedValue = parseValue(value);
+  const parsedValue = parseValue(value, key);
   const configObj = config as unknown as Record<string, unknown>;
 
   setNestedValue(configObj, key, parsedValue);

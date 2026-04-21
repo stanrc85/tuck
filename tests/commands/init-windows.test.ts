@@ -57,6 +57,7 @@ vi.mock('../../src/lib/osDetect.js', () => ({
 
 vi.mock('../../src/lib/manifest.js', () => ({
   createManifest: createManifestMock,
+  getAllGroups: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../src/lib/git.js', () => ({

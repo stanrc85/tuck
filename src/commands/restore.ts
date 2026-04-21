@@ -424,13 +424,14 @@ const maybePromptForGroupAssignment = async (
   prompts.log.info(
     `This host has no default group assigned, but the repo has ${allGroups.length} groups.`
   );
+  logger.dim('(Space to toggle selection, Enter to confirm)');
 
   const preselected = (options.group ?? []).filter((g) => allGroups.includes(g));
   const selected = await prompts.multiselect<string>(
     'Which group(s) does this host belong to? (saved to .tuckrc.local.json)',
     allGroups.map((g) => ({ value: g, label: g })),
     {
-      required: false,
+      required: true,
       initialValues: preselected.length > 0 ? preselected : undefined,
     }
   );

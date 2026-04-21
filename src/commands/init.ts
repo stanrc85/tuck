@@ -14,7 +14,7 @@ import {
 } from '../lib/paths.js';
 import { saveConfig, saveLocalConfig, loadConfig } from '../lib/config.js';
 import { detectOsGroup } from '../lib/osDetect.js';
-import { createManifest } from '../lib/manifest.js';
+import { createManifest, getAllGroups } from '../lib/manifest.js';
 import type { TuckManifest, RemoteConfig } from '../types.js';
 import {
   initRepo,
@@ -1705,18 +1705,17 @@ const runInteractiveInit = async (): Promise<void> => {
 };
 
 /**
- * Offer to seed `defaultGroups` in `.tuckrc.local.json` with the host's
- * detected OS ID (e.g. Kali 2024 → `kali`, Ubuntu 24.04 → `ubuntu`). Flat
- * one-to-one mapping, no version parsing. Silent no-op when:
- *   - `options.detectOs === false` (user passed `--no-detect-os`)
- *   - non-Linux host (detectOsGroup returns null on macOS / Windows)
- *   - unknown distro ID (not in the canonical set)
- *   - existing `defaultGroups` already set in config
- *   - non-interactive (CI / piped stdout)
+ * Offer to seed `defaultGroups` in `.tuckrc.local.json` on first clone.
+ * Builds a single-select over: the detected OS (if known), each group
+ * already present in the cloned manifest, "Enter a custom name...", and
+ * "Skip". Custom branch opens a text input; skip leaves config unchanged
+ * with a hint.
  *
- * When the user declines the prompt, nothing is written. The check runs
- * again on the next `tuck init` invocation (no-op because .tuckrc.local.json
- * file wouldn't exist yet; user can opt in then).
+ * Silent no-op when:
+ *   - `options.detectOs === false` (user passed `--no-detect-os`)
+ *   - existing `defaultGroups` already set in config
+ *   - non-interactive (CI / piped stdout) — emits an advisory instead
+ *   - nothing to offer (no detected OS AND no manifest groups)
  */
 const maybePromptForOsGroup = async (
   tuckDir: string,
@@ -1728,26 +1727,67 @@ const maybePromptForOsGroup = async (
   if (existing?.defaultGroups && existing.defaultGroups.length > 0) return;
 
   const osGroup = await detectOsGroup();
-  if (!osGroup) return;
+  const repoGroups = await getAllGroups(tuckDir).catch(() => [] as string[]);
 
   if (!process.stdout.isTTY) {
-    logger.info(
-      `Detected OS: ${osGroup}. Run \`tuck config set defaultGroups ${osGroup}\` to route this host to that group.`
-    );
+    if (osGroup) {
+      logger.info(
+        `Detected OS: ${osGroup}. Run \`tuck config set defaultGroups ${osGroup}\` to route this host to that group.`
+      );
+    } else if (repoGroups.length > 0) {
+      logger.info(
+        `Repo groups: ${repoGroups.join(', ')}. Run \`tuck config set defaultGroups <group>\` to route this host.`
+      );
+    }
     return;
   }
 
-  const confirmed = await prompts.confirm(
-    `Detected ${osGroup}. Add to defaultGroups? (files tagged with -g ${osGroup} will sync here)`,
-    true
+  if (!osGroup && repoGroups.length === 0) return;
+
+  const CUSTOM = '__custom__';
+  const SKIP = '__skip__';
+  const selectOptions: Array<{ value: string; label: string; hint?: string }> = [];
+  if (osGroup) {
+    selectOptions.push({ value: osGroup, label: osGroup, hint: 'detected' });
+  }
+  for (const g of repoGroups) {
+    if (g === osGroup) continue;
+    selectOptions.push({ value: g, label: g, hint: 'in repo' });
+  }
+  selectOptions.push({ value: CUSTOM, label: 'Enter a custom name…' });
+  selectOptions.push({ value: SKIP, label: 'Skip — set later' });
+
+  const choice = await prompts.select<string>(
+    'Assign this host to a group? (files tagged with -g <group> will sync here)',
+    selectOptions
   );
-  if (!confirmed) {
-    logger.dim(`Skipped — set later with \`tuck config set defaultGroups ${osGroup}\``);
+
+  if (choice === SKIP) {
+    const hint = osGroup ?? repoGroups[0] ?? '<group>';
+    logger.dim(`Skipped — set later with \`tuck config set defaultGroups ${hint}\``);
     return;
   }
 
-  await saveLocalConfig({ defaultGroups: [osGroup] });
-  logger.success(`Host assigned to group: ${osGroup} (.tuckrc.local.json)`);
+  let groupName: string;
+  if (choice === CUSTOM) {
+    const entered = await prompts.text('Enter group name', {
+      placeholder: osGroup ?? repoGroups[0] ?? 'hostname',
+      validate: (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) return 'Group name cannot be empty';
+        if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+          return 'Use letters, numbers, dashes, or underscores only';
+        }
+        return undefined;
+      },
+    });
+    groupName = entered.trim();
+  } else {
+    groupName = choice;
+  }
+
+  await saveLocalConfig({ defaultGroups: [groupName] });
+  logger.success(`Host assigned to group: ${groupName} (.tuckrc.local.json)`);
 };
 
 export const runInit = async (options: InitOptions): Promise<void> => {

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
-import { join } from 'path';
+import { basename, join } from 'path';
+import { spawn } from 'child_process';
 import { prompts, isInteractive } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
@@ -139,8 +140,84 @@ export const runBootstrap = async (
       ['Review the output above', 'Re-run `tuck bootstrap` after fixing the underlying issue']
     );
   }
+  await maybePromptForShellChange();
   prompts.outro('Bootstrap complete');
   return { plan, counts: outcomes.counts, dryRun: false };
+};
+
+export interface ShellChangePromptDeps {
+  spawnImpl?: typeof spawn;
+  envShell?: string;
+  platform?: NodeJS.Platform;
+  interactive?: boolean;
+}
+
+/**
+ * After a successful bootstrap, offer to swap the user's login shell to
+ * zsh when zsh is installed but the active `$SHELL` points elsewhere. No-op
+ * on Windows, non-TTY runs, or when zsh is already the login shell. The
+ * chsh subprocess uses inherited stdio so PAM password prompts land on the
+ * user's real TTY.
+ */
+export const maybePromptForShellChange = async (
+  deps: ShellChangePromptDeps = {}
+): Promise<void> => {
+  const platform = deps.platform ?? process.platform;
+  if (platform === 'win32') return;
+
+  const interactive = deps.interactive ?? isInteractive();
+  if (!interactive) return;
+
+  const envShell = deps.envShell ?? process.env.SHELL ?? '';
+  if (envShell === 'zsh' || envShell.endsWith('/zsh')) return;
+
+  const spawnImpl = deps.spawnImpl ?? spawn;
+
+  const zshPath = await locateZsh(spawnImpl);
+  if (!zshPath) return;
+
+  const currentName = envShell ? basename(envShell) : 'your shell';
+  const confirmed = await prompts.confirm(
+    `zsh is installed but your login shell is ${currentName}. Set zsh as your default shell?`,
+    true
+  );
+  if (!confirmed) return;
+
+  const ok = await runChsh(spawnImpl, zshPath);
+  if (ok) {
+    prompts.log.success('Default shell changed to zsh. Log out and back in to apply.');
+  } else {
+    prompts.log.warning(`chsh did not complete. Run manually: chsh -s ${zshPath}`);
+  }
+};
+
+const locateZsh = (spawnImpl: typeof spawn): Promise<string> => {
+  return new Promise((resolve) => {
+    try {
+      const child = spawnImpl('which', ['zsh'], { stdio: ['ignore', 'pipe', 'ignore'] });
+      let stdout = '';
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+      child.on('error', () => resolve(''));
+      child.on('exit', (code) => resolve(code === 0 ? stdout.trim() : ''));
+    } catch {
+      resolve('');
+    }
+  });
+};
+
+const runChsh = (spawnImpl: typeof spawn, zshPath: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    try {
+      // Inherited stdio so chsh can prompt for a password on the user's TTY.
+      const child = spawnImpl('chsh', ['-s', zshPath], { stdio: 'inherit' });
+      child.on('error', () => resolve(false));
+      child.on('exit', (code) => resolve(code === 0));
+    } catch {
+      resolve(false);
+    }
+  });
 };
 
 const determineSelection = async (

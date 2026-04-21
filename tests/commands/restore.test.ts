@@ -52,6 +52,7 @@ vi.mock('../../src/ui/index.js', () => ({
     heading: vi.fn(),
     blank: vi.fn(),
     file: vi.fn(),
+    dim: vi.fn(),
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   isInteractive: isInteractiveMock,
@@ -566,6 +567,55 @@ describe('restore command behavior', () => {
       await runRestore({ all: true, noHooks: true, noSecrets: true });
 
       expect(findMissingDepsMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('group-assignment prompt (TASK-047)', () => {
+    const seedMultiGroupManifest = () => {
+      getAllTrackedFilesMock.mockResolvedValue({
+        zshrc: {
+          source: '~/.zshrc',
+          destination: 'files/shell/zshrc',
+          category: 'shell',
+        },
+      });
+      getAllGroupsMock.mockResolvedValue(['kali', 'kubuntu']);
+      loadConfigMock.mockResolvedValue({
+        files: { strategy: 'copy', backupOnRestore: true },
+        defaultGroups: [],
+      });
+    };
+
+    it('passes required: true so clack blocks empty submissions', async () => {
+      seedMultiGroupManifest();
+      multiselectMock.mockResolvedValueOnce(['kubuntu']);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(multiselectMock).toHaveBeenCalledTimes(1);
+      const [, , config] = multiselectMock.mock.calls[0];
+      expect(config.required).toBe(true);
+    });
+
+    it('persists a single-group selection via saveLocalConfig', async () => {
+      seedMultiGroupManifest();
+      multiselectMock.mockResolvedValueOnce(['kubuntu']);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kubuntu'] });
+    });
+
+    it('persists a multi-group selection via saveLocalConfig', async () => {
+      seedMultiGroupManifest();
+      multiselectMock.mockResolvedValueOnce(['kali', 'kubuntu']);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kali', 'kubuntu'] });
     });
   });
 });
