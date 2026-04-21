@@ -1,3 +1,10 @@
+# [2.14.0](https://github.com/stanrc85/tuck/compare/v2.13.0...v2.14.0) (2026-04-21)
+
+
+### Features
+
+* **init:** describe what restore --bootstrap will do before prompting ([1df2589](https://github.com/stanrc85/tuck/commit/1df258931f32ad31d5ff7a233df00b2f23ac4a3e))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.13.0](https://github.com/stanrc85/tuck/compare/v2.12.2...v2.13.0) (2026-04-21)
