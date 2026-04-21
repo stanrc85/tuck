@@ -137,6 +137,24 @@ After `tuck restore` writes files, it checks whether any tool in your bootstrap 
 
 `tuck update` passes `--install-deps` implicitly so umbrella refreshes install missing tools as part of the one-shot sweep.
 
+### Cheatsheet
+
+| Command           | Description                                                        |
+| ----------------- | ------------------------------------------------------------------ |
+| `tuck cheatsheet` | Generate a markdown cheatsheet of keybinds/aliases from tracked dotfiles |
+
+Walks the manifest, runs format-specific parsers against each tracked file's source content, and emits a markdown document. Default output is `<tuckDir>/cheatsheet.md` so the cheatsheet is versioned alongside your dotfiles (commit with the next `tuck sync` to get a diffable history across hosts).
+
+Supported parsers in v1: **tmux** (`bind-key` / `bind`), **zsh** (`bindkey` + `alias`), **yazi** (`keymap.toml`). Each file self-selects via a path-pattern match, so your configs don't need to live at conventional paths for the sweep to catch them.
+
+Flags:
+- `-o, --output <path>`: Write to a custom path (default: `<tuckDir>/cheatsheet.md`)
+- `--stdout`: Print to stdout instead of writing — useful for `tuck cheatsheet --stdout | less` or `| glow`
+- `--sources <ids>`: Restrict to specific parsers (e.g. `--sources tmux,zsh`)
+- `-g, --group <name>`: Filter tracked files by host-group (repeatable; falls back to `config.defaultGroups`)
+
+More parsers (neovim-lua, hyprland/sway/i3, helix, alacritty/kitty/wezterm, bash, VS Code keybindings.json) will ship as follow-ups.
+
 ### Configuration
 
 | Command              | Description                                  |

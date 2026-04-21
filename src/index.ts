@@ -25,6 +25,7 @@ import {
   selfUpdateCommand,
   bootstrapCommand,
   updateCommand,
+  cheatsheetCommand,
 } from './commands/index.js';
 import { handleError } from './errors.js';
 import { VERSION, DESCRIPTION } from './constants.js';
@@ -72,6 +73,7 @@ program.addCommand(cleanCommand);
 program.addCommand(selfUpdateCommand);
 program.addCommand(bootstrapCommand);
 program.addCommand(updateCommand);
+program.addCommand(cheatsheetCommand);
 
 // Default action when no command is provided
 const runDefaultAction = async (): Promise<void> => {

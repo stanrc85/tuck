@@ -1,0 +1,100 @@
+import { describe, it, expect } from 'vitest';
+import { renderMarkdown } from '../../src/lib/cheatsheet/renderer.js';
+import type { CheatsheetResult } from '../../src/lib/cheatsheet/types.js';
+
+const FIXED_DATE = new Date('2026-04-21T12:00:00.000Z');
+const baseOpts = { generatedAt: FIXED_DATE, tuckVersion: '2.6.0' };
+
+describe('renderMarkdown', () => {
+  it('renders an empty-result message when totalEntries is 0', () => {
+    const result: CheatsheetResult = { sections: [], totalEntries: 0, skippedParsers: ['tmux', 'zsh'] };
+    const md = renderMarkdown(result, baseOpts);
+    expect(md).toContain('# Dotfiles Cheatsheet');
+    expect(md).toContain('No keybinds detected');
+    expect(md).toContain('generated: 2026-04-21T12:00:00.000Z');
+    expect(md).toContain('tuckVersion: 2.6.0');
+    expect(md).toContain('totalEntries: 0');
+  });
+
+  it('renders a single-file section without a File column', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 2,
+      skippedParsers: [],
+      sections: [
+        {
+          parserId: 'tmux',
+          label: 'tmux',
+          entries: [
+            { keybind: 'Prefix + r', action: 'reload config', sourceFile: '~/.tmux.conf', sourceLine: 3 },
+            { keybind: 'Prefix + |', action: 'split vertical', sourceFile: '~/.tmux.conf', sourceLine: 5 },
+          ],
+        },
+      ],
+    };
+    const md = renderMarkdown(result, baseOpts);
+    expect(md).toContain('## tmux (~/.tmux.conf)');
+    expect(md).toContain('| Keybind | Action |');
+    // pipe in "Prefix + |" must be escaped so the cell doesn't split the row
+    expect(md).toContain('`Prefix + \\|`');
+    expect(md).not.toContain('| Keybind | Action | File |');
+  });
+
+  it('renders a multi-file section with a File column', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 2,
+      skippedParsers: [],
+      sections: [
+        {
+          parserId: 'zsh',
+          label: 'zsh',
+          entries: [
+            { keybind: '^R', action: 'history-search', sourceFile: '~/.zshrc', sourceLine: 12 },
+            { keybind: 'll', action: 'ls -la', sourceFile: '~/.config/zsh/aliases.zsh', sourceLine: 4, category: 'alias' },
+          ],
+        },
+      ],
+    };
+    const md = renderMarkdown(result, baseOpts);
+    expect(md).toContain('## zsh');
+    expect(md).toContain('| Keybind | Action | File |');
+    expect(md).toContain('`~/.zshrc:12`');
+    expect(md).toContain('`~/.config/zsh/aliases.zsh:4`');
+  });
+
+  it('escapes pipes + backticks inside cells to preserve table shape', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 1,
+      skippedParsers: [],
+      sections: [
+        {
+          parserId: 'zsh',
+          label: 'zsh',
+          entries: [
+            {
+              keybind: 'weird',
+              action: 'echo `date` | tee /tmp/log',
+              sourceFile: '~/.zshrc',
+              sourceLine: 1,
+            },
+          ],
+        },
+      ],
+    };
+    const md = renderMarkdown(result, baseOpts);
+    expect(md).toContain('\\|');
+    expect(md).not.toContain("`date`"); // backticks surrogated to single-quotes
+  });
+
+  it('uses the summary line to report entry + section counts', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 2,
+      skippedParsers: [],
+      sections: [
+        { parserId: 'a', label: 'a', entries: [{ keybind: '1', action: 'x', sourceFile: 'a', sourceLine: 1 }] },
+        { parserId: 'b', label: 'b', entries: [{ keybind: '2', action: 'x', sourceFile: 'b', sourceLine: 1 }] },
+      ],
+    };
+    const md = renderMarkdown(result, baseOpts);
+    expect(md).toMatch(/2 entries across 2 sources/);
+  });
+});
