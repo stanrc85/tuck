@@ -33,7 +33,16 @@ if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then
   echo "Skipping ZimFW on Kali (Kali ships its own zsh setup)."
   exit 0
 fi
-curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh`,
+# The upstream zimfw installer unconditionally runs \`chsh -s\` itself
+# when \${SHELL:t} != zsh (see install.zsh ~L62-71). That chsh prompt
+# fails silently here because chsh's stdin is inherited from the zsh
+# subshell whose stdin is the (by-then-closed) curl pipe — so PAM gets
+# EOF before the user can type the password. Pre-setting SHELL to the
+# zsh path satisfies the installer's check so it skips its own chsh;
+# tuck's own post-bootstrap \`maybePromptForShellChange\` then runs the
+# login-shell change against a real TTY where the password prompt works.
+ZSH_PATH="$(command -v zsh)"
+curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | SHELL="$ZSH_PATH" zsh`,
   update: 'zsh -c "source \\"$HOME/.zim/init.zsh\\" && zimfw upgrade && zimfw update"',
   detect: {
     paths: ['~/.zim', '~/.zimrc', '~/.config/zsh/.zimrc'],

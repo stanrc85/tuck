@@ -90,6 +90,19 @@ describe('registry requires graph', () => {
     expect(zimfw.install).toContain('Skipping ZimFW on Kali');
   });
 
+  it('zimfw install pre-sets SHELL so the upstream installer skips its own chsh', () => {
+    // The upstream zimfw install.zsh runs `chsh -s` itself when $SHELL
+    // isn't zsh; under our `curl | zsh` pipe chsh's stdin is the closed
+    // curl pipe, so PAM gets EOF before the user can type. Pre-setting
+    // SHELL=<zsh path> satisfies the installer's check and defers the
+    // login-shell change to tuck's own post-bootstrap prompt (which runs
+    // against a real TTY). This assertion guards against regressing that
+    // workaround on a future refactor.
+    const zimfw = byId.zimfw!;
+    expect(zimfw.install).toMatch(/SHELL="\$ZSH_PATH"\s+zsh/);
+    expect(zimfw.install).toContain('command -v zsh');
+  });
+
   it('all `requires` targets exist in the catalog (no dangling refs)', () => {
     const ids = new Set(BUILT_IN_TOOLS.map((t) => t.id));
     for (const tool of BUILT_IN_TOOLS) {
