@@ -50,4 +50,5 @@ fi`,
     paths: ['~/.config/yazi'],
     rcReferences: [],
   },
+  associatedConfig: ['~/.config/yazi/**'],
 };

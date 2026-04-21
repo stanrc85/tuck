@@ -63,4 +63,8 @@ nvim --headless \\
     ],
     rcReferences: [],
   },
+  associatedConfig: [
+    '~/.config/nvim/lazy-lock.json',
+    '~/.config/nvim/lua/**',
+  ],
 };

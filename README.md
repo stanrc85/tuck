@@ -130,6 +130,13 @@ tuck bootstrap --bundle <your-bundle>
 | `tuck restore`      | Restore dotfiles from repo to system (`-g` to pick a group)                  |
 | `tuck undo`         | Roll back any destructive op (apply, restore, sync, remove, clean)           |
 
+After `tuck restore` writes files, it checks whether any tool in your bootstrap catalog configures those paths (via `associatedConfig` globs) but isn't installed — e.g. you just restored `~/.config/nvim/` onto a box without `nvim`. On an interactive TTY it offers a single y/n to run `tuck bootstrap --tools <missing>` inline (default Yes). Flags:
+
+- `--install-deps`: Auto-install without prompting. This is the opt-in for CI / non-TTY hosts; the prompt never auto-installs silently in that case.
+- `--no-install-deps`: Skip the prompt and log an advisory pointing at `tuck bootstrap --tools <ids>`.
+
+`tuck update` passes `--install-deps` implicitly so umbrella refreshes install missing tools as part of the one-shot sweep.
+
 ### Configuration
 
 | Command              | Description                                  |

@@ -4,9 +4,12 @@ import { NotInitializedError, NonInteractivePromptError } from '../../src/errors
 
 const isInteractiveMock = vi.fn(() => true);
 const multiselectMock = vi.fn();
+const confirmMock = vi.fn();
 const loggerWarningMock = vi.fn();
 const loggerInfoMock = vi.fn();
 const loggerSuccessMock = vi.fn();
+const findMissingDepsMock = vi.fn();
+const runBootstrapMock = vi.fn();
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
@@ -31,7 +34,7 @@ vi.mock('../../src/ui/index.js', () => ({
     outro: vi.fn(),
     multiselect: multiselectMock,
     select: vi.fn(),
-    confirm: vi.fn(),
+    confirm: confirmMock,
     cancel: vi.fn(),
     note: vi.fn(),
     spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), message: '' })),
@@ -52,6 +55,14 @@ vi.mock('../../src/ui/index.js', () => ({
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   isInteractive: isInteractiveMock,
+}));
+
+vi.mock('../../src/lib/bootstrap/missingDeps.js', () => ({
+  findMissingDeps: findMissingDepsMock,
+}));
+
+vi.mock('../../src/commands/bootstrap.js', () => ({
+  runBootstrap: runBootstrapMock,
 }));
 
 vi.mock('../../src/ui/theme.js', () => ({
@@ -138,6 +149,11 @@ describe('restore command behavior', () => {
     validateSafeSourcePathMock.mockImplementation(() => {});
     validateSafeManifestDestinationMock.mockImplementation(() => {});
     validatePathWithinRootMock.mockImplementation(() => {});
+    // Default: no missing deps so the TASK-048 prompt is a no-op in tests
+    // that don't care about it. Tests override per-case.
+    findMissingDepsMock.mockResolvedValue([]);
+    runBootstrapMock.mockResolvedValue({ plan: null, counts: null, dryRun: false });
+    confirmMock.mockResolvedValue(true);
   });
 
   it('throws NotInitializedError when manifest is missing', async () => {
@@ -418,6 +434,138 @@ describe('restore command behavior', () => {
 
       expect(multiselectMock).toHaveBeenCalledTimes(1);
       expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========== TASK-048 missing-deps prompt ==========
+
+  describe('missing-deps prompt on successful restore', () => {
+    const seedSingleFileManifest = () => {
+      getAllTrackedFilesMock.mockResolvedValue({
+        'nvim-init': {
+          source: '~/.config/nvim/init.lua',
+          destination: 'files/nvim/init.lua',
+          category: 'editor',
+          groups: ['default'],
+        },
+      });
+    };
+
+    it('does NOT prompt on --dry-run', async () => {
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([{ id: 'neovim', description: 'nvim' }]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true, dryRun: true });
+
+      expect(findMissingDepsMock).not.toHaveBeenCalled();
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+    });
+
+    it('does NOT prompt when no deps are missing', async () => {
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(findMissingDepsMock).toHaveBeenCalledTimes(1);
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+    });
+
+    it('installDeps=true runs bootstrap without prompting', async () => {
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([
+        { id: 'neovim', description: 'editor' },
+        { id: 'yazi', description: 'fm' },
+      ]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        installDeps: true,
+      });
+
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        tools: 'neovim,yazi',
+        yes: true,
+      });
+    });
+
+    it('installDeps=false logs advisory and does NOT run bootstrap', async () => {
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([{ id: 'neovim', description: 'editor' }]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        installDeps: false,
+      });
+
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+      expect(loggerInfoMock).toHaveBeenCalledWith(
+        expect.stringContaining('tuck bootstrap --tools neovim')
+      );
+    });
+
+    it('undefined installDeps + TTY prompts y/n, Yes runs bootstrap', async () => {
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([{ id: 'neovim', description: 'editor' }]);
+      confirmMock.mockResolvedValue(true);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(confirmMock).toHaveBeenCalledTimes(1);
+      expect(runBootstrapMock).toHaveBeenCalledWith({ tools: 'neovim', yes: true });
+    });
+
+    it('undefined installDeps + TTY + No skips with advisory', async () => {
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([{ id: 'neovim', description: 'editor' }]);
+      confirmMock.mockResolvedValue(false);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(confirmMock).toHaveBeenCalledTimes(1);
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+      expect(loggerInfoMock).toHaveBeenCalledWith(
+        expect.stringContaining('tuck bootstrap --tools neovim')
+      );
+    });
+
+    it('undefined installDeps + non-TTY falls back to advisory (no auto-install)', async () => {
+      isInteractiveMock.mockReturnValue(false);
+      seedSingleFileManifest();
+      findMissingDepsMock.mockResolvedValue([{ id: 'neovim', description: 'editor' }]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+      expect(loggerInfoMock).toHaveBeenCalledWith(
+        expect.stringContaining('tuck bootstrap --tools neovim')
+      );
+    });
+
+    it('does not run findMissingDeps when zero files were restored', async () => {
+      getAllTrackedFilesMock.mockResolvedValue({}); // empty manifest
+      findMissingDepsMock.mockResolvedValue([]);
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({ all: true, noHooks: true, noSecrets: true });
+
+      expect(findMissingDepsMock).not.toHaveBeenCalled();
     });
   });
 });

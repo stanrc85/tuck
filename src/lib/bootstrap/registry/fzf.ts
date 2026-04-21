@@ -17,4 +17,5 @@ export const fzf: ToolDefinition = {
     paths: ['~/.fzf.zsh', '~/.fzf.bash'],
     rcReferences: ['fzf'],
   },
+  associatedConfig: ['~/.fzf.zsh', '~/.fzf.bash', '~/.config/fzf/**'],
 };

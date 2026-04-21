@@ -172,6 +172,16 @@ export interface RestoreOptions {
   noSecrets?: boolean;
   /** Filter files by host-group. Repeatable. */
   group?: string[];
+  /**
+   * Tri-state gate on the restore-tail "missing tool deps" prompt:
+   *   `true`      — auto-install without prompting (also the non-TTY
+   *                 opt-in, since prompting isn't possible there).
+   *   `false`     — skip install and log an advisory.
+   *   `undefined` — interactive TTY prompts y/n (default Yes); non-TTY
+   *                 falls back to advisory (auto-install without
+   *                 explicit opt-in would be surprising).
+   */
+  installDeps?: boolean;
 }
 
 export interface StatusOptions {

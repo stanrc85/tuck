@@ -58,6 +58,16 @@ export const toolDefinitionSchema = z.object({
   update: z.string().optional(),
   /** Signals used by the picker's auto-detection. */
   detect: toolDetectSchema,
+  /**
+   * Glob patterns (simple `prefix/**`, `prefix/*`, or literal) identifying
+   * the dotfile paths this tool consumes. Matched against the *destinations*
+   * produced by `tuck restore` — so the restore-tail prompt (TASK-048) can
+   * detect "user just laid down `~/.config/nvim/...` but `nvim` isn't
+   * installed" and offer to run bootstrap.
+   *
+   * Optional; tools that don't declare this never trigger the prompt.
+   */
+  associatedConfig: z.array(z.string()).default([]),
 });
 
 export const bootstrapConfigSchema = z.object({

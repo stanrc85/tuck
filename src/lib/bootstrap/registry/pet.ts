@@ -32,4 +32,5 @@ sudo dpkg -i "$tmp/pet.deb" || sudo apt-get -f install -y`,
     paths: ['~/.config/pet'],
     rcReferences: [],
   },
+  associatedConfig: ['~/.config/pet/**'],
 };

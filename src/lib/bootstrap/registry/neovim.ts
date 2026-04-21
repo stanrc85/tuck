@@ -60,4 +60,5 @@ fi`,
     paths: ['~/.config/nvim'],
     rcReferences: ['nvim'],
   },
+  associatedConfig: ['~/.config/nvim/**'],
 };

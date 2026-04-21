@@ -169,8 +169,11 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
     try {
       // --all picks up config.defaultGroups via the TASK-031+035 fallback,
       // so host-scoped users get the right subset. trustHooks is on by
-      // analogy with deploy_dots.sh which passes --trust-hooks.
-      await runRestore({ all: true, trustHooks: true });
+      // analogy with deploy_dots.sh which passes --trust-hooks. installDeps
+      // is `true` so the umbrella's one-shot refresh includes auto-installing
+      // any missing tools whose configs just got restored — user consented to
+      // a full sweep, auto-installing missing deps is within that consent.
+      await runRestore({ all: true, trustHooks: true, installDeps: true });
       result.restoreRan = true;
     } catch (error) {
       logger.warning(

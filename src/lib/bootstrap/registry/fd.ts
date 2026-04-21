@@ -44,4 +44,6 @@ fi`,
     paths: [],
     rcReferences: ['fd'],
   },
+  // fd reads no dotfiles by default — behavior is all flags/env.
+  associatedConfig: [],
 };

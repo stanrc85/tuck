@@ -22,4 +22,6 @@ export const ripgrep: ToolDefinition = {
     paths: [],
     rcReferences: ['rg', 'ripgrep'],
   },
+  // ripgrep reads no dotfiles by default (respects .gitignore in-tree only).
+  associatedConfig: [],
 };

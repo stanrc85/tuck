@@ -45,4 +45,5 @@ fi`,
     paths: ['~/.config/bat'],
     rcReferences: ['bat'],
   },
+  associatedConfig: ['~/.config/bat/**'],
 };

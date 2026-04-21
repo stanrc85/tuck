@@ -29,6 +29,8 @@ import { NotInitializedError, FileNotFoundError, NonInteractivePromptError } fro
 import { CATEGORIES } from '../constants.js';
 import type { RestoreOptions } from '../types.js';
 import { restoreFiles as restoreSecrets, getSecretCount } from '../lib/secrets/index.js';
+import { findMissingDeps, type MissingDep } from '../lib/bootstrap/missingDeps.js';
+import { runBootstrap } from './bootstrap.js';
 
 /**
  * Fix permissions for SSH files after restore
@@ -95,6 +97,8 @@ interface RestoreResult {
   restoredCount: number;
   secretsRestored: number;
   unresolvedPlaceholders: string[];
+  /** Absolute destination paths of files actually written (excludes dry-run + skipped). */
+  restoredPaths: string[];
 }
 
 const prepareFilesToRestore = async (
@@ -258,10 +262,11 @@ const restoreFilesInternal = async (
     restoredCount,
     secretsRestored,
     unresolvedPlaceholders,
+    restoredPaths,
   };
 };
 
-const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = {}): Promise<void> => {
+const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = {}): Promise<string[]> => {
   // Refuse to prompt when stdout isn't a TTY — `@clack/prompts.multiselect` would
   // still open a readline on /dev/pts/0 and hang forever because no UI is visible
   // to the user. Force-fail with guidance to pass --all or explicit paths.
@@ -282,7 +287,7 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
   if (files.length === 0) {
     prompts.log.warning('No files to restore');
     prompts.note("Run 'tuck add <path>' to track files first", 'Tip');
-    return;
+    return [];
   }
 
   // Let user select files to restore
@@ -303,7 +308,7 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
 
   if (selectedIds.length === 0) {
     prompts.cancel('No files selected');
-    return;
+    return [];
   }
 
   const selectedFiles = files.filter((f) => selectedIds.includes(f.id));
@@ -333,7 +338,7 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
 
   if (!confirm) {
     prompts.cancel('Operation cancelled');
-    return;
+    return [];
   }
 
   // Restore
@@ -361,6 +366,7 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
   }
 
   prompts.outro(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
+  return result.restoredPaths;
 };
 
 /**
@@ -440,6 +446,77 @@ const maybePromptForGroupAssignment = async (
   );
 };
 
+const logMissingDepsList = (missing: readonly MissingDep[]): void => {
+  logger.blank();
+  logger.warning(
+    `Detected ${missing.length} missing tool dependenc${missing.length === 1 ? 'y' : 'ies'} based on restored dotfiles:`
+  );
+  for (const dep of missing) {
+    console.log(c.dim(`  • ${dep.id}`));
+  }
+};
+
+const skippedAdvisory = (missing: readonly MissingDep[]): void => {
+  const ids = missing.map((d) => d.id).join(',');
+  logger.info(`Skipped — run \`tuck bootstrap --tools ${ids}\` to install.`);
+};
+
+/**
+ * After restore completes, check whether any tool in the bootstrap catalog
+ * (a) claims one of the restored paths via `associatedConfig` and (b)
+ * isn't currently installed on this host. If so, offer to run
+ * `tuck bootstrap --tools <ids>` inline. Silent no-op when nothing is
+ * missing — parallel pattern to `maybePromptForGroupAssignment`.
+ *
+ * Decision matrix around `options.installDeps`:
+ *   `true`      — run bootstrap, no prompt (also the non-TTY opt-in).
+ *   `false`     — log advisory, no prompt.
+ *   `undefined` — TTY: y/n confirm (default Yes). Non-TTY: advisory.
+ *
+ * We never silently auto-install on non-TTY without `--install-deps`:
+ * a user scripting `tuck restore` on CI should opt in explicitly, not
+ * have bootstrap fire as a surprise side-effect of restore.
+ */
+const maybePromptForMissingDeps = async (
+  tuckDir: string,
+  restoredPaths: readonly string[],
+  options: RestoreOptions
+): Promise<void> => {
+  if (options.dryRun) return;
+  if (restoredPaths.length === 0) return;
+
+  const missing = await findMissingDeps(tuckDir, restoredPaths);
+  if (missing.length === 0) return;
+
+  if (options.installDeps === false) {
+    logMissingDepsList(missing);
+    skippedAdvisory(missing);
+    return;
+  }
+
+  if (options.installDeps !== true && !isInteractive()) {
+    logMissingDepsList(missing);
+    skippedAdvisory(missing);
+    return;
+  }
+
+  const ids = missing.map((d) => d.id);
+  const toolsArg = ids.join(',');
+
+  if (options.installDeps !== true) {
+    logMissingDepsList(missing);
+    const proceed = await prompts.confirm('Install them now?', true);
+    if (!proceed) {
+      skippedAdvisory(missing);
+      return;
+    }
+  } else {
+    logMissingDepsList(missing);
+  }
+
+  await runBootstrap({ tools: toolsArg, yes: true });
+};
+
 /**
  * Run restore programmatically (exported for use by other commands)
  */
@@ -455,6 +532,8 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
   }
   assertMigrated(manifest);
 
+  let restoredPaths: string[] = [];
+
   // Run interactive restore when called programmatically with --all
   if (options.all) {
     // Prepare files to restore
@@ -468,6 +547,7 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
     } else {
       // Restore files with progress
       const result = await restoreFilesInternal(tuckDir, files, options);
+      restoredPaths = result.restoredPaths;
 
       logger.blank();
       displaySecretSummary(result);
@@ -476,10 +556,11 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
       );
     }
   } else {
-    await runInteractiveRestore(tuckDir, options);
+    restoredPaths = await runInteractiveRestore(tuckDir, options);
   }
 
   await maybePromptForGroupAssignment(tuckDir, options);
+  await maybePromptForMissingDeps(tuckDir, restoredPaths, options);
 };
 
 const runRestoreCommand = async (paths: string[], options: RestoreOptions): Promise<void> => {
@@ -496,8 +577,9 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
 
   // If no paths and no --all, run interactive
   if (paths.length === 0 && !options.all) {
-    await runInteractiveRestore(tuckDir, options);
+    const restoredPaths = await runInteractiveRestore(tuckDir, options);
     await maybePromptForGroupAssignment(tuckDir, options);
+    await maybePromptForMissingDeps(tuckDir, restoredPaths, options);
     return;
   }
 
@@ -533,6 +615,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
     displaySecretSummary(result);
     logger.success(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
     await maybePromptForGroupAssignment(tuckDir, options);
+    await maybePromptForMissingDeps(tuckDir, result.restoredPaths, options);
   }
 };
 
@@ -556,6 +639,14 @@ export const restoreCommand = new Command('restore')
   .option('--no-hooks', 'Skip execution of pre/post restore hooks')
   .option('--trust-hooks', 'Trust and run hooks without confirmation (use with caution)')
   .option('--no-secrets', 'Skip restoring secrets (keep placeholders as-is)')
+  .option(
+    '--install-deps',
+    'Auto-install any missing tool dependencies detected from restored configs (non-interactive; also the opt-in for CI / non-TTY hosts)'
+  )
+  .option(
+    '--no-install-deps',
+    'Skip the missing-deps prompt/advisory entirely'
+  )
   .action(async (paths: string[], options: RestoreOptions) => {
     await runRestoreCommand(paths, options);
   });

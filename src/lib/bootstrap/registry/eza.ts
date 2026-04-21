@@ -18,4 +18,6 @@ export const eza: ToolDefinition = {
     paths: [],
     rcReferences: ['eza'],
   },
+  // No canonical config dir — eza reads no dotfiles by default.
+  associatedConfig: [],
 };
