@@ -178,10 +178,16 @@ describe('neovim-lua parser', () => {
     const entries = neovimLuaParser.parse(content, ctx(nvimPath));
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      keybind: 'n <leader>ff',
+      keybind: '<leader>ff', // `n` prefix suppressed — normal mode is implicit
       action: 'Find files',
       sourceLine: 1,
     });
+  });
+
+  it('keeps the mode prefix for non-normal modes', () => {
+    const content = `vim.keymap.set('i', '<C-s>', '<Esc>:w<CR>', { desc = 'Save in insert mode' })`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries[0].keybind).toBe('[i] <C-s>');
   });
 
   it('handles multi-line calls', () => {
@@ -195,7 +201,7 @@ vim.keymap.set(
 `;
     const entries = neovimLuaParser.parse(content, ctx(nvimPath));
     expect(entries).toHaveLength(1);
-    expect(entries[0].keybind).toBe('n <leader>w');
+    expect(entries[0].keybind).toBe('<leader>w');
     expect(entries[0].action).toBe('Save file');
     expect(entries[0].sourceLine).toBe(2);
   });
@@ -205,6 +211,35 @@ vim.keymap.set(
     const entries = neovimLuaParser.parse(content, ctx(nvimPath));
     expect(entries).toHaveLength(1);
     expect(entries[0].keybind).toBe('[n,v] <leader>y');
+  });
+
+  it('parses lazy.nvim `keys = { ... }` plugin-spec entries', () => {
+    const content = `
+return {
+  "nvim-telescope/telescope.nvim",
+  keys = {
+    { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "Find files" },
+    { "<leader>fg", function() require("telescope.builtin").live_grep() end, desc = "Live grep" },
+    { "<leader>y",  "\\"+y", mode = { "n", "v" }, desc = "Yank to clipboard" },
+    { "<leader>p",  "\\"+p", mode = "v", desc = "Paste from clipboard" },
+  },
+}
+`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    const byKey = Object.fromEntries(entries.map((e) => [e.keybind, e.action]));
+
+    expect(byKey).toMatchObject({
+      '<leader>ff': 'Find files',
+      '<leader>fg': 'Live grep',
+      '[n,v] <leader>y': 'Yank to clipboard',
+      '[v] <leader>p': 'Paste from clipboard',
+    });
+  });
+
+  it('ignores `keys = { ... }` that is just a plain string array (not plugin keymaps)', () => {
+    const content = `local keys = { "a", "b", "c" }`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toEqual([]);
   });
 
   it('falls back to rhs when opts.desc is absent', () => {
@@ -253,7 +288,7 @@ vim.keymap.set('n', '<leader>y', ':yank<CR>')
 `;
     const entries = neovimLuaParser.parse(content, ctx(nvimPath));
     expect(entries).toHaveLength(1);
-    expect(entries[0].keybind).toBe('n <leader>y');
+    expect(entries[0].keybind).toBe('<leader>y');
   });
 
   it('handles multiple mappings in the same file with correct line numbers', () => {
@@ -265,5 +300,60 @@ vim.keymap.set('n', '<leader>b', ':b<CR>')
     expect(entries).toHaveLength(2);
     expect(entries[0].sourceLine).toBe(1);
     expect(entries[1].sourceLine).toBe(3);
+  });
+});
+
+describe('yazi parser schemas', () => {
+  const yaziPath = '~/.config/yazi/keymap.toml';
+
+  it('parses the newer CalVer shape (top-level [mgr].keymap inline array)', () => {
+    const content = `
+[mgr]
+keymap = [
+    { on = "r", run = "reload", desc = "Reload" },
+    { on = "<Esc>", run = "escape", desc = "Exit" },
+]
+
+prepend_keymap = [
+    { on = "!", run = 'shell "$SHELL"', desc = "Open shell here" },
+]
+
+[input]
+keymap = [
+    { on = "<CR>", run = "submit", desc = "Submit input" },
+]
+`;
+    const entries = yaziParser.parse(content, ctx(yaziPath));
+    const byKey = Object.fromEntries(entries.map((e) => [e.keybind, e]));
+
+    expect(entries).toHaveLength(4);
+    expect(byKey['r']).toMatchObject({ action: 'Reload', category: 'mgr' });
+    expect(byKey['<Esc>']).toMatchObject({ action: 'Exit', category: 'mgr' });
+    expect(byKey['!']).toMatchObject({ action: 'Open shell here', category: 'mgr' });
+    expect(byKey['<CR>']).toMatchObject({ action: 'Submit input', category: 'input' });
+  });
+
+  it('parses the older nested shape ([[keymap.manager.prepend_keymap]])', () => {
+    const content = `
+[[keymap.manager.prepend_keymap]]
+on = ['r']
+run = 'reload'
+desc = 'Reload'
+
+[[keymap.input.keymap]]
+on = ['<Esc>']
+run = 'escape'
+`;
+    const entries = yaziParser.parse(content, ctx(yaziPath));
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      keybind: 'r',
+      action: 'Reload',
+      category: 'manager',
+    });
+    expect(entries[1]).toMatchObject({
+      keybind: '<Esc>',
+      category: 'input',
+    });
   });
 });

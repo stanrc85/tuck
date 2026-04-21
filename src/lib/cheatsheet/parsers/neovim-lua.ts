@@ -1,37 +1,40 @@
 import type { Entry, Parser, ParserContext } from '../types.js';
 
 /**
- * Parse `vim.keymap.set(...)` and `vim.api.nvim_set_keymap(...)` calls
- * from lua files under `~/.config/nvim/`. We match the two canonical
- * APIs explicitly rather than any 3+-arg function call that looks like
- * a keymap — the false-positive rate would be too high otherwise. Users
- * with custom `map` helpers can file a follow-up.
+ * Parse neovim keymaps from lua files. Three binding styles are
+ * recognized — the three common ways modern configs declare a keymap:
+ *
+ *   1. vim.keymap.set(mode, lhs, rhs, opts?)
+ *   2. vim.api.nvim_set_keymap(mode, lhs, rhs, opts?) (legacy API)
+ *   3. lazy.nvim plugin-spec `keys = { { lhs, rhs?, desc = ..., mode = ... }, ... }`
+ *
+ * (3) is the big one — plugin-owned keybinds live here in the lazy.nvim
+ * ecosystem (telescope, neo-tree, which-key, etc.) and would otherwise
+ * be invisible to the cheatsheet.
  *
  * Approach (not a full lua parser — a targeted best-effort scanner):
  *
  *   1. Line-by-line, strip trailing `-- comment` text that isn't inside
- *      a string literal. This handles the common `-- commented-out
- *      vim.keymap.set(...)` pattern without a real lexer.
- *   2. Find each occurrence of `vim.keymap.set(` or
- *      `vim.api.nvim_set_keymap(` in the cleaned content.
- *   3. Walk forward from the `(` maintaining paren depth + string state;
- *      when depth returns to zero we have the closing `)` and the
- *      argument slice.
- *   4. Split the arg slice on top-level commas (commas NOT inside
- *      strings / tables / parens) into up-to-four arguments.
- *   5. Arg 1 = mode (single quoted string OR table of quoted strings).
- *      Arg 2 = lhs (single quoted string).
- *      Arg 3 = rhs (any expression — used as fallback action text).
- *      Arg 4 (optional) = opts table — we only extract a `desc = "..."`.
- *   6. If mode or lhs aren't string-literal-parseable, the keymap is
- *      treated as dynamic (loop / variable-driven) and skipped silently.
+ *      a string literal.
+ *   2. For each keyword (`vim.keymap.set(`, `vim.api.nvim_set_keymap(`,
+ *      or `keys = {`), scan forward with a string+depth-aware walk to
+ *      find the matching closer.
+ *   3. Split the inner slice on top-level commas and parse individual
+ *      args or table rows per keyword semantics.
  *
- * Long strings (`[[...]]`), multi-line strings, and `--[[ ... ]]` block
- * comments aren't handled in v1 — they're rare in keymap files. The
- * scanner degrades gracefully: a mis-parsed slice produces no entry.
+ * Mode prefix in the rendered keybind: we omit it entirely when the
+ * entry is single-mode `n` (normal mode — the overwhelming default)
+ * and show `[n,v]` / `[v]` / `[i]` only for non-default cases. Keeps
+ * the table visually clean without hiding mode info for the cases
+ * where it matters.
+ *
+ * Long strings (`[[...]]`), `--[[ ... ]]` block comments, and dynamic
+ * (non-literal) mode/lhs values aren't handled — they're rare in the
+ * target files and degrade gracefully to no-entry rather than crash.
  */
 
 const KEYMAP_KEYWORDS = ['vim.keymap.set(', 'vim.api.nvim_set_keymap('] as const;
+const LAZY_KEYS_RE = /\bkeys\s*=\s*\{/g;
 
 /** Strip `-- ...` to end-of-line when the `--` isn't inside a string. */
 const stripLineComment = (line: string): string => {
@@ -53,12 +56,16 @@ const stripLineComment = (line: string): string => {
 };
 
 /**
- * From an index `startAfter` pointing JUST after the opening `(`,
- * walk forward to the matching `)` respecting strings, tables, and
- * nested parens. Returns the end index (exclusive) of the args slice,
- * or -1 if the closing paren can't be found (malformed input).
+ * From an index `startAfter` pointing JUST after the opening bracket,
+ * walk forward to the matching closer (paren / brace / square),
+ * respecting strings, tables, and nested brackets. Returns the end
+ * index (exclusive) of the args slice, or -1 on malformed input.
  */
-const findCloseParen = (src: string, startAfter: number): number => {
+const findClose = (
+  src: string,
+  startAfter: number,
+  closer: ')' | '}' | ']'
+): number => {
   let depth = 1;
   let inSingle = false;
   let inDouble = false;
@@ -81,11 +88,15 @@ const findCloseParen = (src: string, startAfter: number): number => {
     if (ch === '(' || ch === '{' || ch === '[') { depth++; continue; }
     if (ch === ')' || ch === '}' || ch === ']') {
       depth--;
-      if (depth === 0 && ch === ')') return i;
+      if (depth === 0 && ch === closer) return i;
     }
   }
   return -1;
 };
+
+/** Legacy name kept for narrow call-sites that want only paren matching. */
+const findCloseParen = (src: string, startAfter: number): number =>
+  findClose(src, startAfter, ')');
 
 /**
  * Top-level comma split: break `args` at commas that aren't inside a
@@ -168,6 +179,75 @@ const offsetToLine = (src: string, offset: number): number => {
   return line;
 };
 
+/**
+ * Format the mode prefix for the Entry.keybind. Single-mode `n`
+ * renders as just the lhs (normal mode is the implicit default);
+ * everything else gets a bracketed prefix so non-default modes stay
+ * visible without cluttering the common case.
+ */
+const formatKeybind = (modes: readonly string[], lhs: string): string => {
+  if (modes.length === 1 && modes[0] === 'n') return lhs;
+  const label = modes.length === 1 ? modes[0] : modes.join(',');
+  return `[${label}] ${lhs}`;
+};
+
+/**
+ * Parse a single lazy.nvim `keys = { ... }` row (the inner `{ ... }`
+ * block). Rows look like:
+ *   { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "Find files" }
+ *   { "<leader>y",  function() ... end, mode = {"n","v"}, desc = "Yank" }
+ *
+ * Positional arg 1 = lhs (string). Positional arg 2 (if present, and
+ * not a named field) = rhs. Named `desc` / `mode` extracted via regex.
+ */
+const parseLazyKeyRow = (
+  rowSrc: string,
+  ctx: ParserContext,
+  lineOffset: number,
+  cleaned: string,
+  rowStartOffset: number
+): Entry | null => {
+  const parts = splitTopLevelCommas(rowSrc);
+  if (parts.length === 0) return null;
+
+  const lhs = parseStringLiteral(parts[0]);
+  if (lhs === null) return null;
+
+  // Discover named fields anywhere in the row.
+  const descMatch = rowSrc.match(/\bdesc\s*=\s*(['"])((?:\\.|[^\\])*?)\1/);
+  const desc = descMatch ? descMatch[2] : null;
+
+  // `mode = "v"` OR `mode = { "n", "v" }` OR omitted (defaults to "n").
+  let modes: string[] = ['n'];
+  const modeStrMatch = rowSrc.match(/\bmode\s*=\s*(['"])((?:\\.|[^\\])*?)\1/);
+  const modeArrMatch = rowSrc.match(/\bmode\s*=\s*\{([^}]*)\}/);
+  if (modeStrMatch) {
+    modes = [modeStrMatch[2]];
+  } else if (modeArrMatch) {
+    const parsedArr = parseStringArray(`{${modeArrMatch[1]}}`);
+    if (parsedArr && parsedArr.length > 0) modes = parsedArr;
+  }
+
+  // Positional arg 2 (if present and not a `name = value` pair) is rhs.
+  let rhsExpr = '';
+  for (let i = 1; i < parts.length; i++) {
+    const part = parts[i].trim();
+    if (/^[A-Za-z_][A-Za-z0-9_]*\s*=/.test(part)) break; // hit a named field
+    rhsExpr = part;
+    break;
+  }
+
+  const action =
+    desc ?? parseStringLiteral(rhsExpr) ?? (rhsExpr.length > 0 ? summarizeRhs(rhsExpr) : '(no action)');
+
+  return {
+    keybind: formatKeybind(modes, lhs),
+    action,
+    sourceFile: ctx.sourceFile,
+    sourceLine: offsetToLine(cleaned, rowStartOffset) + lineOffset,
+  };
+};
+
 export const neovimLuaParser: Parser = {
   id: 'neovim-lua',
   label: 'Neovim (lua)',
@@ -232,14 +312,43 @@ export const neovimLuaParser: Parser = {
             ? desc
             : parseStringLiteral(rhsExpr) ?? summarizeRhs(rhsExpr);
         const line = offsetToLine(cleaned, idx);
-        const modeLabel = modes.length === 1 ? modes[0] : `[${modes.join(',')}]`;
 
         entries.push({
-          keybind: `${modeLabel} ${lhs}`,
+          keybind: formatKeybind(modes, lhs),
           action: action.length > 0 ? action : '(no action)',
           sourceFile: ctx.sourceFile,
           sourceLine: line,
         });
+      }
+    }
+
+    // Pass 2: scan for lazy.nvim `keys = { ... }` blocks and parse each
+    // inner `{ ... }` row. Plugin-spec keybinds live here in modern
+    // configs (telescope, neo-tree, which-key, gitsigns, etc.).
+    LAZY_KEYS_RE.lastIndex = 0;
+    let lazyMatch: RegExpExecArray | null;
+    while ((lazyMatch = LAZY_KEYS_RE.exec(cleaned)) !== null) {
+      const openBrace = lazyMatch.index + lazyMatch[0].length - 1;
+      const close = findClose(cleaned, openBrace + 1, '}');
+      if (close < 0) continue;
+      const innerSrc = cleaned.slice(openBrace + 1, close);
+      const baseLine = offsetToLine(cleaned, lazyMatch.index) - 1;
+
+      // Split into top-level rows (each a `{ ... }` or `"string"` entry).
+      const rows = splitTopLevelCommas(innerSrc);
+      let cursorOffset = openBrace + 1;
+      for (const rowRaw of rows) {
+        const row = rowRaw.trim();
+        if (!row.startsWith('{')) {
+          cursorOffset += rowRaw.length + 1;
+          continue;
+        }
+        // Peel the outer braces off the row to get its internals.
+        const rowInner = row.slice(1, row.endsWith('}') ? -1 : undefined);
+        const rowStart = cleaned.indexOf(row, cursorOffset);
+        const entry = parseLazyKeyRow(rowInner, ctx, baseLine, cleaned, rowStart >= 0 ? rowStart : openBrace);
+        if (entry) entries.push(entry);
+        cursorOffset += rowRaw.length + 1;
       }
     }
 
