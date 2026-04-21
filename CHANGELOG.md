@@ -1,3 +1,10 @@
+## [2.12.2](https://github.com/stanrc85/tuck/compare/v2.12.1...v2.12.2) (2026-04-21)
+
+
+### Bug Fixes
+
+* **bootstrap:** fire chsh prompt before throwing on partial failures ([f29b672](https://github.com/stanrc85/tuck/commit/f29b67268d4b620a42248867e8fd491be1ce83c8))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.12.1](https://github.com/stanrc85/tuck/compare/v2.12.0...v2.12.1) (2026-04-21)
