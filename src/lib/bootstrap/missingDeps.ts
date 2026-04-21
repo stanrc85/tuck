@@ -1,5 +1,6 @@
-import { join } from 'path';
-import { pathExists } from '../paths.js';
+import { readFile } from 'fs/promises';
+import { basename, join } from 'path';
+import { expandPath, pathExists } from '../paths.js';
 import { loadBootstrapConfig } from './parser.js';
 import { bootstrapConfigSchema } from '../../schemas/bootstrap.schema.js';
 import { mergeWithRegistry } from './registry/index.js';
@@ -42,8 +43,31 @@ export const findMissingDeps = async (
   const catalog = mergeWithRegistry(config);
   if (catalog.length === 0) return [];
 
-  const candidates = catalog.filter((tool) =>
-    toolMatchesRestoredFiles(tool, restoredFilePaths)
+  // Second candidate signal: some tools (eza, ripgrep, fzf) ship no
+  // config directory — users wire them up through shell aliases instead.
+  // Scan restored shell-rc-like files for each tool's `rcReferences`
+  // strings and treat a content match as equivalent to an associatedConfig
+  // match. Without this, a freshly-restored ~/.config/zsh/aliases.zsh
+  // containing `alias ls=eza` never triggers the install prompt.
+  const rcShaped = restoredFilePaths.filter(isShellRcLikePath);
+  const rcContents = await Promise.all(
+    rcShaped.map(async (path) => ({
+      path,
+      content: await readFile(expandPath(path), 'utf-8').catch(() => null as string | null),
+    }))
+  );
+
+  const matchesRcReferences = (tool: ToolDefinition): boolean => {
+    if (tool.detect.rcReferences.length === 0) return false;
+    return rcContents.some(
+      ({ content }) =>
+        content !== null &&
+        tool.detect.rcReferences.some((ref) => content.includes(ref))
+    );
+  };
+
+  const candidates = catalog.filter(
+    (tool) => toolMatchesRestoredFiles(tool, restoredFilePaths) || matchesRcReferences(tool)
   );
   if (candidates.length === 0) return [];
 
@@ -58,6 +82,33 @@ export const findMissingDeps = async (
   return checks
     .filter(({ installed }) => !installed)
     .map(({ tool }) => ({ id: tool.id, description: tool.description }));
+};
+
+const SHELL_RC_BASENAMES = new Set([
+  '.zshrc',
+  '.zshenv',
+  '.zprofile',
+  '.zlogin',
+  '.zlogout',
+  '.bashrc',
+  '.bash_profile',
+  '.bash_login',
+  '.profile',
+  'config.fish',
+]);
+
+/**
+ * True for paths that look like shell rc files — either by literal
+ * basename (`.zshrc`, `.bashrc`, etc.) or by extension (`.zsh`, `.bash`,
+ * `.sh`, `.fish`). Used to narrow content-scanning to files where
+ * `rcReferences` strings are meaningful, avoiding false positives from
+ * binary blobs or unrelated config that happens to contain short
+ * substrings like "fzf" or "eza".
+ */
+const isShellRcLikePath = (filePath: string): boolean => {
+  const base = basename(filePath);
+  if (SHELL_RC_BASENAMES.has(base)) return true;
+  return /\.(zsh|bash|sh|fish)$/i.test(base);
 };
 
 /**

@@ -26,16 +26,17 @@ export const zimfw: ToolDefinition = {
   description: 'modular zsh framework',
   category: 'shell',
   requires: ['zsh'],
-  // Run through zsh -c so `~/.zshenv` is sourced (zsh does this on every
-  // invocation) and any user-set ZDOTDIR / ZIM_HOME is honoured. Without
-  // this, a user with an XDG-style zshenv (`ZDOTDIR=~/.config/zsh`) gets
-  // zimfw installed to `~/.config/zsh/.zim` by the upstream installer,
-  // but our check looks at plain `~/.zim` and reports missing every run.
-  // The `command -v zsh` guard makes the check still return non-zero on
-  // fresh hosts where zsh isn't installed yet (restore-tail check runs
-  // in parallel across all tools without install ordering).
-  check:
-    'if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then exit 0; fi; command -v zsh >/dev/null 2>&1 && zsh -c \'test -d "${ZIM_HOME:-${ZDOTDIR:-$HOME}/.zim}"\'',
+  // Check accepts either the canonical `~/.zim` OR the ZDOTDIR-resolved
+  // path (via zsh -c so ~/.zshenv is sourced and honors any user ZDOTDIR
+  // / ZIM_HOME). Accepting both prevents a false-positive reinstall loop
+  // for users in mixed states — e.g. a user who installed zimfw at
+  // ~/.zim before migrating their zsh config to ~/.config/zsh. The
+  // `command -v zsh` guard keeps the check returning non-zero on fresh
+  // hosts where zsh isn't installed yet (restore-tail checks run in
+  // parallel without install ordering).
+  check: `if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then exit 0; fi
+if test -d "$HOME/.zim"; then exit 0; fi
+command -v zsh >/dev/null 2>&1 && zsh -c 'test -d "\${ZIM_HOME:-\${ZDOTDIR:-$HOME}/.zim}"'`,
   install: `set -e
 if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then
   echo "Skipping ZimFW on Kali (Kali ships its own zsh setup)."

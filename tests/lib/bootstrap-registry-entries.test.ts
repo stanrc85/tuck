@@ -90,15 +90,15 @@ describe('registry requires graph', () => {
     expect(zimfw.install).toContain('Skipping ZimFW on Kali');
   });
 
-  it('zimfw check honours ZDOTDIR via zsh -c so XDG-style setups work', () => {
-    // A user whose ~/.zshenv sets ZDOTDIR=~/.config/zsh gets zimfw
-    // installed to ~/.config/zsh/.zim by upstream (which reads
-    // ${ZDOTDIR:-${HOME}}/.zim). A plain `test -d "$HOME/.zim"` check
-    // would then report missing on every restore-tail run. We run the
-    // check through `zsh -c` so zsh sources ~/.zshenv and honours the
-    // computed ZIM_HOME path.
+  it('zimfw check accepts either canonical ~/.zim or the ZDOTDIR-resolved path', () => {
+    // Covers both placements so a user in a mixed state (e.g. ~/.zim
+    // from a pre-XDG install plus a later ZDOTDIR export in .zshenv)
+    // doesn't get a false-positive reinstall loop. Canonical path is
+    // checked first for speed (no zsh subshell); ZDOTDIR fallback only
+    // runs when the canonical path is absent.
     const zimfw = byId.zimfw!;
-    expect(zimfw.check).toContain("zsh -c");
+    expect(zimfw.check).toContain('test -d "$HOME/.zim"');
+    expect(zimfw.check).toContain('zsh -c');
     expect(zimfw.check).toContain('ZIM_HOME:-${ZDOTDIR:-$HOME}/.zim');
     // Fresh-host guard: if zsh isn't installed yet, the check must still
     // return non-zero (not try to run `zsh -c` and error out in a weird

@@ -4,6 +4,7 @@ import type { ToolDefinition } from '../../src/schemas/bootstrap.schema.js';
 const runCheckMock = vi.fn();
 const loadBootstrapConfigMock = vi.fn();
 const pathExistsMock = vi.fn();
+const readFileMock = vi.fn();
 
 vi.mock('../../src/lib/bootstrap/runner.js', () => ({
   runCheck: runCheckMock,
@@ -11,6 +12,10 @@ vi.mock('../../src/lib/bootstrap/runner.js', () => ({
 
 vi.mock('../../src/lib/bootstrap/parser.js', () => ({
   loadBootstrapConfig: loadBootstrapConfigMock,
+}));
+
+vi.mock('fs/promises', () => ({
+  readFile: readFileMock,
 }));
 
 vi.mock('../../src/lib/paths.js', async () => {
@@ -48,7 +53,7 @@ const BUILT_INS_STUB: ToolDefinition[] = [
     requires: [],
     check: 'command -v eza',
     install: 'true',
-    detect: { paths: [], rcReferences: [] },
+    detect: { paths: [], rcReferences: ['eza'] },
     associatedConfig: [],
   },
 ];
@@ -68,6 +73,7 @@ describe('findMissingDeps', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pathExistsMock.mockResolvedValue(false);
+    readFileMock.mockRejectedValue(new Error('ENOENT'));
     loadBootstrapConfigMock.mockResolvedValue({
       tool: [],
       bundles: {},
@@ -101,14 +107,63 @@ describe('findMissingDeps', () => {
     expect(result).toEqual([]);
   });
 
-  it('ignores tools with no associatedConfig even if their check fails', async () => {
+  it('ignores tools with no associatedConfig when no restored rc content matches their rcReferences', async () => {
     runCheckMock.mockResolvedValue(false);
+    readFileMock.mockResolvedValueOnce('# empty rc — no tool references here');
     const findMissingDeps = await importFindMissingDeps();
 
     const result = await findMissingDeps('/tuck', ['/test-home/.zshrc']);
-    // eza has [] associatedConfig so it should never be a candidate.
+    // eza has [] associatedConfig and content has no "eza" string → no match.
     expect(result).toEqual([]);
     expect(runCheckMock).not.toHaveBeenCalled();
+  });
+
+  it('flags a tool via rcReferences when its keyword appears in a restored shell-rc file', async () => {
+    // Simulates the XDG layout case: user's aliases.zsh contains
+    // `alias ls=eza` but eza has no associatedConfig path to match. The
+    // content scan should find "eza" and flag the tool as a candidate.
+    runCheckMock.mockResolvedValue(false);
+    readFileMock.mockResolvedValueOnce('alias ls="eza --git"');
+    const findMissingDeps = await importFindMissingDeps();
+
+    const result = await findMissingDeps('/tuck', ['/test-home/.config/zsh/aliases.zsh']);
+    expect(result.map((d) => d.id)).toContain('eza');
+  });
+
+  it('does NOT flag via rcReferences when the tool is already installed', async () => {
+    runCheckMock.mockResolvedValue(true);
+    readFileMock.mockResolvedValueOnce('alias ls=eza');
+    const findMissingDeps = await importFindMissingDeps();
+
+    const result = await findMissingDeps('/tuck', ['/test-home/.config/zsh/aliases.zsh']);
+    expect(result).toEqual([]);
+  });
+
+  it('limits content scanning to shell-rc-like file paths (ignores unrelated restored files)', async () => {
+    // Even if a non-shell file contains the literal keyword "eza"
+    // (e.g. a config.toml with a path that happens to include it),
+    // don't scan it. Keeps false positives out of the prompt.
+    runCheckMock.mockResolvedValue(false);
+    readFileMock.mockResolvedValue('[eza] enabled = true');
+    const findMissingDeps = await importFindMissingDeps();
+
+    const result = await findMissingDeps('/tuck', [
+      '/test-home/.config/pet/config.toml',
+      '/test-home/.config/yazi/theme.toml',
+    ]);
+    // yazi has associatedConfig so still flagged through its glob — but
+    // eza shouldn't be in the result since no scanned rc had a match.
+    expect(result.map((d) => d.id)).toContain('yazi');
+    expect(result.map((d) => d.id)).not.toContain('eza');
+  });
+
+  it('tolerates unreadable rc files (permission / transient I/O) — returns false without crashing', async () => {
+    runCheckMock.mockResolvedValue(false);
+    readFileMock.mockRejectedValue(new Error('EACCES'));
+    const findMissingDeps = await importFindMissingDeps();
+
+    const result = await findMissingDeps('/tuck', ['/test-home/.zshrc']);
+    expect(result).toEqual([]);
   });
 
   it('flags multiple tools when multiple configs are restored', async () => {
