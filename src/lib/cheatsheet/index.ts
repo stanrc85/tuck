@@ -1,5 +1,5 @@
-import { readFile } from 'fs/promises';
-import { join } from 'path';
+import { readFile, readdir } from 'fs/promises';
+import { join, relative, sep } from 'path';
 import {
   loadManifest,
   getAllTrackedFiles,
@@ -9,6 +9,7 @@ import {
 import {
   expandPath,
   pathExists,
+  isDirectory,
   validateSafeSourcePath,
   validateSafeManifestDestination,
   validatePathWithinRoot,
@@ -71,6 +72,29 @@ export const generateCheatsheet = async (
     entriesByParser.set(parser.id, []);
   }
 
+  const runParsersOnFile = async (
+    repoPath: string,
+    virtualSourcePath: string
+  ): Promise<void> => {
+    let content: string;
+    try {
+      content = await readFile(repoPath, 'utf-8');
+    } catch {
+      return;
+    }
+    for (const parser of activeParsers) {
+      if (!parser.match(virtualSourcePath, content)) continue;
+      try {
+        const entries = parser.parse(content, { sourceFile: virtualSourcePath });
+        if (entries.length > 0) {
+          entriesByParser.get(parser.id)!.push(...entries);
+        }
+      } catch {
+        // Parser crash on one file shouldn't stop the sweep.
+      }
+    }
+  };
+
   for (const file of Object.values(allFiles)) {
     if (!fileMatchesGroups(file, options.filterGroups)) continue;
 
@@ -89,24 +113,20 @@ export const generateCheatsheet = async (
     }
     if (!(await pathExists(repoPath))) continue;
 
-    let content: string;
-    try {
-      content = await readFile(repoPath, 'utf-8');
-    } catch {
-      continue;
-    }
-
-    const sourcePath = file.source;
-    for (const parser of activeParsers) {
-      if (!parser.match(sourcePath, content)) continue;
-      try {
-        const entries = parser.parse(content, { sourceFile: sourcePath });
-        if (entries.length > 0) {
-          entriesByParser.get(parser.id)!.push(...entries);
-        }
-      } catch {
-        // Parser crash on one file shouldn't stop the sweep.
+    if (await isDirectory(repoPath)) {
+      // Tracked directory — walk recursively and synthesize a virtual source
+      // path for each file so parsers match on the true filename (e.g.
+      // `~/.config/nvim/lua/plugins/telescope.lua`) even though only
+      // `~/.config/nvim` exists as a manifest entry.
+      for (const childRepoPath of await walkFiles(repoPath)) {
+        const relFromDir = relative(repoPath, childRepoPath)
+          .split(sep)
+          .join('/');
+        const virtualSourcePath = `${file.source.replace(/\/$/, '')}/${relFromDir}`;
+        await runParsersOnFile(childRepoPath, virtualSourcePath);
       }
+    } else {
+      await runParsersOnFile(repoPath, file.source);
     }
   }
 
@@ -125,6 +145,25 @@ export const generateCheatsheet = async (
   void expandPath; // Retained for parity with other lib modules' import footprint.
 
   return { sections, totalEntries, skippedParsers };
+};
+
+/**
+ * Recursively list every regular file under `dir`. Symlinks are
+ * followed for readdir entry classification but not resolved — same
+ * semantics as the restore copy path. Unreadable subdirs are skipped.
+ */
+const walkFiles = async (dir: string): Promise<string[]> => {
+  const out: string[] = [];
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await walkFiles(full)));
+    } else if (entry.isFile()) {
+      out.push(full);
+    }
+  }
+  return out;
 };
 
 export * from './types.js';

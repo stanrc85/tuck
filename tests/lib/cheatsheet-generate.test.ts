@@ -175,4 +175,59 @@ describe('generateCheatsheet', () => {
     const result = await generateCheatsheet(TEST_TUCK_DIR);
     expect(result.totalEntries).toBe(0);
   });
+
+  it('walks into tracked directories and feeds each file to the parsers', async () => {
+    // Simulates the common case where a user tracks `~/.config/nvim/` or
+    // `~/.config/yazi/` as a whole directory instead of individual files.
+    // The manifest has ONE entry (the directory), but we need to recurse
+    // into it so per-file parsers still match. Regression for the
+    // "no entries captured from dir-tracked configs" bug.
+    writeManifest(
+      createMockManifest({
+        files: {
+          nvim: createMockTrackedFile({
+            source: '~/.config/nvim',
+            destination: 'files/editors/nvim',
+            category: 'editors',
+            groups: ['default'],
+          }),
+          yazi: createMockTrackedFile({
+            source: '~/.config/yazi',
+            destination: 'files/config/yazi',
+            category: 'config',
+            groups: ['default'],
+          }),
+        },
+      })
+    );
+    writeTrackedFile(
+      'files/editors/nvim/init.lua',
+      `vim.keymap.set('n', '<leader>ff', 'telescope', { desc = 'Find files' })\n`
+    );
+    writeTrackedFile(
+      'files/editors/nvim/lua/plugins/telescope.lua',
+      `vim.keymap.set('n', '<leader>fg', 'live_grep', { desc = 'Grep' })\n`
+    );
+    writeTrackedFile(
+      'files/config/yazi/keymap.toml',
+      `[[keymap.manager.keymap]]\non = ['x']\nrun = 'delete'\ndesc = 'Delete'\n`
+    );
+    // Non-matching file in the same tracked dir — should be ignored silently.
+    writeTrackedFile('files/config/yazi/theme.toml', '[manager]\nbg = "dark"\n');
+
+    const result = await generateCheatsheet(TEST_TUCK_DIR);
+
+    const byId = Object.fromEntries(result.sections.map((s) => [s.parserId, s]));
+    expect(byId['neovim-lua']?.entries).toHaveLength(2);
+    expect(byId['yazi']?.entries).toHaveLength(1);
+
+    // Virtual source paths reflect the real file location, not the
+    // tracked-dir root — so the renderer can point users at the exact file.
+    const nvimSources = byId['neovim-lua']!.entries.map((e) => e.sourceFile).sort();
+    expect(nvimSources).toEqual([
+      '~/.config/nvim/init.lua',
+      '~/.config/nvim/lua/plugins/telescope.lua',
+    ]);
+    expect(byId['yazi']!.entries[0].sourceFile).toBe('~/.config/yazi/keymap.toml');
+  });
 });
