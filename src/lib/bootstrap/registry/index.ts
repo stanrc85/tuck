@@ -6,6 +6,7 @@ import { fzf } from './fzf.js';
 import { eza } from './eza.js';
 import { bat } from './bat.js';
 import { fd } from './fd.js';
+import { ripgrep } from './ripgrep.js';
 import { neovim } from './neovim.js';
 import { neovimPlugins } from './neovim-plugins.js';
 import { pet } from './pet.js';
@@ -27,6 +28,7 @@ export const BUILT_IN_TOOLS: readonly ToolDefinition[] = Object.freeze([
   eza,
   bat,
   fd,
+  ripgrep,
   neovim,
   neovimPlugins,
   pet,

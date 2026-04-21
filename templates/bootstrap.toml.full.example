@@ -6,8 +6,8 @@
 #  kind of setup script people hand-roll for a fresh Kali/kubuntu/Debian
 #  box. Covers the bulk apt prereqs, a Node toolchain, tealdeer, ZimFW,
 #  zsh-fzf-history-search, and a `chsh` helper — everything a new host
-#  needs on top of the built-in registry (fzf/eza/bat/fd/neovim/neovim-
-#  plugins/pet/yazi).
+#  needs on top of the built-in registry (fzf/eza/bat/fd/ripgrep/neovim/
+#  neovim-plugins/pet/yazi).
 #
 #  Copy to your dotfiles repo or ~/.tuck/bootstrap.toml and edit to taste:
 #
@@ -54,7 +54,7 @@ update = "sudo apt-get install -y --only-upgrade nodejs npm"
 # ------------------------------------------------------------------------------
 # TIER 3 — dev utilities bulk apt install. Mirrors the deploy_dots.sh
 # do_fresh_install PACKAGES list, minus anything the built-in registry
-# already handles (fzf/eza/bat/fd/neovim all come from BUILT_IN_TOOLS).
+# already handles (fzf/eza/bat/fd/ripgrep/neovim all come from BUILT_IN_TOOLS).
 # Grouped into one [[tool]] because the whole point is "run one apt-get".
 # ------------------------------------------------------------------------------
 [[tool]]
@@ -214,7 +214,7 @@ kali = [
   "node-toolchain",
   "dev-utilities",
   "tealdeer",
-  "fzf", "eza", "bat", "fd",              # built-ins
+  "fzf", "eza", "bat", "fd", "ripgrep",   # built-ins
   "neovim", "neovim-plugins",              # built-ins
   "pet", "yazi",                           # built-ins
   "zsh-fzf-history-search",
@@ -227,7 +227,7 @@ full = [
   "node-toolchain",
   "dev-utilities",
   "tealdeer",
-  "fzf", "eza", "bat", "fd",               # built-ins
+  "fzf", "eza", "bat", "fd", "ripgrep",   # built-ins
   "neovim", "neovim-plugins",              # built-ins
   "pet", "yazi",                           # built-ins
   "zsh-fzf-history-search",
@@ -237,10 +237,10 @@ full = [
 
 # `minimal` — just the CLI toolchain, no shell-framework side-effects.
 # Good for servers or ephemeral containers. (Add `"dev-utilities"` if you
-# also want ripgrep/zoxide/fastfetch and the rest of the utility bulk.)
+# also want zoxide/fastfetch and the rest of the utility bulk.)
 minimal = [
   "system-prereqs",
-  "fzf", "fd", "bat", "neovim",
+  "fzf", "fd", "bat", "ripgrep", "neovim",
 ]
 
 

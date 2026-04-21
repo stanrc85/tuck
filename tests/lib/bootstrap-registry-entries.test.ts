@@ -11,7 +11,7 @@ import {
 import { resolveInstallOrder } from '../../src/lib/bootstrap/resolver.js';
 import { TEST_HOME } from '../setup.js';
 
-const expectedIds = ['fzf', 'eza', 'bat', 'fd', 'neovim', 'neovim-plugins', 'pet', 'yazi'];
+const expectedIds = ['fzf', 'eza', 'bat', 'fd', 'ripgrep', 'neovim', 'neovim-plugins', 'pet', 'yazi'];
 
 const byId = Object.fromEntries(BUILT_IN_TOOLS.map((t) => [t.id, t]));
 
@@ -128,6 +128,12 @@ describe('detection fixtures', () => {
   it('eza detects via an alias in shell rc', async () => {
     vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'alias ls=eza');
     const result = await detectTool(byId.eza!);
+    expect(result.detected).toBe(true);
+  });
+
+  it('ripgrep detects via an rc reference', async () => {
+    vol.writeFileSync(join(TEST_HOME, '.zshrc'), 'alias grep=ripgrep');
+    const result = await detectTool(byId.ripgrep!);
     expect(result.detected).toBe(true);
   });
 

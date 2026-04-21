@@ -429,6 +429,7 @@ These come with tuck and don't need anything in your `bootstrap.toml`:
 | `eza`             | `apt` package (Debian trixie / Ubuntu 24.04+)                          | Modern `ls` replacement                                   |
 | `bat`             | `apt` package + `batcat → bat` symlink                                 | Symlinks to `/usr/local/bin` if sudo cached, else `~/.local/bin` |
 | `fd`              | `apt` package (`fd-find`) + `fdfind → fd` symlink                      | Same symlink pattern as `bat` (sudo-cached vs `~/.local/bin`)    |
+| `ripgrep`         | `apt` package                                                          | Fast recursive grep alternative (`rg`)                    |
 | `neovim`          | `curl` from GitHub `stable` release tar.gz, extract to `/opt/nvim` or `~/.local/opt/nvim` + symlink | Tracks upstream stable (apt lags the plugin ecosystem). Re-run with `-f` after neovim ships a new release. |
 | `neovim-plugins`  | `nvim --headless` with lazy.nvim sync + treesitter parser install      | Requires `neovim`. Install is heavy (first-run cold compile); update is just `Lazy! sync` |
 | `pet`             | `curl` from GitHub release `.deb` + `dpkg -i`                          | Version-pinned. Snippet manager (`knqyf263/pet`)          |

@@ -3,7 +3,7 @@
 # ==============================================================================
 #
 #  This file is OPTIONAL. If absent, `tuck bootstrap` runs with just the
-#  built-in registry (fzf, eza, bat, fd, neovim, neovim-plugins, pet, yazi).
+#  built-in registry (fzf, eza, bat, fd, ripgrep, neovim, neovim-plugins, pet, yazi).
 #  Place your copy at ~/.tuck/bootstrap.toml — or pass --file <path>.
 #
 #  Each [[tool]] block declares one installable CLI. Fields:

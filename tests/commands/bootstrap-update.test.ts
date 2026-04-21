@@ -84,7 +84,7 @@ install = "${tool.install}"
 update = "${tool.update}"
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({ check: true });
@@ -105,7 +105,7 @@ install = "install-pet"
 version = "1.1.0"
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({ check: true });
@@ -130,7 +130,7 @@ description = "fuzzy finder"
 install = "new-install-fzf"
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({ check: true });
@@ -149,7 +149,7 @@ disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"
       // Empty user toml + built-ins disabled → ghost has no catalog mate.
       writeBootstrapToml(`
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({ check: true });
@@ -175,7 +175,7 @@ description = "x"
 install = "install-x"
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({
@@ -201,7 +201,7 @@ description = "fuzzy finder"
 install = "install-fzf"
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({ tools: 'fzf,ghost', dryRun: true });
@@ -227,7 +227,7 @@ install = "install-pet"
 requires = ["fzf"]
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       const result = await runBootstrapUpdate({ all: true, dryRun: true });
@@ -248,7 +248,7 @@ description = "fuzzy finder"
 install = "install-fzf"
 
 [registry]
-disabled = ["fzf", "eza", "bat", "fd", "neovim", "neovim-plugins", "pet", "yazi"]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi"]
 `);
 
       await expect(runBootstrapUpdate({})).rejects.toBeInstanceOf(
