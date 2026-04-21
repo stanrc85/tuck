@@ -81,7 +81,8 @@ describe('generateCheatsheet', () => {
 
     expect(result.totalEntries).toBe(4); // 1 tmux + 2 zsh + 1 yazi
     expect(result.sections.map((s) => s.parserId).sort()).toEqual(['tmux', 'yazi', 'zsh']);
-    expect(result.skippedParsers).toEqual([]);
+    // neovim-lua produces no entries because the fixture has no nvim files.
+    expect(result.skippedParsers).toEqual(['neovim-lua']);
   });
 
   it('honors the --sources filter', async () => {

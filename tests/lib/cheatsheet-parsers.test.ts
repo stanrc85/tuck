@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { tmuxParser } from '../../src/lib/cheatsheet/parsers/tmux.js';
 import { zshParser } from '../../src/lib/cheatsheet/parsers/zsh.js';
 import { yaziParser } from '../../src/lib/cheatsheet/parsers/yazi.js';
+import { neovimLuaParser } from '../../src/lib/cheatsheet/parsers/neovim-lua.js';
 
 const ctx = (path: string) => ({ sourceFile: path });
 
@@ -158,5 +159,111 @@ on = ['x']
 run = 'delete'`;
     const entries = yaziParser.parse(content, ctx('~/.config/yazi/keymap.toml'));
     expect(entries[0].action).toBe('delete');
+  });
+});
+
+describe('neovim-lua parser', () => {
+  const nvimPath = '~/.config/nvim/lua/plugins/keymaps.lua';
+
+  it('matches .lua files under any nvim directory', () => {
+    expect(neovimLuaParser.match('~/.config/nvim/init.lua', '')).toBe(true);
+    expect(neovimLuaParser.match('~/.config/nvim/lua/plugins/keymaps.lua', '')).toBe(true);
+    expect(neovimLuaParser.match('~/.config/nvim/lua/util.lua', '')).toBe(true);
+    expect(neovimLuaParser.match('~/.config/zsh/plugin.lua', '')).toBe(false);
+    expect(neovimLuaParser.match('~/.config/nvim/init.vim', '')).toBe(false);
+  });
+
+  it('extracts a single-line vim.keymap.set with opts.desc as action', () => {
+    const content = `vim.keymap.set('n', '<leader>ff', require('telescope.builtin').find_files, { desc = 'Find files' })`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      keybind: 'n <leader>ff',
+      action: 'Find files',
+      sourceLine: 1,
+    });
+  });
+
+  it('handles multi-line calls', () => {
+    const content = `
+vim.keymap.set(
+  'n',
+  '<leader>w',
+  ':w<CR>',
+  { desc = 'Save file', silent = true }
+)
+`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].keybind).toBe('n <leader>w');
+    expect(entries[0].action).toBe('Save file');
+    expect(entries[0].sourceLine).toBe(2);
+  });
+
+  it('handles array mode (multi-mode mappings)', () => {
+    const content = `vim.keymap.set({'n', 'v'}, '<leader>y', '"+y', { desc = 'Yank to clipboard' })`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].keybind).toBe('[n,v] <leader>y');
+  });
+
+  it('falls back to rhs when opts.desc is absent', () => {
+    const content = `vim.keymap.set('n', '<leader>q', ':q<CR>')`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries[0].action).toBe(':q<CR>');
+  });
+
+  it('summarizes non-string rhs (function bodies) when desc is absent', () => {
+    const content = `vim.keymap.set('n', 'x', function() print('hi') end)`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toContain("function");
+  });
+
+  it('skips dynamic keymaps where mode is a variable (e.g. inside a loop)', () => {
+    const content = `
+for _, m in ipairs({'n', 'v'}) do
+  vim.keymap.set(m, '<leader>x', ':echo "x"<CR>')
+end
+`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toEqual([]);
+  });
+
+  it('skips dynamic keymaps where lhs is a variable', () => {
+    const content = `
+local lhs = '<leader>x'
+vim.keymap.set('n', lhs, ':echo<CR>')
+`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toEqual([]);
+  });
+
+  it('supports the legacy vim.api.nvim_set_keymap API', () => {
+    const content = `vim.api.nvim_set_keymap('n', '<leader>h', ':nohl<CR>', { noremap = true, silent = true, desc = 'Clear highlight' })`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe('Clear highlight');
+  });
+
+  it('ignores calls inside full-line `--` comments', () => {
+    const content = `
+-- vim.keymap.set('n', '<leader>x', ':echo<CR>')
+vim.keymap.set('n', '<leader>y', ':yank<CR>')
+`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].keybind).toBe('n <leader>y');
+  });
+
+  it('handles multiple mappings in the same file with correct line numbers', () => {
+    const content = `vim.keymap.set('n', '<leader>a', ':a<CR>')
+
+vim.keymap.set('n', '<leader>b', ':b<CR>')
+`;
+    const entries = neovimLuaParser.parse(content, ctx(nvimPath));
+    expect(entries).toHaveLength(2);
+    expect(entries[0].sourceLine).toBe(1);
+    expect(entries[1].sourceLine).toBe(3);
   });
 });
