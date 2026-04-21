@@ -92,6 +92,13 @@ export interface InitOptions {
   remote?: string;
   bare?: boolean;
   from?: string;
+  /**
+   * When true (default), `tuck init` reads `/etc/os-release` on Linux and
+   * offers to seed `defaultGroups` with the detected distro ID (kali,
+   * ubuntu, debian, arch, fedora, …). Pass `--no-detect-os` to skip the
+   * probe. Non-Linux hosts always skip.
+   */
+  detectOs?: boolean;
 }
 
 export interface AddOptions {

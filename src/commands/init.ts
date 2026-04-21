@@ -12,7 +12,8 @@ import {
   pathExists,
   collapsePath,
 } from '../lib/paths.js';
-import { saveConfig } from '../lib/config.js';
+import { saveConfig, saveLocalConfig, loadConfig } from '../lib/config.js';
+import { detectOsGroup } from '../lib/osDetect.js';
 import { createManifest } from '../lib/manifest.js';
 import type { TuckManifest, RemoteConfig } from '../types.js';
 import {
@@ -1692,6 +1693,8 @@ const runInteractiveInit = async (): Promise<void> => {
     }
   }
 
+  await maybePromptForOsGroup(tuckDir, {});
+
   prompts.outro('Tuck initialized successfully!');
 
   nextSteps([
@@ -1701,6 +1704,52 @@ const runInteractiveInit = async (): Promise<void> => {
   ]);
 };
 
+/**
+ * Offer to seed `defaultGroups` in `.tuckrc.local.json` with the host's
+ * detected OS ID (e.g. Kali 2024 → `kali`, Ubuntu 24.04 → `ubuntu`). Flat
+ * one-to-one mapping, no version parsing. Silent no-op when:
+ *   - `options.detectOs === false` (user passed `--no-detect-os`)
+ *   - non-Linux host (detectOsGroup returns null on macOS / Windows)
+ *   - unknown distro ID (not in the canonical set)
+ *   - existing `defaultGroups` already set in config
+ *   - non-interactive (CI / piped stdout)
+ *
+ * When the user declines the prompt, nothing is written. The check runs
+ * again on the next `tuck init` invocation (no-op because .tuckrc.local.json
+ * file wouldn't exist yet; user can opt in then).
+ */
+const maybePromptForOsGroup = async (
+  tuckDir: string,
+  options: InitOptions
+): Promise<void> => {
+  if (options.detectOs === false) return;
+
+  const existing = await loadConfig(tuckDir).catch(() => null);
+  if (existing?.defaultGroups && existing.defaultGroups.length > 0) return;
+
+  const osGroup = await detectOsGroup();
+  if (!osGroup) return;
+
+  if (!process.stdout.isTTY) {
+    logger.info(
+      `Detected OS: ${osGroup}. Run \`tuck config set defaultGroups ${osGroup}\` to route this host to that group.`
+    );
+    return;
+  }
+
+  const confirmed = await prompts.confirm(
+    `Detected ${osGroup}. Add to defaultGroups? (files tagged with -g ${osGroup} will sync here)`,
+    true
+  );
+  if (!confirmed) {
+    logger.dim(`Skipped — set later with \`tuck config set defaultGroups ${osGroup}\``);
+    return;
+  }
+
+  await saveLocalConfig({ defaultGroups: [osGroup] });
+  logger.success(`Host assigned to group: ${osGroup} (.tuckrc.local.json)`);
+};
+
 export const runInit = async (options: InitOptions): Promise<void> => {
   const tuckDir = getTuckDir(options.dir);
 
@@ -1708,6 +1757,10 @@ export const runInit = async (options: InitOptions): Promise<void> => {
   if (options.from) {
     await initFromRemote(tuckDir, options.from);
     logger.success(`Tuck initialized from ${options.from}`);
+    // OS-detect prompt lands here too — users who clone onto a fresh host
+    // are the primary beneficiaries (the whole point is skipping the
+    // `tuck config set defaultGroups kali` ritual on a new VM).
+    await maybePromptForOsGroup(tuckDir, options);
     logger.info('Run `tuck restore --all` to restore dotfiles');
     return;
   }
@@ -1725,6 +1778,7 @@ export const runInit = async (options: InitOptions): Promise<void> => {
   });
 
   logger.success(`Tuck initialized at ${collapsePath(tuckDir)}`);
+  await maybePromptForOsGroup(tuckDir, options);
 
   nextSteps([
     `Add files:    tuck add ~/.zshrc`,
@@ -1739,6 +1793,7 @@ export const initCommand = new Command('init')
   .option('-r, --remote <url>', 'Git remote URL to set up')
   .option('--bare', 'Initialize without any default files')
   .option('--from <url>', 'Clone from existing tuck repository')
+  .option('--no-detect-os', 'Skip the `/etc/os-release` detection prompt (Linux only)')
   .action(async (options: InitOptions) => {
     // If no options provided, run interactive mode
     if (!options.remote && !options.bare && !options.from && options.dir === '~/.tuck') {

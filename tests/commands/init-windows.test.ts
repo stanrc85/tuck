@@ -35,6 +35,8 @@ vi.mock('../../src/ui/index.js', () => ({
     warning: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
+    dim: vi.fn(),
+    blank: vi.fn(),
   },
   colors: {
     brand: (x: string) => x,
@@ -45,6 +47,12 @@ vi.mock('../../src/ui/index.js', () => ({
 
 vi.mock('../../src/lib/config.js', () => ({
   saveConfig: saveConfigMock,
+  saveLocalConfig: vi.fn(),
+  loadConfig: vi.fn().mockResolvedValue({ defaultGroups: [] }),
+}));
+
+vi.mock('../../src/lib/osDetect.js', () => ({
+  detectOsGroup: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../src/lib/manifest.js', () => ({

@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const cloneRepoMock = vi.fn();
 const createManifestMock = vi.fn();
 const saveConfigMock = vi.fn();
+const saveLocalConfigMock = vi.fn();
+const loadConfigMock = vi.fn();
+const detectOsGroupMock = vi.fn();
 const pathExistsMock = vi.fn();
 const loggerSuccessMock = vi.fn();
 const loggerInfoMock = vi.fn();
@@ -36,6 +39,8 @@ vi.mock('../../src/ui/index.js', () => ({
     warning: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
+    dim: vi.fn(),
+    blank: vi.fn(),
   },
   colors: {
     brand: (x: string) => x,
@@ -65,6 +70,12 @@ vi.mock('../../src/lib/paths.js', () => ({
 
 vi.mock('../../src/lib/config.js', () => ({
   saveConfig: saveConfigMock,
+  saveLocalConfig: saveLocalConfigMock,
+  loadConfig: loadConfigMock,
+}));
+
+vi.mock('../../src/lib/osDetect.js', () => ({
+  detectOsGroup: detectOsGroupMock,
 }));
 
 vi.mock('../../src/lib/manifest.js', () => ({
@@ -141,6 +152,9 @@ describe('init command behavior', () => {
     cloneRepoMock.mockResolvedValue(undefined);
     createManifestMock.mockResolvedValue(undefined);
     saveConfigMock.mockResolvedValue(undefined);
+    saveLocalConfigMock.mockResolvedValue(undefined);
+    loadConfigMock.mockResolvedValue({ defaultGroups: [] });
+    detectOsGroupMock.mockResolvedValue(null);
   });
 
   it('clones from remote and backfills missing manifest/config', async () => {
@@ -171,5 +185,81 @@ describe('init command behavior', () => {
     );
     expect(createManifestMock).not.toHaveBeenCalled();
     expect(saveConfigMock).not.toHaveBeenCalled();
+  });
+
+  describe('OS detection prompt (TASK-045)', () => {
+    it('skips entirely when --no-detect-os is passed', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      const { runInit } = await import('../../src/commands/init.js');
+      await runInit({ from: 'https://github.com/acme/dotfiles.git', detectOs: false });
+      expect(detectOsGroupMock).not.toHaveBeenCalled();
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('skips when defaultGroups is already populated', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      loadConfigMock.mockResolvedValueOnce({ defaultGroups: ['ubuntu'] });
+      const { runInit } = await import('../../src/commands/init.js');
+      await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+      expect(detectOsGroupMock).not.toHaveBeenCalled();
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('skips silently when detectOsGroup returns null (unknown / non-Linux)', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce(null);
+      const { runInit } = await import('../../src/commands/init.js');
+      await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+      expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('logs advisory and skips save on non-TTY (CI)', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce('kali');
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(saveLocalConfigMock).not.toHaveBeenCalled();
+        expect(loggerInfoMock).toHaveBeenCalledWith(
+          expect.stringContaining('Detected OS: kali')
+        );
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('writes saveLocalConfig when user confirms the prompt', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce('kali');
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(true);
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kali'] });
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('does not write when user declines the prompt', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      detectOsGroupMock.mockResolvedValueOnce('ubuntu');
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(saveLocalConfigMock).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
   });
 });
