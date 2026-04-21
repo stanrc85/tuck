@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.10.2](https://github.com/stanrc85/tuck/compare/v2.10.1...v2.10.2) (2026-04-21)
 
 
 ### Bug Fixes
 
 * **bootstrap:** stop upstream zimfw installer from running its own chsh ([fb15a27](https://github.com/stanrc85/tuck/commit/fb15a273a761bdf6d83712ecb39232e40d06a16e))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.10.1](https://github.com/stanrc85/tuck/compare/v2.10.0...v2.10.1) (2026-04-21)
 
