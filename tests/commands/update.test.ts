@@ -38,6 +38,8 @@ vi.mock('../../src/lib/git.js', () => ({
   getHeadSha: vi.fn(async () => 'sha-default'),
   hasRemote: vi.fn(async () => true),
   isGitRepo: vi.fn(async () => true),
+  getAheadBehind: vi.fn(async () => ({ ahead: 0, behind: 0 })),
+  resetHard: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../src/lib/manifest.js', async (importOriginal) => {
@@ -264,6 +266,93 @@ describe('runUpdate', () => {
       const result = await runUpdate({ self: false });
       expect(result.dotfilesChanged).toBe(false);
       expect(runBootstrapUpdate).toHaveBeenCalled();
+    });
+  });
+
+  describe('divergence gate (TASK-043)', () => {
+    it('throws DivergenceError when ahead>0 and behind>0 without --allow-divergent', async () => {
+      const { getAheadBehind } = await import('../../src/lib/git.js');
+      (getAheadBehind as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ahead: 2, behind: 3 });
+
+      await expect(runUpdate({ self: false, tools: false })).rejects.toMatchObject({
+        code: 'DIVERGENCE_DETECTED',
+      });
+    });
+
+    it('bypasses the gate when --allow-divergent is set', async () => {
+      const { getAheadBehind, pull } = await import('../../src/lib/git.js');
+      (getAheadBehind as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ahead: 2, behind: 3 });
+
+      await runUpdate({ self: false, tools: false, allowDivergent: true });
+      expect(pull).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT throw when only ahead (rebase-mode is still safe)', async () => {
+      const { getAheadBehind, pull } = await import('../../src/lib/git.js');
+      (getAheadBehind as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ahead: 4, behind: 0 });
+
+      await runUpdate({ self: false, tools: false });
+      expect(pull).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT throw when only behind (fast-forward)', async () => {
+      const { getAheadBehind, pull } = await import('../../src/lib/git.js');
+      (getAheadBehind as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ahead: 0, behind: 5 });
+
+      await runUpdate({ self: false, tools: false });
+      expect(pull).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('mirror mode (TASK-044)', () => {
+    it('calls resetHard(@{u}) instead of pull when --mirror is set', async () => {
+      const { resetHard, pull } = await import('../../src/lib/git.js');
+      await runUpdate({ self: false, tools: false, mirror: true });
+      expect(resetHard).toHaveBeenCalledWith('/test-home/.tuck', '@{u}');
+      expect(pull).not.toHaveBeenCalled();
+    });
+
+    it('refuses --mirror when ahead>0 without --allow-divergent', async () => {
+      const { getAheadBehind, resetHard } = await import('../../src/lib/git.js');
+      (getAheadBehind as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ahead: 1, behind: 0 });
+
+      await expect(
+        runUpdate({ self: false, tools: false, mirror: true })
+      ).rejects.toMatchObject({ code: 'DIVERGENCE_DETECTED' });
+      expect(resetHard).not.toHaveBeenCalled();
+    });
+
+    it('allows --mirror with --allow-divergent even when ahead>0', async () => {
+      const { getAheadBehind, resetHard } = await import('../../src/lib/git.js');
+      (getAheadBehind as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ahead: 1, behind: 0 });
+
+      await runUpdate({ self: false, tools: false, mirror: true, allowDivergent: true });
+      expect(resetHard).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards --mirror and --allow-divergent to re-execed child', async () => {
+      const { runSelfUpdate } = await import('../../src/commands/self-update.js');
+      (runSelfUpdate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ updated: true });
+
+      const spawnCalls: Array<{ args: readonly string[] }> = [];
+      const fakeSpawn = ((_cmd: string, args: readonly string[]) => {
+        spawnCalls.push({ args });
+        const emitter = new EventEmitter() as EventEmitter & { stdout: null; stderr: null };
+        emitter.stdout = null;
+        emitter.stderr = null;
+        queueMicrotask(() => emitter.emit('close', 0, null));
+        return emitter;
+      }) as unknown as typeof spawnFn;
+
+      await runUpdate({
+        mirror: true,
+        allowDivergent: true,
+        spawnImpl: fakeSpawn,
+      });
+
+      const args = spawnCalls[0]?.args ?? [];
+      expect(args).toContain('--mirror');
+      expect(args).toContain('--allow-divergent');
     });
   });
 

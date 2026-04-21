@@ -9,6 +9,8 @@ const hasRemoteMock = vi.fn();
 const getRemoteUrlMock = vi.fn();
 const getStatusMock = vi.fn();
 const getCurrentBranchMock = vi.fn();
+const getAheadBehindMock = vi.fn();
+const resetHardMock = vi.fn();
 const loggerSuccessMock = vi.fn();
 const loggerInfoMock = vi.fn();
 const promptsIntroMock = vi.fn();
@@ -59,6 +61,8 @@ vi.mock('../../src/lib/git.js', () => ({
   getRemoteUrl: getRemoteUrlMock,
   getStatus: getStatusMock,
   getCurrentBranch: getCurrentBranchMock,
+  getAheadBehind: getAheadBehindMock,
+  resetHard: resetHardMock,
 }));
 
 describe('pull command', () => {
@@ -80,6 +84,8 @@ describe('pull command', () => {
       modified: [],
       staged: [],
     });
+    getAheadBehindMock.mockResolvedValue({ ahead: 0, behind: 0 });
+    resetHardMock.mockResolvedValue(undefined);
   });
 
   it('throws NOT_INITIALIZED when manifest is missing', async () => {
@@ -116,6 +122,52 @@ describe('pull command', () => {
 
     await expect(pullCommand.parseAsync(['node', 'pull', '--rebase'], { from: 'user' })).rejects.toMatchObject({
       code: 'GIT_ERROR',
+    });
+  });
+
+  describe('--mirror mode (TASK-044)', () => {
+    it('calls resetHard instead of pull when --mirror is set', async () => {
+      const { pullCommand } = await import('../../src/commands/pull.js');
+      await pullCommand.parseAsync(['node', 'pull', '--mirror'], { from: 'user' });
+      expect(resetHardMock).toHaveBeenCalledWith('/test-home/.tuck', '@{u}');
+      expect(pullMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses --mirror when ahead>0 without --allow-divergent', async () => {
+      getAheadBehindMock.mockResolvedValueOnce({ ahead: 2, behind: 0 });
+      const { pullCommand } = await import('../../src/commands/pull.js');
+      await expect(
+        pullCommand.parseAsync(['node', 'pull', '--mirror'], { from: 'user' })
+      ).rejects.toMatchObject({ code: 'DIVERGENCE_DETECTED' });
+      expect(resetHardMock).not.toHaveBeenCalled();
+    });
+
+    it('allows --mirror with --allow-divergent', async () => {
+      getAheadBehindMock.mockResolvedValueOnce({ ahead: 2, behind: 0 });
+      const { pullCommand } = await import('../../src/commands/pull.js');
+      await pullCommand.parseAsync(['node', 'pull', '--mirror', '--allow-divergent'], {
+        from: 'user',
+      });
+      expect(resetHardMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('divergence gate (TASK-043)', () => {
+    it('throws DivergenceError on rebase pull when ahead>0 and behind>0', async () => {
+      getAheadBehindMock.mockResolvedValueOnce({ ahead: 1, behind: 2 });
+      const { pullCommand } = await import('../../src/commands/pull.js');
+      await expect(
+        pullCommand.parseAsync(['node', 'pull', '--rebase'], { from: 'user' })
+      ).rejects.toMatchObject({ code: 'DIVERGENCE_DETECTED' });
+    });
+
+    it('pulls normally with --allow-divergent even when diverged', async () => {
+      getAheadBehindMock.mockResolvedValueOnce({ ahead: 1, behind: 2 });
+      const { pullCommand } = await import('../../src/commands/pull.js');
+      await pullCommand.parseAsync(['node', 'pull', '--rebase', '--allow-divergent'], {
+        from: 'user',
+      });
+      expect(pullMock).toHaveBeenCalled();
     });
   });
 });

@@ -9,6 +9,8 @@ import {
   getHeadSha,
   hasRemote,
   isGitRepo,
+  getAheadBehind,
+  resetHard,
 } from '../lib/git.js';
 import { runSelfUpdate } from './self-update.js';
 import { runRestore } from './restore.js';
@@ -18,6 +20,7 @@ import {
   GitError,
   TuckError,
   MigrationRequiredError,
+  DivergenceError,
 } from '../errors.js';
 
 /**
@@ -47,6 +50,21 @@ export interface UpdateOptions {
   restore?: boolean;
   tools?: boolean;
   yes?: boolean;
+  /**
+   * Take upstream wholesale via `git reset --hard @{u}` instead of
+   * `git pull --rebase`. Treats the tuck repo as a read-only mirror on
+   * this host. Destroys local commits — must be paired with an explicit
+   * `--allow-divergent` to proceed when the host has unpushed work.
+   */
+  mirror?: boolean;
+  /**
+   * Bypass the divergence safety gate. Required when the local branch
+   * has its own commits AND is behind upstream (classic three-way
+   * divergence). Without this flag, `tuck update` fails fast with a
+   * three-suggestion error instead of silently rebasing through or
+   * reset-destroying.
+   */
+  allowDivergent?: boolean;
   /**
    * Test hook: inject a spawn implementation for the re-exec branch so we
    * don't actually fork a `tuck` subprocess in unit tests. Not wired to
@@ -134,7 +152,10 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
   if (options.pull !== false) {
     logger.blank();
     logger.info('[2/4] Pulling dotfiles repo…');
-    result.dotfilesChanged = await pullDotfiles(tuckDir);
+    result.dotfilesChanged = await pullDotfiles(tuckDir, {
+      mirror: options.mirror === true,
+      allowDivergent: options.allowDivergent === true,
+    });
   } else {
     logger.dim('[2/4] Pull skipped (--no-pull)');
   }
@@ -186,11 +207,21 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
 };
 
 /**
- * Runs `git fetch` + `git pull` on the tuck repo and returns whether HEAD
- * moved. Missing remote → warn + no-op; no-remote is a legitimate local-
- * only setup, not a fatal condition under `tuck update`.
+ * Runs `git fetch` + pull (rebase or mirror reset) on the tuck repo and
+ * returns whether HEAD moved. Missing remote → warn + no-op; no-remote is
+ * a legitimate local-only setup, not a fatal condition under `tuck update`.
+ *
+ * Divergence gate: after the fetch, probes ahead/behind. If ahead>0 AND
+ * behind>0, throws `DivergenceError` unless `allowDivergent` is set. The
+ * gate is non-negotiable in `mirror` mode (reset would destroy ahead
+ * commits) and still worth having in rebase mode because rebase against a
+ * diverged upstream frequently produces conflicts the user isn't expecting
+ * from an ambient `tuck update` run.
  */
-const pullDotfiles = async (tuckDir: string): Promise<boolean> => {
+const pullDotfiles = async (
+  tuckDir: string,
+  options: { mirror: boolean; allowDivergent: boolean }
+): Promise<boolean> => {
   if (!(await isGitRepo(tuckDir))) {
     logger.warning('Not a git repo — skipping pull');
     return false;
@@ -206,13 +237,33 @@ const pullDotfiles = async (tuckDir: string): Promise<boolean> => {
     await withSpinner('Fetching…', async () => {
       await fetch(tuckDir);
     });
-    await withSpinner('Pulling…', async () => {
-      // --rebase matches deploy_dots.sh's reset-to-upstream semantics:
-      // fast-forward when possible, don't produce merge commits from
-      // ambient `tuck update` runs.
-      await pull(tuckDir, { rebase: true });
-    });
+
+    const { ahead, behind } = await getAheadBehind(tuckDir);
+    if (ahead > 0 && behind > 0 && !options.allowDivergent) {
+      throw new DivergenceError(ahead, behind);
+    }
+    if (ahead > 0 && options.mirror && !options.allowDivergent) {
+      // Mirror mode would destroy local commits even when behind=0.
+      // Require explicit override.
+      throw new DivergenceError(ahead, behind);
+    }
+
+    if (options.mirror) {
+      await withSpinner('Resetting to upstream…', async () => {
+        await resetHard(tuckDir, '@{u}');
+      });
+    } else {
+      await withSpinner('Pulling…', async () => {
+        // --rebase matches deploy_dots.sh's reset-to-upstream semantics:
+        // fast-forward when possible, don't produce merge commits from
+        // ambient `tuck update` runs.
+        await pull(tuckDir, { rebase: true });
+      });
+    }
   } catch (error) {
+    if (error instanceof DivergenceError) {
+      throw error;
+    }
     if (error instanceof GitError) {
       logger.warning(`Pull failed: ${error.message}`);
       return false;
@@ -241,6 +292,8 @@ const buildResumeArgs = (options: UpdateOptions): string[] => {
   if (options.restore === false) args.push('--no-restore');
   if (options.tools === false) args.push('--no-tools');
   if (options.yes) args.push('--yes');
+  if (options.mirror) args.push('--mirror');
+  if (options.allowDivergent) args.push('--allow-divergent');
   return args;
 };
 
@@ -292,6 +345,8 @@ export const updateCommand = new Command('update')
   .option('--no-restore', 'Skip the dotfile restore phase')
   .option('--no-tools', 'Skip the bootstrap update phase')
   .option('-y, --yes', 'Skip confirmations in each phase')
+  .option('--mirror', 'Reset to upstream (destroys local commits) instead of rebasing')
+  .option('--allow-divergent', 'Bypass the divergence safety check (required with --mirror when ahead of upstream)')
   .action(async (options: UpdateOptions) => {
     // assertMigrated guards manifest shape — matches pull/restore. Let
     // MigrationRequiredError bubble (handled by the global error handler)

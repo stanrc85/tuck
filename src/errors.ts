@@ -95,6 +95,21 @@ export class GroupRequiredError extends TuckError {
   }
 }
 
+export class DivergenceError extends TuckError {
+  constructor(ahead: number, behind: number) {
+    super(
+      `Local branch has diverged from upstream (${ahead} ahead, ${behind} behind). Refusing to pull without explicit override.`,
+      'DIVERGENCE_DETECTED',
+      [
+        'Push your local commits first: `tuck push`',
+        'Or discard them and take upstream: `tuck pull --mirror`',
+        'Or inspect the divergence: `git -C ~/.tuck log --oneline @{u}..HEAD`',
+        'Or override this safety check: `tuck update --allow-divergent`',
+      ]
+    );
+  }
+}
+
 export class MigrationRequiredError extends TuckError {
   constructor(reason?: string) {
     super(

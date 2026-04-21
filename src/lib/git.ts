@@ -298,6 +298,37 @@ export const getHeadSha = async (dir: string): Promise<string | null> => {
   }
 };
 
+/**
+ * Return how many commits the local branch is ahead / behind its upstream.
+ * Both zero when upstream is unset or the repo has no commits. Requires that
+ * `fetch` has run recently for `behind` to be meaningful.
+ */
+export const getAheadBehind = async (
+  dir: string
+): Promise<{ ahead: number; behind: number }> => {
+  try {
+    const status = await getStatus(dir);
+    return { ahead: status.ahead, behind: status.behind };
+  } catch {
+    return { ahead: 0, behind: 0 };
+  }
+};
+
+/**
+ * Hard-reset the working tree to match a target ref (default: upstream of
+ * the current branch, `@{u}`). Used by `tuck pull --mirror` to treat the
+ * local repo as a read-only mirror of the remote. Destroys local commits
+ * not in the target — callers must gate with a divergence check.
+ */
+export const resetHard = async (dir: string, target = '@{u}'): Promise<void> => {
+  try {
+    const git = createGit(dir);
+    await git.raw(['reset', '--hard', target]);
+  } catch (error) {
+    throw new GitError(`Failed to reset --hard to ${target}`, String(error));
+  }
+};
+
 export const getCurrentBranch = async (dir: string): Promise<string> => {
   try {
     const git = createGit(dir);

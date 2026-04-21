@@ -3,8 +3,17 @@ import { prompts, logger, withSpinner, colors as c } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
 import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { checkLocalMode, showLocalModeWarningForPull } from '../lib/remoteChecks.js';
-import { pull, fetch, hasRemote, getRemoteUrl, getStatus, getCurrentBranch } from '../lib/git.js';
-import { NotInitializedError, GitError } from '../errors.js';
+import {
+  pull,
+  fetch,
+  hasRemote,
+  getRemoteUrl,
+  getStatus,
+  getCurrentBranch,
+  getAheadBehind,
+  resetHard,
+} from '../lib/git.js';
+import { NotInitializedError, GitError, DivergenceError } from '../errors.js';
 import type { PullOptions } from '../types.js';
 
 const runInteractivePull = async (tuckDir: string): Promise<void> => {
@@ -109,7 +118,7 @@ const runPull = async (options: PullOptions): Promise<void> => {
   }
 
   // If no options, run interactive
-  if (!options.rebase && !options.restore) {
+  if (!options.rebase && !options.restore && !options.mirror) {
     await runInteractivePull(tuckDir);
     return;
   }
@@ -125,12 +134,30 @@ const runPull = async (options: PullOptions): Promise<void> => {
     await fetch(tuckDir);
   });
 
-  // Pull
-  await withSpinner('Pulling...', async () => {
-    await pull(tuckDir, { rebase: options.rebase });
-  });
+  // Divergence gate (same policy as `tuck update`): fail fast when
+  // ahead>0 AND (behind>0 OR mirror). Without the gate, `--mirror` would
+  // silently destroy local commits and `--rebase` would hit conflicts.
+  const { ahead, behind } = await getAheadBehind(tuckDir);
+  if (!options.allowDivergent) {
+    if (ahead > 0 && behind > 0) {
+      throw new DivergenceError(ahead, behind);
+    }
+    if (ahead > 0 && options.mirror) {
+      throw new DivergenceError(ahead, behind);
+    }
+  }
 
-  logger.success('Pulled successfully!');
+  if (options.mirror) {
+    await withSpinner('Resetting to upstream...', async () => {
+      await resetHard(tuckDir, '@{u}');
+    });
+    logger.success('Reset to upstream.');
+  } else {
+    await withSpinner('Pulling...', async () => {
+      await pull(tuckDir, { rebase: options.rebase });
+    });
+    logger.success('Pulled successfully!');
+  }
 
   if (options.restore) {
     logger.info("Run 'tuck restore --all' to restore dotfiles");
@@ -141,6 +168,8 @@ export const pullCommand = new Command('pull')
   .description('Pull changes from remote')
   .option('--rebase', 'Pull with rebase')
   .option('--restore', 'Also restore files to system after pull')
+  .option('--mirror', 'Reset to upstream (destroys local commits) — use on receiving-only hosts')
+  .option('--allow-divergent', 'Bypass the divergence safety check (required with --mirror when ahead of upstream)')
   .action(async (options: PullOptions) => {
     await runPull(options);
   });

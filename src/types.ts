@@ -141,6 +141,18 @@ export interface PushOptions {
 export interface PullOptions {
   rebase?: boolean;
   restore?: boolean;
+  /**
+   * `tuck pull --mirror` — `git fetch && git reset --hard @{u}`. Treats the
+   * repo as a read-only mirror; destroys local commits. Required pair
+   * with `allowDivergent` when the host has unpushed commits.
+   */
+  mirror?: boolean;
+  /**
+   * Bypass the divergence safety gate (ahead>0 + behind>0, or mirror mode
+   * with ahead>0). Without this, the pull fails fast with a three-suggestion
+   * error so the user can make an informed choice.
+   */
+  allowDivergent?: boolean;
 }
 
 export interface RestoreOptions {

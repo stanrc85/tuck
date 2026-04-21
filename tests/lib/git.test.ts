@@ -83,6 +83,8 @@ import {
   removeRemote,
   setDefaultBranch,
   cloneRepo,
+  getAheadBehind,
+  resetHard,
 } from '../../src/lib/git.js';
 
 describe('git', () => {
@@ -273,6 +275,51 @@ describe('git', () => {
       await pull(TEST_TUCK_DIR);
       const args = mockGitInstance.pull.mock.calls[0]?.[2];
       expect(args).not.toContain('--autostash');
+    });
+  });
+
+  // ============================================================================
+  // Ahead/Behind + Reset (TASK-043/044)
+  // ============================================================================
+
+  describe('getAheadBehind', () => {
+    it('returns ahead/behind from git status', async () => {
+      mockGitInstance.status = vi.fn().mockResolvedValueOnce({
+        current: 'main',
+        tracking: 'origin/main',
+        ahead: 3,
+        behind: 2,
+        staged: [],
+        modified: [],
+        not_added: [],
+        deleted: [],
+        isClean: () => true,
+      });
+      const result = await getAheadBehind(TEST_TUCK_DIR);
+      expect(result).toEqual({ ahead: 3, behind: 2 });
+    });
+
+    it('returns zeros when status throws', async () => {
+      mockGitInstance.status = vi.fn().mockRejectedValueOnce(new Error('not a repo'));
+      const result = await getAheadBehind(TEST_TUCK_DIR);
+      expect(result).toEqual({ ahead: 0, behind: 0 });
+    });
+  });
+
+  describe('resetHard', () => {
+    it('invokes git reset --hard with default @{u} target', async () => {
+      await resetHard(TEST_TUCK_DIR);
+      expect(mockGitInstance.raw).toHaveBeenCalledWith(['reset', '--hard', '@{u}']);
+    });
+
+    it('accepts a custom ref', async () => {
+      await resetHard(TEST_TUCK_DIR, 'origin/main');
+      expect(mockGitInstance.raw).toHaveBeenCalledWith(['reset', '--hard', 'origin/main']);
+    });
+
+    it('wraps simple-git failures in GitError', async () => {
+      mockGitInstance.raw = vi.fn().mockRejectedValueOnce(new Error('boom'));
+      await expect(resetHard(TEST_TUCK_DIR)).rejects.toMatchObject({ code: 'GIT_ERROR' });
     });
   });
 
