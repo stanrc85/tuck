@@ -1,3 +1,10 @@
+## [2.7.2](https://github.com/stanrc85/tuck/compare/v2.7.1...v2.7.2) (2026-04-21)
+
+
+### Bug Fixes
+
+* **cheatsheet:** yazi v26 schema + lazy.nvim keys + suppress `n ` prefix ([40f03d6](https://github.com/stanrc85/tuck/commit/40f03d6de7809cb4879eb61528d0d0daff2bcc3e))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.7.1](https://github.com/stanrc85/tuck/compare/v2.7.0...v2.7.1) (2026-04-21)
