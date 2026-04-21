@@ -136,6 +136,101 @@ describe('spinner', () => {
     }, 5000);
   });
 
+  describe('clack listener cleanup (TTY, mocked clack)', () => {
+    const CLACK_EVENTS = [
+      'uncaughtExceptionMonitor',
+      'unhandledRejection',
+      'SIGINT',
+      'SIGTERM',
+      'exit',
+    ] as const;
+
+    const snapshotCounts = (): Record<string, number> => {
+      const counts: Record<string, number> = {};
+      for (const ev of CLACK_EVENTS) {
+        counts[ev] = process.listenerCount(ev);
+      }
+      return counts;
+    };
+
+    beforeEach(() => {
+      vi.resetModules();
+      delete process.env.TUCK_NON_INTERACTIVE;
+      setTTY(true, true);
+
+      // Stub clack's spinner() so it faithfully reproduces the quirk we're
+      // guarding against: each factory call registers a fresh listener on each
+      // of the 5 process events and never removes them. If our wrapper works,
+      // listener counts stay flat across the loop.
+      vi.doMock('@clack/prompts', () => ({
+        spinner: () => {
+          const handler = (): void => {};
+          for (const ev of CLACK_EVENTS) {
+            process.on(ev, handler);
+          }
+          return {
+            start: (_text?: string) => {},
+            stop: (_text?: string) => {},
+            message: (_text?: string) => {},
+          };
+        },
+      }));
+    });
+
+    afterEach(() => {
+      restoreTTY();
+      restoreEnv();
+      vi.doUnmock('@clack/prompts');
+      vi.restoreAllMocks();
+    });
+
+    it('releases process listeners after each withSpinner call', async () => {
+      const { withSpinner } = await import('../../src/ui/spinner.js');
+      const baseline = snapshotCounts();
+
+      for (let i = 0; i < 20; i++) {
+        await withSpinner(`step ${i}`, async () => i);
+      }
+
+      const after = snapshotCounts();
+      for (const ev of CLACK_EVENTS) {
+        expect(after[ev]).toBe(baseline[ev]);
+      }
+    });
+
+    it('releases listeners on createSpinner().stop() without a terminal call', async () => {
+      const { createSpinner } = await import('../../src/ui/spinner.js');
+      const baseline = snapshotCounts();
+
+      const spinner = createSpinner('work');
+      spinner.start();
+      spinner.stop();
+
+      const after = snapshotCounts();
+      for (const ev of CLACK_EVENTS) {
+        expect(after[ev]).toBe(baseline[ev]);
+      }
+    });
+
+    it('releases listeners even if the wrapped fn throws', async () => {
+      const { withSpinner } = await import('../../src/ui/spinner.js');
+      const baseline = snapshotCounts();
+
+      for (let i = 0; i < 15; i++) {
+        await expect(
+          withSpinner(`step ${i}`, async () => {
+            throw new Error('boom');
+          })
+        ).rejects.toThrow('boom');
+      }
+
+      const after = snapshotCounts();
+      for (const ev of CLACK_EVENTS) {
+        expect(after[ev]).toBe(baseline[ev]);
+      }
+    });
+  });
+
   describe('createSpinner (non-TTY)', () => {
     beforeEach(() => {
       vi.resetModules();

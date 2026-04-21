@@ -103,6 +103,23 @@ const createNonInteractiveSpinner = (initialText?: string): SpinnerInstance => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Events @clack/prompts' spinner() registers on `process` in its constructor
+ * and never removes. Tuck snapshots listeners before the clack call, diffs
+ * after, and tears down those exact handlers when the spinner is stopped —
+ * otherwise a loop of short-lived spinners (e.g. restore iterating per file)
+ * trips Node's default 10-per-event MaxListeners warning by iteration ~10.
+ */
+const CLACK_PROCESS_EVENTS = [
+  'uncaughtExceptionMonitor',
+  'unhandledRejection',
+  'SIGINT',
+  'SIGTERM',
+  'exit',
+] as const;
+
+type ProcessListener = (...args: unknown[]) => void;
+
+/**
  * Create a spinner instance. In interactive TTY mode this is @clack/prompts'
  * animated spinner; in non-interactive mode it falls back to plain log lines
  * to avoid hanging on stdin setup.
@@ -112,7 +129,32 @@ export const createSpinner = (initialText?: string): SpinnerInstance => {
     return createNonInteractiveSpinner(initialText);
   }
 
+  const before = new Map<string, Set<ProcessListener>>();
+  for (const ev of CLACK_PROCESS_EVENTS) {
+    before.set(ev, new Set(process.listeners(ev as NodeJS.Signals) as ProcessListener[]));
+  }
+
   const spinner = p.spinner();
+
+  const added = new Map<string, ProcessListener[]>();
+  for (const ev of CLACK_PROCESS_EVENTS) {
+    const prior = before.get(ev)!;
+    const now = process.listeners(ev as NodeJS.Signals) as ProcessListener[];
+    const diff = now.filter((fn) => !prior.has(fn));
+    if (diff.length > 0) added.set(ev, diff);
+  }
+
+  let listenersRemoved = false;
+  const removeClackListeners = (): void => {
+    if (listenersRemoved) return;
+    listenersRemoved = true;
+    for (const [ev, fns] of added) {
+      for (const fn of fns) {
+        process.removeListener(ev as NodeJS.Signals, fn);
+      }
+    }
+  };
+
   let currentText = initialText || '';
   let started = false;
 
@@ -128,6 +170,7 @@ export const createSpinner = (initialText?: string): SpinnerInstance => {
         spinner.stop(currentText);
         started = false;
       }
+      removeClackListeners();
     },
 
     succeed: (text?: string) => {
@@ -137,6 +180,7 @@ export const createSpinner = (initialText?: string): SpinnerInstance => {
       } else {
         console.log(logSymbols.success, c.success(text || currentText));
       }
+      removeClackListeners();
     },
 
     fail: (text?: string) => {
@@ -146,6 +190,7 @@ export const createSpinner = (initialText?: string): SpinnerInstance => {
       } else {
         console.log(logSymbols.error, c.error(text || currentText));
       }
+      removeClackListeners();
     },
 
     warn: (text?: string) => {
@@ -155,6 +200,7 @@ export const createSpinner = (initialText?: string): SpinnerInstance => {
       } else {
         console.log(logSymbols.warning, c.warning(text || currentText));
       }
+      removeClackListeners();
     },
 
     info: (text?: string) => {
@@ -164,6 +210,7 @@ export const createSpinner = (initialText?: string): SpinnerInstance => {
       } else {
         console.log(logSymbols.info, c.info(text || currentText));
       }
+      removeClackListeners();
     },
 
     text: (text: string) => {
