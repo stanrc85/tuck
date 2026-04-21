@@ -1,3 +1,10 @@
+# [2.13.0](https://github.com/stanrc85/tuck/compare/v2.12.2...v2.13.0) (2026-04-21)
+
+
+### Features
+
+* **restore:** unify fresh-host flow via --bootstrap -g <group> ([8c50fbc](https://github.com/stanrc85/tuck/commit/8c50fbc854f8b1908a0711481281b6f1dc3d10f7))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.12.2](https://github.com/stanrc85/tuck/compare/v2.12.1...v2.12.2) (2026-04-21)
