@@ -56,10 +56,10 @@ const stripLeadingFlags = (slice: string): string => {
 const KEY_BIND_PREFIX_LABEL = 'Prefix';
 
 const splitCommentTrailing = (line: string): { code: string; comment: string | null } => {
-  // Naive split on ` # ` that ignores `#` embedded in quoted strings. Good
-  // enough for tmux configs in the wild — tmux commands don't commonly
-  // need quoted `#` — but guarded to avoid splitting inside a quoted arg.
-  const match = line.match(/^(.*?)\s+#\s?(.*)$/);
+  // Naive split on ` #+ ` that ignores `#` embedded in quoted strings.
+  // Accepts `#`, `##`, `###`... as the delimiter — some users use `##`
+  // to visually distinguish "doc" comments from "note" comments.
+  const match = line.match(/^(.*?)\s+#+\s*(.*)$/);
   if (!match) return { code: line, comment: null };
   const code = match[1];
   const comment = match[2].trim();

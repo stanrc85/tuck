@@ -12,6 +12,18 @@ import type { Entry, Parser, ParserContext } from '../types.js';
  *   alias g=git
  *   alias -g ...G='| grep'   # global alias — captured, category=alias
  *
+ * A trailing `# comment` (or `## comment` — the double-hash convention
+ * some users adopt to visually distinguish "doc" comments from "note"
+ * comments) is promoted to the Entry action when present. Any run of
+ * `#` chars at the split point is consumed. When no comment is present
+ * we fall back to the widget / alias value as action — less friendly
+ * but always truthful.
+ *
+ *   bindkey '^a' beginning-of-line      ## Move to start of line
+ *       -> keybind '^a', action 'Move to start of line'
+ *   alias ll='ls -la'  # long listing
+ *       -> keybind 'll', action 'long listing'
+ *
  * Skipped:
  *   - comment-only lines and empty lines
  *   - mode-switch `bindkey -e` / `bindkey -v` (no binding, just options)
@@ -28,24 +40,41 @@ const BINDKEY_RE = /^\s*bindkey\s+/;
 const ALIAS_RE = /^\s*alias\s+/;
 
 /**
- * Strip a trailing `# comment` that isn't inside quotes. Conservative —
- * we only drop when the count of unescaped single+double quotes before
- * the `#` is even (i.e. not mid-string). Good enough for real-world
- * zshrc lines, which rarely embed `#` inside a quoted alias body.
+ * Match a section header comment like `# --- CURSOR MOVEMENT ---`,
+ * `## === GIT ===`, or `# *** FZF ***`. Requires at least two
+ * separator chars on each side to avoid capturing prose comments
+ * like `# TODO: fix this`. Any run of leading `#` chars is accepted.
+ * Captures the interior title (group 1) with surrounding whitespace
+ * trimmed. The left and right separator runs don't have to match
+ * type or length — `# --- GIT ===` is fine.
  */
-const stripTrailingComment = (line: string): string => {
-  const idx = line.search(/\s#/);
-  if (idx < 0) return line;
-  const before = line.slice(0, idx);
-  const quotes = (before.match(/(?<!\\)["']/g) ?? []).length;
-  if (quotes % 2 !== 0) return line;
-  return before.trimEnd();
+const SECTION_HEADER_RE = /^\s*#+\s+[-=*_]{2,}\s+(.+?)\s+[-=*_]{2,}\s*$/;
+
+/**
+ * Split a line into `{code, comment}` on the first trailing `#`/`##`
+ * that isn't inside quotes. Conservative — we only split when the
+ * count of unescaped single+double quotes before the `#` is even
+ * (i.e. not mid-string). Good enough for real-world zshrc lines,
+ * which rarely embed `#` inside a quoted alias body.
+ */
+const splitCommentTrailing = (
+  line: string
+): { code: string; comment: string | null } => {
+  const match = line.match(/^(.*?)\s+#+\s*(.*)$/);
+  if (!match) return { code: line, comment: null };
+  const code = match[1];
+  const comment = match[2].trim();
+  const quotes = (code.match(/(?<!\\)["']/g) ?? []).length;
+  if (quotes % 2 !== 0) return { code: line, comment: null };
+  return { code, comment: comment.length > 0 ? comment : null };
 };
 
 const parseBindkey = (
   line: string,
   index: number,
-  ctx: ParserContext
+  ctx: ParserContext,
+  comment: string | null,
+  section: string | null
 ): Entry | null => {
   // Strip the `bindkey` keyword and any flags (-M <map>, -s, -e, -v, -a …).
   let rest = line.replace(BINDKEY_RE, '');
@@ -76,16 +105,19 @@ const parseBindkey = (
 
   return {
     keybind: key,
-    action: widget,
+    action: comment ?? widget,
     sourceFile: ctx.sourceFile,
     sourceLine: index + 1,
+    ...(section ? { section } : {}),
   };
 };
 
 const parseAlias = (
   line: string,
   index: number,
-  ctx: ParserContext
+  ctx: ParserContext,
+  comment: string | null,
+  section: string | null
 ): Entry | null => {
   let rest = line.replace(ALIAS_RE, '');
 
@@ -104,10 +136,11 @@ const parseAlias = (
 
   return {
     keybind: name,
-    action: value,
+    action: comment ?? value,
     sourceFile: ctx.sourceFile,
     sourceLine: index + 1,
     category: 'alias',
+    ...(section ? { section } : {}),
   };
 };
 
@@ -126,21 +159,32 @@ export const zshParser: Parser = {
     const entries: Entry[] = [];
     const lines = content.split('\n');
 
+    // Section tracker. Updated whenever a SECTION_HEADER_RE comment
+    // fires; persists across non-matching comments and code lines
+    // until the next header. Not reset by blank lines — it's common
+    // to separate a section from its contents with a newline.
+    let currentSection: string | null = null;
+
     lines.forEach((rawLine, index) => {
       const line = rawLine.trimEnd();
       if (line.length === 0) return;
-      if (LINE_COMMENT_RE.test(line)) return;
 
-      const stripped = stripTrailingComment(line);
+      if (LINE_COMMENT_RE.test(line)) {
+        const headerMatch = line.match(SECTION_HEADER_RE);
+        if (headerMatch) currentSection = headerMatch[1].trim();
+        return;
+      }
 
-      if (BINDKEY_RE.test(stripped)) {
-        const entry = parseBindkey(stripped, index, ctx);
+      const { code, comment } = splitCommentTrailing(line);
+
+      if (BINDKEY_RE.test(code)) {
+        const entry = parseBindkey(code, index, ctx, comment, currentSection);
         if (entry) entries.push(entry);
         return;
       }
 
-      if (ALIAS_RE.test(stripped)) {
-        const entry = parseAlias(stripped, index, ctx);
+      if (ALIAS_RE.test(code)) {
+        const entry = parseAlias(code, index, ctx, comment, currentSection);
         if (entry) entries.push(entry);
       }
     });

@@ -58,6 +58,16 @@ describe('tmux parser', () => {
     expect(entries[0].keybind).toBe('Prefix + v');
     expect(entries[0].action).toContain('begin-selection');
   });
+
+  it('accepts `##` (multi-hash) trailing comments as action descriptions', () => {
+    const entries = tmuxParser.parse(
+      'bind -r h select-pane -L  ## navigate left\nbind -r l select-pane -R   ### navigate right',
+      ctx('~/.tmux.conf')
+    );
+    expect(entries).toHaveLength(2);
+    expect(entries[0].action).toBe('navigate left');
+    expect(entries[1].action).toBe('navigate right');
+  });
 });
 
 describe('zsh parser', () => {
@@ -103,6 +113,89 @@ describe('zsh parser', () => {
   it('returns empty when bindkey is mode-switch-only', () => {
     expect(zshParser.parse('bindkey -e\n', ctx('~/.zshrc'))).toEqual([]);
     expect(zshParser.parse('bindkey -v\n', ctx('~/.zshrc'))).toEqual([]);
+  });
+
+  it('promotes trailing `#`/`##` comments on bindkey lines to the action', () => {
+    const content = [
+      '# --- CURSOR MOVEMENT ---',
+      "bindkey '^a' beginning-of-line      ## Move to start of line",
+      "bindkey '^e' end-of-line            ## Move to end of line",
+      "bindkey '^f' forward-char           # Move forward one char",
+      "bindkey '^b' backward-char",
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+
+    expect(entries).toHaveLength(4);
+    expect(entries[0]).toMatchObject({ keybind: '^a', action: 'Move to start of line' });
+    expect(entries[1]).toMatchObject({ keybind: '^e', action: 'Move to end of line' });
+    expect(entries[2]).toMatchObject({ keybind: '^f', action: 'Move forward one char' });
+    // No trailing comment -> falls back to widget name.
+    expect(entries[3]).toMatchObject({ keybind: '^b', action: 'backward-char' });
+  });
+
+  it('promotes trailing comments on alias lines to the action', () => {
+    const content = [
+      "alias ll='ls -la'   ## long listing",
+      "alias gs='git status'  # show working tree",
+      "alias g=git",
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+
+    expect(entries[0]).toMatchObject({ keybind: 'll', action: 'long listing', category: 'alias' });
+    expect(entries[1]).toMatchObject({ keybind: 'gs', action: 'show working tree', category: 'alias' });
+    // No trailing comment -> falls back to alias value.
+    expect(entries[2]).toMatchObject({ keybind: 'g', action: 'git', category: 'alias' });
+  });
+
+  it('does not split on `#` embedded in a quoted alias body', () => {
+    const entries = zshParser.parse(
+      "alias findhash='grep -rn \"#TODO\"'\n",
+      ctx('~/.zshrc')
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      keybind: 'findhash',
+      action: 'grep -rn "#TODO"',
+    });
+  });
+
+  it('captures `# --- SECTION ---` headers and attaches them to subsequent entries', () => {
+    const content = [
+      'bindkey -e',
+      "bindkey '^z' undo               ## Undo",
+      '',
+      '# --- CURSOR MOVEMENT ---',
+      "bindkey '^a' beginning-of-line  ## Move to start",
+      "bindkey '^e' end-of-line        ## Move to end",
+      '',
+      '## === GIT ALIASES ===',
+      "alias gs='git status'           ## status",
+      "alias gp='git push'",
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+
+    expect(entries[0]).toMatchObject({ keybind: '^z', action: 'Undo' });
+    expect(entries[0].section).toBeUndefined();
+
+    expect(entries[1]).toMatchObject({ keybind: '^a', section: 'CURSOR MOVEMENT' });
+    expect(entries[2]).toMatchObject({ keybind: '^e', section: 'CURSOR MOVEMENT' });
+
+    expect(entries[3]).toMatchObject({ keybind: 'gs', action: 'status', section: 'GIT ALIASES' });
+    // Section persists until the next header, even without a trailing comment.
+    expect(entries[4]).toMatchObject({ keybind: 'gp', action: 'git push', section: 'GIT ALIASES' });
+  });
+
+  it('does not treat plain prose comments as section headers', () => {
+    const content = [
+      '# TODO: clean this up',
+      "bindkey '^a' beginning-of-line",
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+    expect(entries[0].section).toBeUndefined();
   });
 });
 

@@ -22,6 +22,8 @@ export interface Entry {
   sourceLine: number;
   /** Optional sub-grouping within a source (e.g. yazi mode: `manager`, `input`). Reserved for a future `--group-by category` flag. */
   category?: string;
+  /** Section header captured from surrounding comments (e.g. `# --- CURSOR MOVEMENT ---`). Reserved for a future `--group-by section` flag. */
+  section?: string;
 }
 
 export interface ParserContext {
