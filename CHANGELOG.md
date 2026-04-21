@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.12.1](https://github.com/stanrc85/tuck/compare/v2.12.0...v2.12.1) (2026-04-21)
 
 
 ### Bug Fixes
 
 * **bootstrap:** read login shell from /etc/passwd, not $SHELL ([d3e4392](https://github.com/stanrc85/tuck/commit/d3e43922594ec4ff3c79df8d677f1313a9253c33))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.12.0](https://github.com/stanrc85/tuck/compare/v2.11.0...v2.12.0) (2026-04-21)
 
