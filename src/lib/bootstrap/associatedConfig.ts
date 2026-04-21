@@ -18,11 +18,17 @@ import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
  *
  * Both pattern and candidate are `expandPath`-normalized before matching
  * so `~/.config/nvim/**` correctly matches a restored file written to
- * `/home/alice/.config/nvim/init.lua`.
+ * `/home/alice/.config/nvim/init.lua`. We then fold backslashes to
+ * forward slashes so Windows `path.join` output (`\test-home\.config`)
+ * matches source-authored forward-slash patterns — this matcher is a
+ * semantic path comparison, not a filesystem op, so slash direction is
+ * irrelevant.
  */
+const toPosix = (p: string): string => p.replace(/\\/g, '/');
+
 export const matchesAssociatedConfig = (pattern: string, filePath: string): boolean => {
-  const ep = expandPath(pattern);
-  const ef = expandPath(filePath);
+  const ep = toPosix(expandPath(pattern));
+  const ef = toPosix(expandPath(filePath));
 
   if (ep.endsWith('/**')) {
     const prefix = ep.slice(0, -3);
