@@ -1,8 +1,9 @@
 import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
 
 /**
- * neovim-plugins — lazy.nvim + treesitter setup for neovim. Depends on
- * `neovim`; the resolver installs it first when both are selected.
+ * neovim-plugins — lazy.nvim + treesitter + mason-tool-installer setup
+ * for neovim. Depends on `neovim`; the resolver installs it first when
+ * both are selected.
  *
  * `install` and `update` differ meaningfully, mirroring the
  * configure_nvim vs sync_nvim split in deploy_dots.sh:
@@ -14,10 +15,17 @@ import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
  *     - `TSInstallSync` for the 13 languages the config expects. Each
  *       `-c` runs independently so a failure on one doesn't prevent
  *       `qa!` from firing at the end.
+ *     - `MasonToolsInstall` when `mason-tool-installer.nvim` is present,
+ *       waiting on `MasonToolsUpdateCompleted` so headless nvim blocks
+ *       until every LSP/formatter/linter in the user's `ensure_installed`
+ *       is actually on disk. No-ops when the command doesn't exist so
+ *       users on mason.nvim-only or mason-lspconfig setups don't pay a
+ *       timeout cost (future work: extend to those plugins if needed).
  *
  *   update (light, idempotent):
  *     - `Lazy! sync` — pulls new commits for every plugin; fast when
  *       nothing has changed.
+ *     - `MasonToolsUpdate` for the same mason-tool-installer path.
  *
  * Why multiple `-c` flags instead of one chained lua string: the original
  * used `require("nvim-treesitter.install").install(...)` in a single lua
@@ -54,8 +62,12 @@ nvim --headless \\
   -c 'lua require("lazy").sync({ wait = true, show = false })' \\
   -c 'silent! lua require("lazy").load({ plugins = { "nvim-treesitter" } })' \\
   -c 'silent! TSInstallSync! markdown markdown_inline lua go bash python json jsonc yaml toml vim vimdoc regex' \\
+  -c 'lua if vim.fn.exists(":MasonToolsInstall")==2 then local done=false; pcall(vim.api.nvim_create_autocmd,"User",{pattern="MasonToolsUpdateCompleted",callback=function() done=true end}); print("Installing mason tools (up to 3 min)..."); pcall(vim.cmd,"MasonToolsInstall"); vim.wait(180000,function() return done end,1000) end' \\
   -c 'qa!'`,
-  update: `nvim --headless "+Lazy! sync" +qa!`,
+  update: `nvim --headless \\
+  -c 'Lazy! sync' \\
+  -c 'lua if vim.fn.exists(":MasonToolsUpdate")==2 then local done=false; pcall(vim.api.nvim_create_autocmd,"User",{pattern="MasonToolsUpdateCompleted",callback=function() done=true end}); print("Updating mason tools (up to 3 min)..."); pcall(vim.cmd,"MasonToolsUpdate"); vim.wait(180000,function() return done end,1000) end' \\
+  -c 'qa!'`,
   detect: {
     paths: [
       '~/.config/nvim/lua/plugins',
