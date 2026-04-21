@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.7.0](https://github.com/stanrc85/tuck/compare/v2.6.0...v2.7.0) (2026-04-21)
 
 
@@ -5,8 +7,6 @@
 
 * **cheatsheet:** add `tuck cheatsheet` command with tmux/zsh/yazi parsers ([a5d868e](https://github.com/stanrc85/tuck/commit/a5d868e4933b71bdaa7fb2e90442d7106741632c))
 * **cheatsheet:** add neovim-lua parser for vim.keymap.set calls ([bd2f820](https://github.com/stanrc85/tuck/commit/bd2f82091843f39d90bee2df08967e2aa9a7f7b2))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.6.0](https://github.com/stanrc85/tuck/compare/v2.5.0...v2.6.0) (2026-04-21)
 
