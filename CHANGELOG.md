@@ -1,3 +1,11 @@
+# [2.5.0](https://github.com/stanrc85/tuck/compare/v2.4.0...v2.5.0) (2026-04-21)
+
+
+### Features
+
+* **git:** add divergence gate and --mirror force-reset pull mode ([f2a8cb1](https://github.com/stanrc85/tuck/commit/f2a8cb1389c1071443f31d89c76a198c4a90ffb2))
+* **init:** auto-detect OS ID and offer to seed defaultGroups ([6d9e3cf](https://github.com/stanrc85/tuck/commit/6d9e3cfca86cf0a4e38f0f2cb31f40f47ee8f066))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.4.0](https://github.com/stanrc85/tuck/compare/v2.3.2...v2.4.0) (2026-04-20)
