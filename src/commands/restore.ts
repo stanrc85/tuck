@@ -30,6 +30,8 @@ import { CATEGORIES } from '../constants.js';
 import type { RestoreOptions } from '../types.js';
 import { restoreFiles as restoreSecrets, getSecretCount } from '../lib/secrets/index.js';
 import { findMissingDeps, type MissingDep } from '../lib/bootstrap/missingDeps.js';
+import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
+import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
 import { runBootstrap } from './bootstrap.js';
 
 /**
@@ -519,6 +521,52 @@ const maybePromptForMissingDeps = async (
 };
 
 /**
+ * `tuck restore --bootstrap -g <group>`: after restore completes, run
+ * `runBootstrap({ bundle })` for each resolved group whose name matches
+ * a bundle in `bootstrap.toml`. Groups without a matching bundle
+ * soft-skip (e.g. a "common" shared-dotfiles group with no OS-specific
+ * tools is a valid configuration). Multi-group runs execute bundles
+ * sequentially; bootstrap's own state.json definition-hash mechanism
+ * dedupes tools already installed by an earlier bundle in the same run.
+ *
+ * Silent no-op when `options.bootstrap` isn't set, on `--dry-run`, or
+ * when no groups resolve. TASK-048's `maybePromptForMissingDeps` still
+ * fires as today — `--bootstrap` is bundle-scoped (user-declared), while
+ * missing-deps is content-scoped (derived from restored files).
+ */
+const maybeRunBootstrapForGroups = async (
+  tuckDir: string,
+  options: RestoreOptions
+): Promise<void> => {
+  if (!options.bootstrap) return;
+  if (options.dryRun) return;
+
+  const groups = await resolveGroupFilter(tuckDir, options);
+  if (!groups || groups.length === 0) {
+    prompts.log.info(
+      'No group specified and no defaultGroups set; skipping bootstrap step.'
+    );
+    return;
+  }
+
+  const configPath = join(tuckDir, 'bootstrap.toml');
+  const config = (await pathExists(configPath))
+    ? await loadBootstrapConfig(configPath)
+    : bootstrapConfigSchema.parse({});
+  const bundleNames = new Set(Object.keys(config.bundles));
+
+  for (const groupName of groups) {
+    if (!bundleNames.has(groupName)) {
+      prompts.log.info(
+        `No bundle named '${groupName}', skipping bootstrap for this group.`
+      );
+      continue;
+    }
+    await runBootstrap({ bundle: groupName, yes: options.yes });
+  }
+};
+
+/**
  * Run restore programmatically (exported for use by other commands)
  */
 export const runRestore = async (options: RestoreOptions): Promise<void> => {
@@ -561,6 +609,7 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
   }
 
   await maybePromptForGroupAssignment(tuckDir, options);
+  await maybeRunBootstrapForGroups(tuckDir, options);
   await maybePromptForMissingDeps(tuckDir, restoredPaths, options);
 };
 
@@ -580,6 +629,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   if (paths.length === 0 && !options.all) {
     const restoredPaths = await runInteractiveRestore(tuckDir, options);
     await maybePromptForGroupAssignment(tuckDir, options);
+    await maybeRunBootstrapForGroups(tuckDir, options);
     await maybePromptForMissingDeps(tuckDir, restoredPaths, options);
     return;
   }
@@ -616,6 +666,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
     displaySecretSummary(result);
     logger.success(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
     await maybePromptForGroupAssignment(tuckDir, options);
+    await maybeRunBootstrapForGroups(tuckDir, options);
     await maybePromptForMissingDeps(tuckDir, result.restoredPaths, options);
   }
 };
@@ -648,6 +699,11 @@ export const restoreCommand = new Command('restore')
     '--no-install-deps',
     'Skip the missing-deps prompt/advisory entirely'
   )
+  .option(
+    '--bootstrap',
+    'After restore, run `tuck bootstrap --bundle <g>` for each -g whose name matches a bundle (groups without a matching bundle soft-skip)'
+  )
+  .option('-y, --yes', 'Skip confirmations (forwarded to bootstrap when --bootstrap is set)')
   .action(async (paths: string[], options: RestoreOptions) => {
     await runRestoreCommand(paths, options);
   });

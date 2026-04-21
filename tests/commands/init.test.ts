@@ -148,6 +148,13 @@ vi.mock('../../src/lib/validation.js', () => ({
   errorToMessage: vi.fn((error: unknown) => String(error)),
 }));
 
+// Mocked so the init-tail prompt (TASK-RB-UNIFY-IMPL) can dynamic-import
+// `./restore.js` without actually running a restore.
+const runRestoreMock = vi.fn();
+vi.mock('../../src/commands/restore.js', () => ({
+  runRestore: runRestoreMock,
+}));
+
 describe('init command behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -158,6 +165,7 @@ describe('init command behavior', () => {
     loadConfigMock.mockResolvedValue({ defaultGroups: [] });
     detectOsGroupMock.mockResolvedValue(null);
     getAllGroupsMock.mockResolvedValue([]);
+    runRestoreMock.mockResolvedValue(undefined);
   });
 
   it('clones from remote and backfills missing manifest/config', async () => {
@@ -342,6 +350,82 @@ describe('init command behavior', () => {
       } finally {
         Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
       }
+    });
+  });
+
+  // ========== TASK-RB-UNIFY-IMPL init --from tail prompt ==========
+
+  describe('restore --bootstrap tail prompt on init --from', () => {
+    it('TTY + group set: prompts y/n and invokes runRestore on yes', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      // Group already persisted (user previously answered the os-group prompt
+      // or defaultGroups was seeded on a prior run). loadConfig is called twice:
+      // once inside maybePromptForOsGroup (sees the group → skips its own
+      // prompt), once inside maybePromptRestoreBootstrap (reads the group).
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kubuntu'] });
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(true);
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(ui.prompts.confirm).toHaveBeenCalledWith(
+          expect.stringContaining("Run 'tuck restore --bootstrap -g kubuntu'"),
+          true
+        );
+        expect(runRestoreMock).toHaveBeenCalledWith({
+          all: true,
+          bootstrap: true,
+          group: ['kubuntu'],
+        });
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('TTY + group set + user answers No: logs skip hint, does not invoke runRestore', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kubuntu'] });
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(runRestoreMock).not.toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('non-TTY + group set: prints the restore --bootstrap hint, no prompt, no runRestore', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kubuntu'] });
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(ui.prompts.confirm).not.toHaveBeenCalled();
+        expect(runRestoreMock).not.toHaveBeenCalled();
+        expect(loggerInfoMock).toHaveBeenCalledWith(
+          expect.stringContaining('tuck restore --bootstrap -g kubuntu')
+        );
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
+    });
+
+    it('no group persisted: falls back to the plain `tuck restore --all` hint', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      // Default loadConfigMock returns defaultGroups: [] — no group to target.
+      const { runInit } = await import('../../src/commands/init.js');
+      await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+      expect(runRestoreMock).not.toHaveBeenCalled();
+      expect(loggerInfoMock).toHaveBeenCalledWith('Run `tuck restore --all` to restore dotfiles');
     });
   });
 });

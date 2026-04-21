@@ -182,6 +182,20 @@ export interface RestoreOptions {
    *                 explicit opt-in would be surprising).
    */
   installDeps?: boolean;
+  /**
+   * When true, after restore completes run `tuck bootstrap --bundle <g>`
+   * for each `-g` value (or `defaultGroups` fallback) whose name matches
+   * a bundle in `bootstrap.toml`. Groups without a matching bundle
+   * soft-skip with an info log. Paired with `yes` for the non-interactive
+   * fresh-host flow (`tuck restore --bootstrap -g kubuntu -y`).
+   */
+  bootstrap?: boolean;
+  /**
+   * Forwarded to `runBootstrap` when `bootstrap` is true: skips bootstrap
+   * confirmations and enables the sudo pre-check. Does not affect restore
+   * hook confirmations — use `trustHooks` for those.
+   */
+  yes?: boolean;
 }
 
 export interface StatusOptions {

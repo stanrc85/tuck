@@ -1790,6 +1790,47 @@ const maybePromptForOsGroup = async (
   logger.success(`Host assigned to group: ${groupName} (.tuckrc.local.json)`);
 };
 
+/**
+ * After `tuck init --from <url>` clones the repo and assigns a group,
+ * prompt to run the unified fresh-host flow inline:
+ *   `tuck restore --bootstrap -g <group>`
+ * On yes, invokes `runRestore({ bootstrap: true, groups: [group] })`
+ * directly — no shelling out. Non-TTY falls through to an advisory log,
+ * preserving scripted `tuck init --from` behavior on CI hosts. When no
+ * group was persisted (user picked Skip), falls back to the plain
+ * `tuck restore --all` hint so the init path always ends with a next
+ * step.
+ */
+const maybePromptRestoreBootstrap = async (tuckDir: string): Promise<void> => {
+  const existing = await loadConfig(tuckDir).catch(() => null);
+  const group = existing?.defaultGroups?.[0];
+  if (!group) {
+    logger.info('Run `tuck restore --all` to restore dotfiles');
+    return;
+  }
+
+  if (!process.stdout.isTTY) {
+    logger.info(
+      `Run \`tuck restore --bootstrap -g ${group}\` to restore files and install the bundle.`
+    );
+    return;
+  }
+
+  const proceed = await prompts.confirm(
+    `Run 'tuck restore --bootstrap -g ${group}' now?`,
+    true
+  );
+  if (!proceed) {
+    logger.dim(
+      `Skipped — run \`tuck restore --bootstrap -g ${group}\` later to restore files and install the bundle.`
+    );
+    return;
+  }
+
+  const { runRestore } = await import('./restore.js');
+  await runRestore({ all: true, bootstrap: true, group: [group] });
+};
+
 export const runInit = async (options: InitOptions): Promise<void> => {
   const tuckDir = getTuckDir(options.dir);
 
@@ -1801,7 +1842,9 @@ export const runInit = async (options: InitOptions): Promise<void> => {
     // are the primary beneficiaries (the whole point is skipping the
     // `tuck config set defaultGroups kali` ritual on a new VM).
     await maybePromptForOsGroup(tuckDir, options);
-    logger.info('Run `tuck restore --all` to restore dotfiles');
+    // With a group persisted, offer the unified fresh-host flow inline
+    // (TASK-RB-UNIFY-IMPL). No-op if the user picked Skip on os-group.
+    await maybePromptRestoreBootstrap(tuckDir);
     return;
   }
 

@@ -10,6 +10,7 @@ const loggerInfoMock = vi.fn();
 const loggerSuccessMock = vi.fn();
 const findMissingDepsMock = vi.fn();
 const runBootstrapMock = vi.fn();
+const loadBootstrapConfigMock = vi.fn();
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
@@ -60,6 +61,10 @@ vi.mock('../../src/ui/index.js', () => ({
 
 vi.mock('../../src/lib/bootstrap/missingDeps.js', () => ({
   findMissingDeps: findMissingDepsMock,
+}));
+
+vi.mock('../../src/lib/bootstrap/parser.js', () => ({
+  loadBootstrapConfig: loadBootstrapConfigMock,
 }));
 
 vi.mock('../../src/commands/bootstrap.js', () => ({
@@ -154,6 +159,13 @@ describe('restore command behavior', () => {
     // that don't care about it. Tests override per-case.
     findMissingDepsMock.mockResolvedValue([]);
     runBootstrapMock.mockResolvedValue({ plan: null, counts: null, dryRun: false });
+    // Default bootstrap.toml catalog has no bundles — tests that exercise
+    // --bootstrap override via mockResolvedValueOnce.
+    loadBootstrapConfigMock.mockResolvedValue({
+      tool: [],
+      bundles: {},
+      registry: { disabled: [] },
+    });
     confirmMock.mockResolvedValue(true);
   });
 
@@ -616,6 +628,213 @@ describe('restore command behavior', () => {
       await runRestore({ all: true, noHooks: true, noSecrets: true });
 
       expect(saveLocalConfigMock).toHaveBeenCalledWith({ defaultGroups: ['kali', 'kubuntu'] });
+    });
+  });
+
+  // ========== TASK-RB-UNIFY-IMPL `tuck restore --bootstrap -g <group>` ==========
+
+  describe('--bootstrap (restore+bootstrap unified flow)', () => {
+    const seedRestoredFile = () => {
+      getAllTrackedFilesMock.mockResolvedValue({
+        zshrc: {
+          source: '~/.zshrc',
+          destination: 'files/shell/zshrc',
+          category: 'shell',
+          groups: ['kubuntu', 'kali', 'common'],
+        },
+      });
+    };
+
+    it('runs runBootstrap with { bundle } for a group whose name matches a bundle', async () => {
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        group: ['kubuntu'],
+      });
+
+      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: undefined });
+    });
+
+    it('forwards options.yes to runBootstrap (non-interactive fresh-host)', async () => {
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        yes: true,
+        group: ['kubuntu'],
+      });
+
+      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: true });
+    });
+
+    it('soft-skips a group without a matching bundle (no runBootstrap call)', async () => {
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: {},
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        group: ['common'],
+      });
+
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+    });
+
+    it('multi-group partial match: runs bootstrap only for groups with matching bundles', async () => {
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        group: ['kubuntu', 'common'],
+      });
+
+      expect(runBootstrapMock).toHaveBeenCalledTimes(1);
+      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: undefined });
+    });
+
+    it('multi-group full match: runs runBootstrap sequentially for each bundle', async () => {
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'], kali: ['ripgrep'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        group: ['kubuntu', 'kali'],
+      });
+
+      expect(runBootstrapMock).toHaveBeenCalledTimes(2);
+      expect(runBootstrapMock).toHaveBeenNthCalledWith(1, { bundle: 'kubuntu', yes: undefined });
+      expect(runBootstrapMock).toHaveBeenNthCalledWith(2, { bundle: 'kali', yes: undefined });
+    });
+
+    it('falls back to defaultGroups when no -g is passed', async () => {
+      seedRestoredFile();
+      loadConfigMock.mockResolvedValue({
+        files: { strategy: 'copy', backupOnRestore: true },
+        defaultGroups: ['kubuntu'],
+      });
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+      });
+
+      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: undefined });
+    });
+
+    it('does NOT run bootstrap on --dry-run', async () => {
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        dryRun: true,
+        group: ['kubuntu'],
+      });
+
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+    });
+
+    it('is a silent no-op when --bootstrap is not set (backward compat)', async () => {
+      seedRestoredFile();
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        group: ['kubuntu'],
+      });
+
+      expect(runBootstrapMock).not.toHaveBeenCalled();
+      expect(loadBootstrapConfigMock).not.toHaveBeenCalled();
+    });
+
+    it('-y end-to-end fires zero confirms and forwards yes:true to runBootstrap', async () => {
+      // Q2 decision audit: non-interactive fresh-host (`tuck restore --bootstrap
+      // -g kubuntu -y`) must surface zero prompts. This covers the bundle-call
+      // seam — TASK-048's missing-deps tail has its own coverage above for
+      // `installDeps: true` → no confirm; `yes: true` here is the bootstrap-side
+      // forward. Combined, `-y --install-deps` paper over every prompt on the
+      // path.
+      seedRestoredFile();
+      loadBootstrapConfigMock.mockResolvedValueOnce({
+        tool: [],
+        bundles: { kubuntu: ['fzf'] },
+        registry: { disabled: [] },
+      });
+
+      const { runRestore } = await import('../../src/commands/restore.js');
+      await runRestore({
+        all: true,
+        noHooks: true,
+        noSecrets: true,
+        bootstrap: true,
+        yes: true,
+        installDeps: true,
+        group: ['kubuntu'],
+      });
+
+      expect(confirmMock).not.toHaveBeenCalled();
+      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: true });
     });
   });
 });
