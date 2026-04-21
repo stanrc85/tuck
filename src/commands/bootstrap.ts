@@ -147,17 +147,20 @@ export const runBootstrap = async (
 
 export interface ShellChangePromptDeps {
   spawnImpl?: typeof spawn;
-  envShell?: string;
+  loginShell?: string;
   platform?: NodeJS.Platform;
   interactive?: boolean;
 }
 
 /**
  * After a successful bootstrap, offer to swap the user's login shell to
- * zsh when zsh is installed but the active `$SHELL` points elsewhere. No-op
- * on Windows, non-TTY runs, or when zsh is already the login shell. The
- * chsh subprocess uses inherited stdio so PAM password prompts land on the
- * user's real TTY.
+ * zsh when zsh is installed but `/etc/passwd` (Linux) or Directory Services
+ * (macOS) still points elsewhere. `$SHELL` is deliberately NOT consulted —
+ * it reflects whatever shell spawned the current process, not the login
+ * shell, and can report a stale value for a whole desktop session after
+ * chsh. No-op on Windows, non-TTY runs, or when zsh is already the login
+ * shell. The chsh subprocess uses inherited stdio so PAM password prompts
+ * land on the user's real TTY.
  */
 export const maybePromptForShellChange = async (
   deps: ShellChangePromptDeps = {}
@@ -168,15 +171,15 @@ export const maybePromptForShellChange = async (
   const interactive = deps.interactive ?? isInteractive();
   if (!interactive) return;
 
-  const envShell = deps.envShell ?? process.env.SHELL ?? '';
-  if (envShell === 'zsh' || envShell.endsWith('/zsh')) return;
-
   const spawnImpl = deps.spawnImpl ?? spawn;
+
+  const loginShell = deps.loginShell ?? (await detectLoginShell(spawnImpl, platform));
+  if (loginShell === 'zsh' || loginShell.endsWith('/zsh')) return;
 
   const zshPath = await locateZsh(spawnImpl);
   if (!zshPath) return;
 
-  const currentName = envShell ? basename(envShell) : 'your shell';
+  const currentName = loginShell ? basename(loginShell) : 'your shell';
   const confirmed = await prompts.confirm(
     `zsh is installed but your login shell is ${currentName}. Set zsh as your default shell?`,
     true
@@ -191,20 +194,45 @@ export const maybePromptForShellChange = async (
   }
 };
 
-const locateZsh = (spawnImpl: typeof spawn): Promise<string> => {
+const detectLoginShell = async (
+  spawnImpl: typeof spawn,
+  platform: NodeJS.Platform
+): Promise<string> => {
+  const user = process.env.USER ?? process.env.LOGNAME ?? '';
+  if (!user) return '';
+
+  if (platform === 'darwin') {
+    // dscl output: "UserShell: /bin/zsh"
+    const raw = await spawnCapture(spawnImpl, 'dscl', ['.', '-read', `/Users/${user}`, 'UserShell']);
+    return raw.replace(/^UserShell:\s*/i, '').trim();
+  }
+  // Linux + other getent-capable platforms: "user:x:uid:gid:gecos:home:shell"
+  const raw = await spawnCapture(spawnImpl, 'getent', ['passwd', user]);
+  return raw.split(':')[6]?.trim() ?? '';
+};
+
+const spawnCapture = (
+  spawnImpl: typeof spawn,
+  cmd: string,
+  args: string[]
+): Promise<string> => {
   return new Promise((resolve) => {
     try {
-      const child = spawnImpl('which', ['zsh'], { stdio: ['ignore', 'pipe', 'ignore'] });
+      const child = spawnImpl(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] });
       let stdout = '';
       child.stdout?.on('data', (chunk: Buffer) => {
         stdout += chunk.toString();
       });
       child.on('error', () => resolve(''));
-      child.on('exit', (code) => resolve(code === 0 ? stdout.trim() : ''));
+      child.on('exit', (code) => resolve(code === 0 ? stdout : ''));
     } catch {
       resolve('');
     }
   });
+};
+
+const locateZsh = (spawnImpl: typeof spawn): Promise<string> => {
+  return spawnCapture(spawnImpl, 'which', ['zsh']).then((out) => out.trim());
 };
 
 const runChsh = (spawnImpl: typeof spawn, zshPath: string): Promise<boolean> => {
