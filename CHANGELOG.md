@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.7.1](https://github.com/stanrc85/tuck/compare/v2.7.0...v2.7.1) (2026-04-21)
 
 
 ### Bug Fixes
 
 * **cheatsheet:** walk tracked directories instead of treating them as files ([623b5ef](https://github.com/stanrc85/tuck/commit/623b5ef232cdda58bdcd2625b273a7c91d2bd6b5))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.7.0](https://github.com/stanrc85/tuck/compare/v2.6.0...v2.7.0) (2026-04-21)
 
