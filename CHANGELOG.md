@@ -1,3 +1,10 @@
+## [2.10.1](https://github.com/stanrc85/tuck/compare/v2.10.0...v2.10.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **bootstrap:** kali skip-guard for zimfw and XDG path matching for zsh ([fcad21c](https://github.com/stanrc85/tuck/commit/fcad21ccfa41eaec7a14fac6ed027fee4b555ebf))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.10.0](https://github.com/stanrc85/tuck/compare/v2.9.0...v2.10.0) (2026-04-21)
