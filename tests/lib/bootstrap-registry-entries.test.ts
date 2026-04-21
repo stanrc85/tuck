@@ -11,7 +11,19 @@ import {
 import { resolveInstallOrder } from '../../src/lib/bootstrap/resolver.js';
 import { TEST_HOME } from '../setup.js';
 
-const expectedIds = ['fzf', 'eza', 'bat', 'fd', 'ripgrep', 'neovim', 'neovim-plugins', 'pet', 'yazi'];
+const expectedIds = [
+  'fzf',
+  'eza',
+  'bat',
+  'fd',
+  'ripgrep',
+  'neovim',
+  'neovim-plugins',
+  'pet',
+  'yazi',
+  'zsh',
+  'zimfw',
+];
 
 const byId = Object.fromEntries(BUILT_IN_TOOLS.map((t) => [t.id, t]));
 
@@ -56,6 +68,14 @@ describe('registry requires graph', () => {
     const pluginsIdx = order.indexOf('neovim-plugins');
     expect(neovimIdx).toBeGreaterThanOrEqual(0);
     expect(neovimIdx).toBeLessThan(pluginsIdx);
+  });
+
+  it('resolver orders zsh before zimfw (zimfw requires zsh)', () => {
+    const order = resolveInstallOrder([...BUILT_IN_TOOLS]);
+    const zshIdx = order.indexOf('zsh');
+    const zimfwIdx = order.indexOf('zimfw');
+    expect(zshIdx).toBeGreaterThanOrEqual(0);
+    expect(zshIdx).toBeLessThan(zimfwIdx);
   });
 
   it('all `requires` targets exist in the catalog (no dangling refs)', () => {
@@ -165,6 +185,18 @@ describe('detection fixtures', () => {
   it('yazi detects via ~/.config/yazi', async () => {
     vol.mkdirSync(join(TEST_HOME, '.config/yazi'), { recursive: true });
     const result = await detectTool(byId.yazi!);
+    expect(result.detected).toBe(true);
+  });
+
+  it('zsh detects via ~/.zshrc', async () => {
+    vol.writeFileSync(join(TEST_HOME, '.zshrc'), '# zsh rc');
+    const result = await detectTool(byId.zsh!);
+    expect(result.detected).toBe(true);
+  });
+
+  it('zimfw detects via ~/.zimrc', async () => {
+    vol.writeFileSync(join(TEST_HOME, '.zimrc'), 'zmodule asciiship');
+    const result = await detectTool(byId.zimfw!);
     expect(result.detected).toBe(true);
   });
 

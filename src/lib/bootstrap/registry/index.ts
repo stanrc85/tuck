@@ -11,6 +11,8 @@ import { neovim } from './neovim.js';
 import { neovimPlugins } from './neovim-plugins.js';
 import { pet } from './pet.js';
 import { yazi } from './yazi.js';
+import { zsh } from './zsh.js';
+import { zimfw } from './zimfw.js';
 
 /**
  * Built-in tool catalog overlaid onto the user's `bootstrap.toml`. Each
@@ -33,6 +35,8 @@ export const BUILT_IN_TOOLS: readonly ToolDefinition[] = Object.freeze([
   neovimPlugins,
   pet,
   yazi,
+  zsh,
+  zimfw,
 ]);
 
 export interface MergeOptions {
