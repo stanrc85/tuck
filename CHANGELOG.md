@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.8.0](https://github.com/stanrc85/tuck/compare/v2.7.2...v2.8.0) (2026-04-21)
 
 
 ### Features
 
 * **cheatsheet:** promote trailing comments to action + capture section headers ([ae381ed](https://github.com/stanrc85/tuck/commit/ae381ed9711e2da1151b6f07cc804d62160ae143))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.7.2](https://github.com/stanrc85/tuck/compare/v2.7.1...v2.7.2) (2026-04-21)
 
