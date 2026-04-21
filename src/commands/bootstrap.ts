@@ -21,6 +21,7 @@ import { runCheck } from '../lib/bootstrap/runner.js';
 import type { BootstrapConfig, ToolDefinition } from '../schemas/bootstrap.schema.js';
 import { BootstrapError, NonInteractivePromptError } from '../errors.js';
 import { bootstrapUpdateCommand } from './bootstrap-update.js';
+import { bundleCommand } from './bootstrap-bundle.js';
 
 export interface BootstrapOptions {
   /** Override location of `bootstrap.toml`. Defaults to `<tuckDir>/bootstrap.toml`. */
@@ -54,7 +55,8 @@ export const bootstrapCommand = new Command('bootstrap')
   .action(async (options: BootstrapOptions) => {
     await runBootstrap(options);
   })
-  .addCommand(bootstrapUpdateCommand);
+  .addCommand(bootstrapUpdateCommand)
+  .addCommand(bundleCommand);
 
 /**
  * Shape returned from `runBootstrap`. Tests inspect `plan` (dry-run) or

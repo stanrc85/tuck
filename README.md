@@ -163,6 +163,7 @@ After `tuck restore` writes files, it checks whether any tool in your bootstrap 
 | `tuck self-update`         | Update tuck to the latest GitHub release of `stanrc85/tuck`                |
 | `tuck bootstrap`           | Install CLI tools declared in `bootstrap.toml` (and a built-in set)        |
 | `tuck bootstrap update`    | Re-run the `update` block for tools previously installed via `bootstrap`   |
+| `tuck bootstrap bundle …`  | Manage `[bundles]` from the CLI (`list`/`show`/`create`/`add`/`rm`/`delete`) |
 | `tuck update`              | One-shot umbrella: self-update → pull dotfiles → restore → bootstrap update |
 
 `tuck self-update` flags:
@@ -179,6 +180,16 @@ After `tuck restore` writes files, it checks whether any tool in your bootstrap 
 - `-y`, `--yes`: Pre-check `sudo -n true` when the script needs sudo so non-interactive runs fail fast instead of hanging on a password prompt
 - `--no-detect`: In the picker, show a flat alphabetical list and ignore detection signals
 - `-f`, `--file <path>`: Use a `bootstrap.toml` at a custom location (default: `~/.tuck/bootstrap.toml`)
+
+`tuck bootstrap bundle <sub>` subcommands — edit `[bundles]` without hand-editing TOML:
+- `list`: print bundle names + member counts
+- `show <name>`: list members of a bundle with `installed` / `detected` / `missing` status for each
+- `create <name> <tool...>`: create a new bundle; rejects unknown tool ids with the full known-ids list
+- `add <name> <tool>`: append a tool to an existing bundle (idempotent)
+- `rm <name> <tool>`: drop a tool from a bundle (idempotent)
+- `delete <name>`: remove the bundle entirely (prompts to confirm; `-y` to skip)
+
+Write-back caveat: bundle edits re-serialize the entire `bootstrap.toml` via `smol-toml.stringify`, which reflows the document and strips hand-written comments. The command warns on the first write if the prior file had comments. If your bootstrap.toml has load-bearing comments, back it up before running `bundle` edits, or stick to hand-editing.
 
 `tuck bootstrap update` flags:
 - `--all`: Update every installed tool (skip the picker)
