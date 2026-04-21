@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.12.0](https://github.com/stanrc85/tuck/compare/v2.11.0...v2.12.0) (2026-04-21)
 
 
 ### Features
 
 * **bootstrap:** add tealdeer as a built-in registry tool ([1fba225](https://github.com/stanrc85/tuck/commit/1fba22524bc66a36f14aae30b1221a087ad92ba1))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.11.0](https://github.com/stanrc85/tuck/compare/v2.10.3...v2.11.0) (2026-04-21)
 
