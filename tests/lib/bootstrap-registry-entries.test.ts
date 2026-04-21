@@ -78,6 +78,18 @@ describe('registry requires graph', () => {
     expect(zshIdx).toBeLessThan(zimfwIdx);
   });
 
+  it('zimfw check + install both guard against Kali', () => {
+    const zimfw = byId.zimfw!;
+    // Check short-circuits to exit 0 on Kali so the tool is never flagged
+    // as missing on hosts where Kali ships its own opinionated zsh setup.
+    expect(zimfw.check).toContain('ID" = "kali"');
+    expect(zimfw.check).toContain('exit 0');
+    // Install belt-and-braces: even under `--rerun zimfw` on Kali, the
+    // install script itself no-ops rather than clobbering Kali's setup.
+    expect(zimfw.install).toContain('ID" = "kali"');
+    expect(zimfw.install).toContain('Skipping ZimFW on Kali');
+  });
+
   it('all `requires` targets exist in the catalog (no dangling refs)', () => {
     const ids = new Set(BUILT_IN_TOOLS.map((t) => t.id));
     for (const tool of BUILT_IN_TOOLS) {
@@ -194,8 +206,21 @@ describe('detection fixtures', () => {
     expect(result.detected).toBe(true);
   });
 
+  it('zsh detects via XDG ~/.config/zsh directory', async () => {
+    vol.mkdirSync(join(TEST_HOME, '.config/zsh'), { recursive: true });
+    const result = await detectTool(byId.zsh!);
+    expect(result.detected).toBe(true);
+  });
+
   it('zimfw detects via ~/.zimrc', async () => {
     vol.writeFileSync(join(TEST_HOME, '.zimrc'), 'zmodule asciiship');
+    const result = await detectTool(byId.zimfw!);
+    expect(result.detected).toBe(true);
+  });
+
+  it('zimfw detects via XDG ~/.config/zsh/.zimrc', async () => {
+    vol.mkdirSync(join(TEST_HOME, '.config/zsh'), { recursive: true });
+    vol.writeFileSync(join(TEST_HOME, '.config/zsh/.zimrc'), 'zmodule asciiship');
     const result = await detectTool(byId.zimfw!);
     expect(result.detected).toBe(true);
   });

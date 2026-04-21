@@ -89,3 +89,35 @@ describe('toolMatchesRestoredFiles', () => {
     expect(toolMatchesRestoredFiles(tool, [`${TEST_HOME}/.zshrc`])).toBe(false);
   });
 });
+
+describe('built-in zsh + zimfw associatedConfig coverage', () => {
+  it('zsh matches canonical ~/.zshrc', async () => {
+    const { zsh } = await import('../../src/lib/bootstrap/registry/zsh.js');
+    expect(toolMatchesRestoredFiles(zsh, [`${TEST_HOME}/.zshrc`])).toBe(true);
+  });
+
+  it('zsh matches XDG-style ~/.config/zsh/.zshrc', async () => {
+    const { zsh } = await import('../../src/lib/bootstrap/registry/zsh.js');
+    expect(toolMatchesRestoredFiles(zsh, [`${TEST_HOME}/.config/zsh/.zshrc`])).toBe(true);
+  });
+
+  it('zsh matches nested ~/.config/zsh/aliases.zsh', async () => {
+    const { zsh } = await import('../../src/lib/bootstrap/registry/zsh.js');
+    expect(toolMatchesRestoredFiles(zsh, [`${TEST_HOME}/.config/zsh/aliases.zsh`])).toBe(true);
+  });
+
+  it('zsh matches ~/.zsh directory path', async () => {
+    const { zsh } = await import('../../src/lib/bootstrap/registry/zsh.js');
+    expect(toolMatchesRestoredFiles(zsh, [`${TEST_HOME}/.zsh`])).toBe(true);
+  });
+
+  it('zimfw matches canonical ~/.zimrc', async () => {
+    const { zimfw } = await import('../../src/lib/bootstrap/registry/zimfw.js');
+    expect(toolMatchesRestoredFiles(zimfw, [`${TEST_HOME}/.zimrc`])).toBe(true);
+  });
+
+  it('zimfw matches XDG-style ~/.config/zsh/.zimrc', async () => {
+    const { zimfw } = await import('../../src/lib/bootstrap/registry/zimfw.js');
+    expect(toolMatchesRestoredFiles(zimfw, [`${TEST_HOME}/.config/zsh/.zimrc`])).toBe(true);
+  });
+});

@@ -20,8 +20,25 @@ export const zsh: ToolDefinition = {
   install: 'sudo apt-get install -y zsh',
   update: 'sudo apt-get install -y --only-upgrade zsh',
   detect: {
-    paths: ['~/.zshrc', '~/.zshenv', '~/.zprofile', '~/.zlogin', '~/.zimrc'],
+    paths: [
+      '~/.zshrc',
+      '~/.zshenv',
+      '~/.zprofile',
+      '~/.zlogin',
+      '~/.zimrc',
+      '~/.zsh',
+      '~/.config/zsh',
+    ],
     rcReferences: ['zsh'],
   },
-  associatedConfig: ['~/.zshrc', '~/.zshenv', '~/.zprofile', '~/.zlogin', '~/.zlogout'],
+  associatedConfig: [
+    '~/.zshrc',
+    '~/.zshenv',
+    '~/.zprofile',
+    '~/.zlogin',
+    '~/.zlogout',
+    '~/.zsh',
+    '~/.zsh/**',
+    '~/.config/zsh/**',
+  ],
 };

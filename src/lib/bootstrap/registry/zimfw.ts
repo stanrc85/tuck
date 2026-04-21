@@ -6,29 +6,38 @@ import type { ToolDefinition } from '../../../schemas/bootstrap.schema.js';
  * both orders the install behind zsh *and* guarantees the `| zsh` pipe
  * has a shell to run against on an otherwise bare host.
  *
- * The installer clones the framework into `~/.zim` and seeds a starter
- * `~/.zimrc` only when one isn't already present — so a user whose
- * dotfiles ship a custom `.zimrc` gets their file honoured after
- * restore. `associatedConfig: ['~/.zimrc']` lets restore-tail
- * (TASK-048) flag ZimFW as missing when a user restores `.zimrc` onto
- * a fresh host.
+ * **Kali skip-guard** — Kali ships with its own opinionated zsh setup
+ * (oh-my-zsh-style rc + prompt), so installing ZimFW there would
+ * collide with the existing framework. Both `check` and `install`
+ * short-circuit on Kali: `check` reports "already installed" so the
+ * tool is neither flagged as missing by restore-tail nor pre-selected
+ * in the picker, and `install` additionally no-ops when forced via
+ * `--rerun zimfw` as belt-and-braces.
  *
- * Users on distros that already ship an opinionated zsh setup (Kali's
- * pre-wired oh-my-zsh-style rc, for example) can disable this entry
- * via `[registry] disabled = ["zimfw"]` in their `bootstrap.toml`.
+ * Layout compatibility: the installer clones the framework into
+ * `~/.zim` and seeds a starter `~/.zimrc` only when one isn't already
+ * present — so a user whose dotfiles ship a custom `.zimrc` (either at
+ * `~/.zimrc` or XDG-style at `~/.config/zsh/.zimrc`) gets their file
+ * honoured after restore. Both placements are wired into `associatedConfig`
+ * so restore-tail (TASK-048) flags ZimFW as missing regardless of layout.
  */
 export const zimfw: ToolDefinition = {
   id: 'zimfw',
   description: 'modular zsh framework',
   category: 'shell',
   requires: ['zsh'],
-  check: 'test -d "$HOME/.zim"',
-  install:
-    'curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh',
+  check:
+    'if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then exit 0; fi; test -d "$HOME/.zim"',
+  install: `set -e
+if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then
+  echo "Skipping ZimFW on Kali (Kali ships its own zsh setup)."
+  exit 0
+fi
+curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh`,
   update: 'zsh -c "source \\"$HOME/.zim/init.zsh\\" && zimfw upgrade && zimfw update"',
   detect: {
-    paths: ['~/.zim', '~/.zimrc'],
+    paths: ['~/.zim', '~/.zimrc', '~/.config/zsh/.zimrc'],
     rcReferences: ['zimfw'],
   },
-  associatedConfig: ['~/.zimrc'],
+  associatedConfig: ['~/.zimrc', '~/.config/zsh/.zimrc'],
 };
