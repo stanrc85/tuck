@@ -1,9 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { vol } from 'memfs';
 import { join } from 'path';
 import { runBootstrap } from '../../src/commands/bootstrap.js';
 import { BootstrapError, NonInteractivePromptError } from '../../src/errors.js';
+import * as orchestrator from '../../src/lib/bootstrap/orchestrator.js';
 import { TEST_TUCK_DIR } from '../setup.js';
+
+vi.mock('../../src/lib/bootstrap/orchestrator.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/bootstrap/orchestrator.js')>();
+  return {
+    ...actual,
+    executeBootstrap: vi.fn(actual.executeBootstrap),
+  };
+});
 
 const writeBootstrapToml = (content: string): string => {
   vol.mkdirSync(TEST_TUCK_DIR, { recursive: true });
@@ -167,6 +176,36 @@ install = "x"
         expect(err).toBeInstanceOf(BootstrapError);
         expect((err as Error).message).toMatch(/line \d+/);
       }
+    });
+  });
+
+  describe('partial-failure shell-change ordering', () => {
+    it('fires shellChange before throwing when tools failed', async () => {
+      // Guards against regression: before this fix, a failed tool would throw
+      // BootstrapError before maybePromptForShellChange ran, so users hitting
+      // a transient failure lost the chsh fallback path.
+      writeBootstrapToml(SIMPLE_TOML);
+      vi.mocked(orchestrator.executeBootstrap).mockResolvedValueOnce({
+        outcomes: [{ id: 'fzf', status: 'failed', exitCode: 1 }],
+        counts: { installed: 0, updated: 0, failed: 1, skipped: 0 },
+      });
+      const shellChange = vi.fn().mockResolvedValue(undefined);
+      await expect(
+        runBootstrap({ tools: 'fzf', yes: true }, { shellChange })
+      ).rejects.toBeInstanceOf(BootstrapError);
+      expect(shellChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires shellChange on full success (no throw)', async () => {
+      writeBootstrapToml(SIMPLE_TOML);
+      vi.mocked(orchestrator.executeBootstrap).mockResolvedValueOnce({
+        outcomes: [{ id: 'fzf', status: 'installed', exitCode: 0 }],
+        counts: { installed: 1, updated: 0, failed: 0, skipped: 0 },
+      });
+      const shellChange = vi.fn().mockResolvedValue(undefined);
+      const result = await runBootstrap({ tools: 'fzf', yes: true }, { shellChange });
+      expect(result.counts?.failed).toBe(0);
+      expect(shellChange).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -75,8 +75,13 @@ export interface RunBootstrapResult {
  * out of the test surface so integration tests can pass a plain options
  * object without argv plumbing.
  */
+export interface RunBootstrapDeps {
+  shellChange?: () => Promise<void>;
+}
+
 export const runBootstrap = async (
-  options: BootstrapOptions = {}
+  options: BootstrapOptions = {},
+  deps: RunBootstrapDeps = {}
 ): Promise<RunBootstrapResult> => {
   const tuckDir = getTuckDir();
   const explicitFile = options.file !== undefined;
@@ -132,6 +137,14 @@ export const runBootstrap = async (
   });
 
   printSummary(outcomes.outcomes, outcomes.counts);
+
+  // Fire the chsh prompt before the failure throw so a partial-failure run
+  // doesn't silently rob the user of the login-shell fallback. The prompt
+  // is defensive (no-ops on win32 / non-TTY / already-zsh / no-zsh-installed),
+  // so calling it regardless of outcomes is safe.
+  const shellChange = deps.shellChange ?? maybePromptForShellChange;
+  await shellChange();
+
   if (outcomes.counts.failed > 0) {
     // Non-zero exit so CI pipelines see the failure without having to
     // parse the summary. Leave process.exit to the outer error handler.
@@ -140,7 +153,6 @@ export const runBootstrap = async (
       ['Review the output above', 'Re-run `tuck bootstrap` after fixing the underlying issue']
     );
   }
-  await maybePromptForShellChange();
   prompts.outro('Bootstrap complete');
   return { plan, counts: outcomes.counts, dryRun: false };
 };
