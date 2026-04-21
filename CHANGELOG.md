@@ -1,3 +1,10 @@
+## [2.8.1](https://github.com/stanrc85/tuck/compare/v2.8.0...v2.8.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **ui:** release @clack/prompts spinner process listeners on stop ([9b56549](https://github.com/stanrc85/tuck/commit/9b56549bccbc2f692fd7b5bb399e5bef187da15f))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.8.0](https://github.com/stanrc85/tuck/compare/v2.7.2...v2.8.0) (2026-04-21)
