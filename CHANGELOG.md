@@ -1,3 +1,10 @@
+# [2.18.0](https://github.com/stanrc85/tuck/compare/v2.17.3...v2.18.0) (2026-04-22)
+
+
+### Features
+
+* **bootstrap:** add updateVia:system to defer apt-managed tools from tuck update ([3e8b560](https://github.com/stanrc85/tuck/commit/3e8b5609be8fb650913b0fcb7ab7591fca4a2d08))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.17.3](https://github.com/stanrc85/tuck/compare/v2.17.2...v2.17.3) (2026-04-22)
