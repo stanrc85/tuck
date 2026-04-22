@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderMarkdown } from '../../src/lib/cheatsheet/renderer.js';
+import { renderMarkdown, renderJson } from '../../src/lib/cheatsheet/renderer.js';
 import type { CheatsheetResult } from '../../src/lib/cheatsheet/types.js';
 
 const FIXED_DATE = new Date('2026-04-21T12:00:00.000Z');
@@ -96,5 +96,95 @@ describe('renderMarkdown', () => {
     };
     const md = renderMarkdown(result, baseOpts);
     expect(md).toMatch(/2 entries across 2 sources/);
+  });
+});
+
+describe('renderJson', () => {
+  it('emits a flat entries array with parserId attached to each row', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 3,
+      skippedParsers: ['yazi'],
+      sections: [
+        {
+          parserId: 'tmux',
+          label: 'tmux',
+          entries: [
+            { keybind: 'Prefix + r', action: 'reload', sourceFile: '~/.tmux.conf', sourceLine: 3 },
+          ],
+        },
+        {
+          parserId: 'zsh',
+          label: 'zsh',
+          entries: [
+            { keybind: '^R', action: 'history-search', sourceFile: '~/.zshrc', sourceLine: 12 },
+            { keybind: 'll', action: 'ls -la', sourceFile: '~/.config/zsh/aliases.zsh', sourceLine: 4, category: 'alias', section: 'Listing' },
+          ],
+        },
+      ],
+    };
+    const out = renderJson(result, baseOpts);
+    const parsed = JSON.parse(out);
+
+    expect(parsed.generated).toBe('2026-04-21T12:00:00.000Z');
+    expect(parsed.tuckVersion).toBe('2.6.0');
+    expect(parsed.totalEntries).toBe(3);
+    expect(parsed.skippedParsers).toEqual(['yazi']);
+
+    expect(parsed.entries).toHaveLength(3);
+    expect(parsed.entries[0]).toEqual({
+      parserId: 'tmux',
+      keybind: 'Prefix + r',
+      action: 'reload',
+      sourceFile: '~/.tmux.conf',
+      sourceLine: 3,
+      category: null,
+      section: null,
+    });
+    expect(parsed.entries[2]).toEqual({
+      parserId: 'zsh',
+      keybind: 'll',
+      action: 'ls -la',
+      sourceFile: '~/.config/zsh/aliases.zsh',
+      sourceLine: 4,
+      category: 'alias',
+      section: 'Listing',
+    });
+
+    expect(parsed.sections).toEqual([
+      { parserId: 'tmux', label: 'tmux', entryCount: 1 },
+      { parserId: 'zsh', label: 'zsh', entryCount: 2 },
+    ]);
+  });
+
+  it('emits explicit null for missing category/section so jq select(.x == null) works', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 1,
+      skippedParsers: [],
+      sections: [
+        {
+          parserId: 'zsh',
+          label: 'zsh',
+          entries: [{ keybind: '^A', action: 'beginning-of-line', sourceFile: '~/.zshrc', sourceLine: 7 }],
+        },
+      ],
+    };
+    const out = renderJson(result, baseOpts);
+    expect(out).toContain('"category": null');
+    expect(out).toContain('"section": null');
+  });
+
+  it('emits a valid empty-state payload when totalEntries is 0', () => {
+    const result: CheatsheetResult = { sections: [], totalEntries: 0, skippedParsers: ['tmux', 'zsh'] };
+    const parsed = JSON.parse(renderJson(result, baseOpts));
+
+    expect(parsed.totalEntries).toBe(0);
+    expect(parsed.entries).toEqual([]);
+    expect(parsed.sections).toEqual([]);
+    expect(parsed.skippedParsers).toEqual(['tmux', 'zsh']);
+  });
+
+  it('ends with a trailing newline', () => {
+    const result: CheatsheetResult = { sections: [], totalEntries: 0, skippedParsers: [] };
+    expect(renderJson(result, baseOpts).endsWith('\n')).toBe(true);
   });
 });

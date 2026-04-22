@@ -157,4 +157,32 @@ describe('tuck cheatsheet command', () => {
     const content = readFileSync(result.path!, 'utf-8');
     expect(content).toContain('No keybinds detected');
   });
+
+  it('writes cheatsheet.json when --format json is set', async () => {
+    seedWithTmuxAndZsh();
+
+    const result = await runCheatsheet({ format: 'json' });
+
+    expect(result.path).toBe(join(TEST_TUCK_DIR, 'cheatsheet.json'));
+
+    const content = readFileSync(result.path!, 'utf-8');
+    const parsed = JSON.parse(content);
+    expect(parsed.totalEntries).toBe(2);
+    expect(parsed.entries).toHaveLength(2);
+    const keybinds = parsed.entries.map((e: { keybind: string }) => e.keybind);
+    expect(keybinds).toContain('Prefix + r');
+    expect(keybinds).toContain('ll');
+    const aliasRow = parsed.entries.find((e: { keybind: string }) => e.keybind === 'll');
+    expect(aliasRow.category).toBe('alias');
+    const bindRow = parsed.entries.find((e: { keybind: string }) => e.keybind === 'Prefix + r');
+    expect(bindRow.category).toBeNull();
+  });
+
+  it('rejects unknown --format values with a known-list hint', async () => {
+    seedWithTmuxAndZsh();
+
+    await expect(runCheatsheet({ format: 'yaml' })).rejects.toThrow(
+      /Unknown --format value.*yaml.*Known formats/
+    );
+  });
 });

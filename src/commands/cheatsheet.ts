@@ -9,11 +9,15 @@ import {
   generateCheatsheet,
   getParserIds,
 } from '../lib/cheatsheet/index.js';
-import { renderMarkdown } from '../lib/cheatsheet/renderer.js';
+import { renderMarkdown, renderJson } from '../lib/cheatsheet/renderer.js';
 import { VERSION } from '../constants.js';
 
+export type CheatsheetFormat = 'md' | 'json';
+
+const KNOWN_FORMATS: readonly CheatsheetFormat[] = ['md', 'json'] as const;
+
 export interface CheatsheetOptions {
-  /** Output path. Defaults to `<tuckDir>/cheatsheet.md`. */
+  /** Output path. Defaults to `<tuckDir>/cheatsheet.<ext>` where ext matches --format. */
   output?: string;
   /** Print to stdout instead of writing a file. Takes precedence over --output. */
   stdout?: boolean;
@@ -21,6 +25,8 @@ export interface CheatsheetOptions {
   sources?: string;
   /** Host-group filter — repeatable. Falls back to `config.defaultGroups`. */
   group?: string[];
+  /** Output format. Defaults to `md`. */
+  format?: string;
 }
 
 const collectGroup = (value: string, previous: string[] = []): string[] => [
@@ -56,6 +62,13 @@ export const runCheatsheet = async (
     }
   }
 
+  const format: CheatsheetFormat = (options.format ?? 'md') as CheatsheetFormat;
+  if (!KNOWN_FORMATS.includes(format)) {
+    throw new Error(
+      `Unknown --format value: ${options.format}. Known formats: ${KNOWN_FORMATS.join(', ')}`
+    );
+  }
+
   const filterGroups = await resolveGroupFilter(tuckDir, {
     group: options.group ?? [],
   });
@@ -65,17 +78,20 @@ export const runCheatsheet = async (
     sources,
   });
 
-  const markdown = renderMarkdown(result, { tuckVersion: VERSION });
+  const rendered = format === 'json'
+    ? renderJson(result, { tuckVersion: VERSION })
+    : renderMarkdown(result, { tuckVersion: VERSION });
 
   if (options.stdout) {
-    process.stdout.write(markdown);
-    if (!markdown.endsWith('\n')) process.stdout.write('\n');
-    return { path: null, bytesWritten: Buffer.byteLength(markdown, 'utf-8'), totalEntries: result.totalEntries };
+    process.stdout.write(rendered);
+    if (!rendered.endsWith('\n')) process.stdout.write('\n');
+    return { path: null, bytesWritten: Buffer.byteLength(rendered, 'utf-8'), totalEntries: result.totalEntries };
   }
 
-  const outputPath = options.output ?? join(tuckDir, 'cheatsheet.md');
+  const defaultFilename = format === 'json' ? 'cheatsheet.json' : 'cheatsheet.md';
+  const outputPath = options.output ?? join(tuckDir, defaultFilename);
   await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, markdown, 'utf-8');
+  await writeFile(outputPath, rendered, 'utf-8');
 
   prompts.intro('tuck cheatsheet');
   if (result.totalEntries === 0) {
@@ -98,16 +114,16 @@ export const runCheatsheet = async (
 
   return {
     path: outputPath,
-    bytesWritten: Buffer.byteLength(markdown, 'utf-8'),
+    bytesWritten: Buffer.byteLength(rendered, 'utf-8'),
     totalEntries: result.totalEntries,
   };
 };
 
 export const cheatsheetCommand = new Command('cheatsheet')
-  .description('Generate a markdown cheatsheet of keybinds/aliases from tracked dotfiles')
+  .description('Generate a cheatsheet of keybinds/aliases from tracked dotfiles')
   .option(
     '-o, --output <path>',
-    'Write the cheatsheet to this path (default: <tuckDir>/cheatsheet.md)'
+    'Write the cheatsheet to this path (default: <tuckDir>/cheatsheet.<ext>)'
   )
   .option('--stdout', 'Print to stdout instead of writing a file')
   .option(
@@ -115,6 +131,11 @@ export const cheatsheetCommand = new Command('cheatsheet')
     'Comma-separated parser ids to include (default: every registered parser)'
   )
   .option('-g, --group <name>', 'Filter tracked files by host-group (repeatable)', collectGroup, [])
+  .option(
+    '--format <md|json>',
+    'Output format: md (GitHub-flavored markdown) or json (flat entries for jq/fzf)',
+    'md'
+  )
   .action(async (options: CheatsheetOptions) => {
     await runCheatsheet(options);
   });

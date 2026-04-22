@@ -120,3 +120,52 @@ export const renderMarkdown = (
 
   return lines.join('\n');
 };
+
+/**
+ * Render a cheatsheet result as JSON.
+ *
+ * Shape is optimized for jq/fzf consumers: entries are flattened across
+ * sections with `parserId` attached to each row, so piping through
+ * `jq -r '.entries[] | [.keybind, .action] | @tsv'` into fzf is a
+ * one-liner. Optional fields (`category`, `section`) are emitted as
+ * explicit `null` rather than omitted keys so `select(.category == null)`
+ * works without defensive `// empty` gymnastics.
+ *
+ * `sections` is retained as a summary array (parserId + label +
+ * entryCount) for consumers that want section-level counts without
+ * re-grouping the flat list.
+ */
+export const renderJson = (
+  result: CheatsheetResult,
+  options: RenderOptions = {}
+): string => {
+  const generated = (options.generatedAt ?? new Date()).toISOString();
+  const tuckVersion = options.tuckVersion ?? 'unknown';
+
+  const entries = result.sections.flatMap((section) =>
+    section.entries.map((entry) => ({
+      parserId: section.parserId,
+      keybind: entry.keybind,
+      action: entry.action,
+      sourceFile: entry.sourceFile,
+      sourceLine: entry.sourceLine,
+      category: entry.category ?? null,
+      section: entry.section ?? null,
+    }))
+  );
+
+  const payload = {
+    generated,
+    tuckVersion,
+    totalEntries: result.totalEntries,
+    entries,
+    sections: result.sections.map((s) => ({
+      parserId: s.parserId,
+      label: s.label,
+      entryCount: s.entries.length,
+    })),
+    skippedParsers: result.skippedParsers,
+  };
+
+  return `${JSON.stringify(payload, null, 2)}\n`;
+};
