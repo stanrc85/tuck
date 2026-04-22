@@ -56,9 +56,35 @@ export class FileAlreadyTrackedError extends TuckError {
 }
 
 export class GitError extends TuckError {
-  constructor(message: string, gitError?: string) {
+  constructor(message: string, gitError?: string, suggestions?: string[]) {
     const detail = gitError ? ` — ${gitError}` : '';
-    super(`Git operation failed: ${message}${detail}`, 'GIT_ERROR', gitError ? [gitError] : undefined);
+    super(
+      `Git operation failed: ${message}${detail}`,
+      'GIT_ERROR',
+      suggestions ?? (gitError ? [gitError] : undefined)
+    );
+  }
+}
+
+/**
+ * Thrown when a git remote operation fails because no credentials are
+ * available — e.g. HTTPS remote on a host with no credential helper or
+ * SSH remote without a reachable key. Distinct from a generic GitError
+ * so the CLI can render a credential-specific remediation path instead
+ * of the raw git stderr.
+ */
+export class GitAuthError extends TuckError {
+  constructor(gitError: string) {
+    super(
+      'Git authentication failed: no usable credentials for this remote',
+      'GIT_AUTH_FAILURE',
+      [
+        'For SSH remotes: ensure your key is in ssh-agent and the public half is authorized on the remote.',
+        'For HTTPS remotes: configure a credential helper (git-credential-manager, libsecret, osxkeychain) or cache a token.',
+        "Run 'tuck sync --no-push' to commit locally and push manually later.",
+        `Underlying error: ${gitError}`,
+      ]
+    );
   }
 }
 

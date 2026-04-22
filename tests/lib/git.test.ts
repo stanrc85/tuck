@@ -47,6 +47,7 @@ const createMockGit = () => ({
   revparse: vi.fn().mockResolvedValue('main'),
   branch: vi.fn().mockResolvedValue(undefined),
   raw: vi.fn().mockResolvedValue('main'),
+  env: vi.fn(function (this: unknown) { return this; }),
 });
 
 // Store the mock git instance
@@ -331,6 +332,92 @@ describe('git', () => {
     it('should fetch from specific remote', async () => {
       await expect(fetch(TEST_TUCK_DIR, 'origin')).resolves.not.toThrow();
     }, 30000); // Longer timeout for Windows CI
+  });
+
+  // ============================================================================
+  // Auth failure translation + GIT_TERMINAL_PROMPT hang prevention
+  // ============================================================================
+
+  describe('credential handling', () => {
+    it('disables git interactive terminal prompt on every git instance', async () => {
+      await push(TEST_TUCK_DIR);
+      expect(mockGitInstance.env).toHaveBeenCalledWith('GIT_TERMINAL_PROMPT', '0');
+    });
+
+    it('translates HTTPS-no-credentials push failure into GitAuthError', async () => {
+      mockGitInstance.push = vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+          )
+        );
+
+      await expect(push(TEST_TUCK_DIR)).rejects.toMatchObject({
+        code: 'GIT_AUTH_FAILURE',
+      });
+    });
+
+    it('translates SSH publickey failure into GitAuthError', async () => {
+      mockGitInstance.push = vi
+        .fn()
+        .mockRejectedValue(new Error('git@github.com: Permission denied (publickey).'));
+
+      await expect(push(TEST_TUCK_DIR)).rejects.toMatchObject({
+        code: 'GIT_AUTH_FAILURE',
+      });
+    });
+
+    it('translates pull auth failure into GitAuthError', async () => {
+      mockGitInstance.pull = vi
+        .fn()
+        .mockRejectedValue(new Error('fatal: Authentication failed for https://...'));
+
+      await expect(pull(TEST_TUCK_DIR)).rejects.toMatchObject({
+        code: 'GIT_AUTH_FAILURE',
+      });
+    });
+
+    it('translates fetch auth failure into GitAuthError', async () => {
+      mockGitInstance.fetch = vi
+        .fn()
+        .mockRejectedValue(new Error('fatal: Authentication failed'));
+
+      await expect(fetch(TEST_TUCK_DIR)).rejects.toMatchObject({
+        code: 'GIT_AUTH_FAILURE',
+      });
+    });
+
+    it('non-auth push failures still throw a generic GitError', async () => {
+      mockGitInstance.push = vi
+        .fn()
+        .mockRejectedValue(new Error('error: failed to push some refs (non-fast-forward)'));
+
+      await expect(push(TEST_TUCK_DIR)).rejects.toMatchObject({
+        code: 'GIT_ERROR',
+      });
+    });
+
+    it('GitAuthError carries credential-remediation suggestions', async () => {
+      mockGitInstance.push = vi
+        .fn()
+        .mockRejectedValue(new Error('fatal: could not read Username for ...'));
+
+      try {
+        await push(TEST_TUCK_DIR);
+        expect.fail('should have thrown');
+      } catch (err: unknown) {
+        const tuckErr = err as { suggestions?: string[]; code?: string };
+        expect(tuckErr.code).toBe('GIT_AUTH_FAILURE');
+        expect(tuckErr.suggestions).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(/SSH/),
+            expect.stringMatching(/credential helper|HTTPS/),
+            expect.stringMatching(/--no-push/),
+          ])
+        );
+      }
+    });
   });
 
   // ============================================================================

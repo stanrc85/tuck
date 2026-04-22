@@ -1,7 +1,23 @@
 import simpleGit, { SimpleGit, StatusResult } from 'simple-git';
-import { GitError } from '../errors.js';
+import { GitError, GitAuthError } from '../errors.js';
 import { pathExists } from './paths.js';
 import { join } from 'path';
+
+/**
+ * Detect the shape of a git stderr that indicates no usable credentials
+ * for the remote. Covers:
+ *   - HTTPS with no credential helper: "could not read Username for ..."
+ *     or the specific "terminal prompts disabled" message git emits
+ *     when GIT_TERMINAL_PROMPT=0 suppresses the interactive prompt.
+ *   - HTTPS with wrong credentials: "Authentication failed".
+ *   - SSH with no authorized key: "Permission denied (publickey)".
+ */
+const isAuthFailure = (errString: string): boolean =>
+  /could not read Username/i.test(errString) ||
+  /terminal prompts disabled/i.test(errString) ||
+  /Authentication failed/i.test(errString) ||
+  /Permission denied \(publickey\)/i.test(errString) ||
+  /fatal: Authentication/i.test(errString);
 
 export interface GitStatus {
   isRepo: boolean;
@@ -24,11 +40,19 @@ export interface GitCommit {
 }
 
 const createGit = (dir: string): SimpleGit => {
-  return simpleGit(dir, {
+  const git = simpleGit(dir, {
     binary: 'git',
     maxConcurrentProcesses: 6,
     trimmed: true,
   });
+  // Disable git's interactive credential prompt. Without this, a git subprocess
+  // with piped stdio (what simple-git uses) hangs forever waiting on stdin
+  // the parent never writes to — the failure mode observed on fresh hosts
+  // with no credential helper configured. With GIT_TERMINAL_PROMPT=0 git
+  // fails fast with "could not read Username", which we translate to a
+  // GitAuthError with remediation. Existing auth paths (SSH keys, cached
+  // tokens, credential helpers) are unaffected — they don't prompt.
+  return git.env('GIT_TERMINAL_PROMPT', '0');
 };
 
 export const isGitRepo = async (dir: string): Promise<boolean> => {
@@ -184,7 +208,11 @@ export const push = async (
       await git.push([...args, remote]);
     }
   } catch (error) {
-    throw new GitError('Failed to push', String(error));
+    const errString = String(error);
+    if (isAuthFailure(errString)) {
+      throw new GitAuthError(errString);
+    }
+    throw new GitError('Failed to push', errString);
   }
 };
 
@@ -218,7 +246,11 @@ export const pull = async (
       await git.pull(remote, undefined, args);
     }
   } catch (error) {
-    throw new GitError('Failed to pull', String(error));
+    const errString = String(error);
+    if (isAuthFailure(errString)) {
+      throw new GitAuthError(errString);
+    }
+    throw new GitError('Failed to pull', errString);
   }
 };
 
@@ -227,7 +259,11 @@ export const fetch = async (dir: string, remote = 'origin'): Promise<void> => {
     const git = createGit(dir);
     await git.fetch(remote);
   } catch (error) {
-    throw new GitError('Failed to fetch', String(error));
+    const errString = String(error);
+    if (isAuthFailure(errString)) {
+      throw new GitAuthError(errString);
+    }
+    throw new GitError('Failed to fetch', errString);
   }
 };
 
