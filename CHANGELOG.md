@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.17.0](https://github.com/stanrc85/tuck/compare/v2.16.1...v2.17.0) (2026-04-22)
 
 
 ### Features
 
 * **config:** add readOnlyGroups consumer-host guardrail ([68196e4](https://github.com/stanrc85/tuck/commit/68196e41833eb28866d7e01e8bec30585736fe8b))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.16.1](https://github.com/stanrc85/tuck/compare/v2.16.0...v2.16.1) (2026-04-22)
 
