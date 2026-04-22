@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.17.2](https://github.com/stanrc85/tuck/compare/v2.17.1...v2.17.2) (2026-04-22)
 
 
 ### Bug Fixes
 
 * **git:** set GIT_TERMINAL_PROMPT via process.env, not simple-git .env() ([b591371](https://github.com/stanrc85/tuck/commit/b59137173f891b8025848770e5c4a5d1f3d38441))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.17.1](https://github.com/stanrc85/tuck/compare/v2.17.0...v2.17.1) (2026-04-22)
 
