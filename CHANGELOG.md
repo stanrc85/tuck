@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.16.0](https://github.com/stanrc85/tuck/compare/v2.15.0...v2.16.0) (2026-04-22)
 
 
 ### Features
 
 * **cheatsheet:** add --format json output for jq/fzf consumers ([2c381b6](https://github.com/stanrc85/tuck/commit/2c381b66eabcf4cff2b4daac90bdcb3906301640))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.15.0](https://github.com/stanrc85/tuck/compare/v2.14.0...v2.15.0) (2026-04-21)
 
