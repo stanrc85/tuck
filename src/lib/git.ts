@@ -3,6 +3,22 @@ import { GitError, GitAuthError } from '../errors.js';
 import { pathExists } from './paths.js';
 import { join } from 'path';
 
+// Disable git's interactive credential prompt for all git subprocesses spawned
+// by tuck. Set on `process.env` so children inherit it naturally — calling
+// simple-git's `.env()` explicitly would trip its askpass sanitizer on hosts
+// where SSH_ASKPASS is set (common on GUI Linux: KDE/GNOME set it for
+// desktop SSH integration). Honors a user-supplied value if they set it
+// before launching tuck (e.g. `GIT_TERMINAL_PROMPT=1 tuck sync` to opt back
+// in to interactive auth).
+//
+// Without this, a git subprocess with piped stdio (what simple-git uses) can
+// hang forever on hosts with no credential helper — git waits on stdin that
+// tuck never writes to. With GIT_TERMINAL_PROMPT=0 git fails fast with
+// "could not read Username" which we translate to GitAuthError.
+if (process.env.GIT_TERMINAL_PROMPT === undefined) {
+  process.env.GIT_TERMINAL_PROMPT = '0';
+}
+
 /**
  * Detect the shape of a git stderr that indicates no usable credentials
  * for the remote. Covers:
@@ -40,25 +56,11 @@ export interface GitCommit {
 }
 
 const createGit = (dir: string): SimpleGit => {
-  const git = simpleGit(dir, {
+  return simpleGit(dir, {
     binary: 'git',
     maxConcurrentProcesses: 6,
     trimmed: true,
   });
-  // Disable git's interactive credential prompt. Without this, a git subprocess
-  // with piped stdio (what simple-git uses) hangs forever waiting on stdin
-  // the parent never writes to — the failure mode observed on fresh hosts
-  // with no credential helper configured. With GIT_TERMINAL_PROMPT=0 git
-  // fails fast with "could not read Username", which we translate to a
-  // GitAuthError with remediation.
-  //
-  // simple-git's `.env()` REPLACES the child env instead of adding to it, so
-  // we must spread `process.env` to preserve HOME / PATH / SSH_AUTH_SOCK /
-  // the credential-helper env vars git needs to authenticate and to read
-  // `~/.gitconfig` for `user.name` + `user.email`. The previous version
-  // passed only the single variable and broke commits on any host that relied
-  // on gitconfig-from-HOME (every normal workstation).
-  return git.env({ ...process.env, GIT_TERMINAL_PROMPT: '0' });
 };
 
 export const isGitRepo = async (dir: string): Promise<boolean> => {

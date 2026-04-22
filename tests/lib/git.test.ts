@@ -339,22 +339,17 @@ describe('git', () => {
   // ============================================================================
 
   describe('credential handling', () => {
-    it('disables git interactive terminal prompt on every git instance', async () => {
-      await push(TEST_TUCK_DIR);
-      expect(mockGitInstance.env).toHaveBeenCalledTimes(1);
-      const envArg = mockGitInstance.env.mock.calls[0][0] as Record<string, string | undefined>;
-      expect(envArg.GIT_TERMINAL_PROMPT).toBe('0');
+    it('sets GIT_TERMINAL_PROMPT=0 on process.env so children inherit it', async () => {
+      // Importing src/lib/git.js runs the module-load-time side effect that
+      // sets GIT_TERMINAL_PROMPT. We use inheritance instead of simple-git's
+      // .env() to avoid tripping its SSH_ASKPASS sanitizer on GUI Linux
+      // hosts (KDE/GNOME set SSH_ASKPASS for desktop SSH integration).
+      expect(process.env.GIT_TERMINAL_PROMPT).toBe('0');
     });
 
-    it('preserves process.env on the git subprocess (HOME, PATH, etc.)', async () => {
-      // Regression: simple-git's .env() REPLACES rather than appends. An earlier
-      // version passed only {GIT_TERMINAL_PROMPT:"0"}, which wiped HOME and
-      // caused "author identity unknown" on every commit.
+    it('does NOT call simple-git .env() (would trip ASKPASS sanitizer)', async () => {
       await push(TEST_TUCK_DIR);
-      const envArg = mockGitInstance.env.mock.calls[0][0] as Record<string, string | undefined>;
-      // Every realistic process.env has at least HOME or PATH — sample one.
-      const sampleInheritedKey = process.env.HOME ? 'HOME' : 'PATH';
-      expect(envArg[sampleInheritedKey]).toBe(process.env[sampleInheritedKey]);
+      expect(mockGitInstance.env).not.toHaveBeenCalled();
     });
 
     it('translates HTTPS-no-credentials push failure into GitAuthError', async () => {

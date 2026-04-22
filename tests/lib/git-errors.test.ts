@@ -212,8 +212,12 @@ describe('git-errors', () => {
   // ============================================================================
 
   describe('push errors', () => {
-    it('should throw GitError when push fails', async () => {
-      mockGitInstance = createErrorMockGit('authentication failed');
+    it('should throw GitError when push fails with a non-auth error', async () => {
+      // Auth-shape errors are intentionally routed to GitAuthError (see the
+      // credential-handling describe block in tests/lib/git.test.ts). This
+      // test exercises the generic fallback path, so use a clearly non-auth
+      // failure mode (network reset).
+      mockGitInstance = createErrorMockGit('connection reset by peer');
 
       await expect(push(TEST_TUCK_DIR)).rejects.toThrow('Failed to push');
     }, 30000); // Longer timeout for Windows CI
