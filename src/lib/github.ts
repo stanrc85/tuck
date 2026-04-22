@@ -351,7 +351,7 @@ export const createRepo = async (options: CreateRepoOptions): Promise<GitHubRepo
       fullName: `${user.login}/${result.name}`,
       url: result.url,
       sshUrl: result.sshUrl,
-      httpsUrl: result.url.replace('github.com', 'github.com').replace(/^https?:\/\//, 'https://'),
+      httpsUrl: result.url,
       isPrivate: options.isPrivate !== false,
     };
   } catch (error) {

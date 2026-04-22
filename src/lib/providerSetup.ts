@@ -467,13 +467,40 @@ async function setupCustomProvider(provider: GitProvider): Promise<ProviderSetup
 // ============================================================================
 
 /**
+ * Extract the hostname from a git URL, supporting both URL-parseable forms
+ * (`https://host/...`, `ssh://git@host/...`) and SCP-style SSH (`git@host:path`).
+ * Returns `null` if no hostname can be extracted — caller falls through to 'custom'.
+ *
+ * Hostname-based matching (vs substring) prevents attacker-controlled URLs like
+ * `https://evil.example/github.com/fake` or `https://github.com.evil.example/x`
+ * from being misrouted to the github provider.
+ */
+function extractHostname(url: string): string | null {
+  const scpMatch = /^[^\s@]+@([^:\s]+):/.exec(url);
+  if (scpMatch) return scpMatch[1].toLowerCase();
+
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function hostMatches(hostname: string, suffix: string): boolean {
+  return hostname === suffix || hostname.endsWith(`.${suffix}`);
+}
+
+/**
  * Validate and suggest provider based on existing remote URL
  */
 export function detectProviderFromUrl(url: string): ProviderMode {
-  if (url.includes('github.com')) {
+  const hostname = extractHostname(url);
+  if (!hostname) return 'custom';
+
+  if (hostMatches(hostname, 'github.com')) {
     return 'github';
   }
-  if (url.includes('gitlab.com') || url.includes('gitlab')) {
+  if (hostMatches(hostname, 'gitlab.com') || hostname.split('.').includes('gitlab')) {
     return 'gitlab';
   }
   return 'custom';
