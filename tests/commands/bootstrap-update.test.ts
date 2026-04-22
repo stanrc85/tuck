@@ -141,6 +141,32 @@ disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "p
       expect(process.exitCode).toBe(1);
     });
 
+    it('does not flag updateVia:system tools as pending even when hash-drifted', async () => {
+      // System-managed tools delegate updates to apt/brew/dnf — tuck
+      // reporting "pending" for bat/eza/fd would drive scripted users
+      // to run `tuck update` unnecessarily, defeating the whole point.
+      // Seed state with an old hash so the tool WOULD be drifted if it
+      // weren't marked system-managed.
+      const oldBat = makeTool('bat', { install: 'old-install-bat' });
+      await seedState('bat', oldBat);
+
+      writeBootstrapToml(`
+[[tool]]
+id = "bat"
+description = "cat with syntax highlighting"
+install = "new-install-bat"
+update = "sudo apt-get install -y --only-upgrade bat"
+updateVia = "system"
+
+[registry]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi", "zsh", "zimfw", "tealdeer"]
+`);
+
+      const result = await runBootstrapUpdate({ check: true });
+      expect(result.pending).toEqual([]);
+      expect(process.exitCode).toBe(0);
+    });
+
     it('does not count orphaned tools as pending (catalog definition missing)', async () => {
       // Seed an install for "ghost" — no matching catalog entry.
       const ghost = makeTool('ghost');
@@ -236,6 +262,58 @@ disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "p
       const ids = result.plan!.ordered.map((t) => t.id);
       expect(ids.indexOf('fzf')).toBeLessThan(ids.indexOf('pet'));
       expect(ids.sort()).toEqual(['fzf', 'pet']);
+    });
+
+    it('--all excludes updateVia:system tools (apt handles those)', async () => {
+      // Seed two tools — one system-managed (bat), one self-managed
+      // (pet). `--all` must plan only pet so we aren't hitting apt
+      // mirrors on every `tuck update --all`.
+      const bat = makeTool('bat', { install: 'install-bat' });
+      const pet = makeTool('pet', { install: 'install-pet' });
+      await seedState('bat', bat);
+      await seedState('pet', pet);
+
+      writeBootstrapToml(`
+[[tool]]
+id = "bat"
+description = "cat with syntax highlighting"
+install = "install-bat"
+update = "sudo apt-get install -y --only-upgrade bat"
+updateVia = "system"
+
+[[tool]]
+id = "pet"
+description = "snippet manager"
+install = "install-pet"
+
+[registry]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi", "zsh", "zimfw", "tealdeer"]
+`);
+
+      const result = await runBootstrapUpdate({ all: true, dryRun: true });
+      expect(result.plan?.ordered.map((t) => t.id)).toEqual(['pet']);
+    });
+
+    it('--tools explicitly names a system-managed tool and runs it (escape hatch)', async () => {
+      // The flag defers, it doesn't forbid — a user who names a
+      // system-managed tool by id opts into the update script.
+      const bat = makeTool('bat', { install: 'install-bat' });
+      await seedState('bat', bat);
+
+      writeBootstrapToml(`
+[[tool]]
+id = "bat"
+description = "cat with syntax highlighting"
+install = "install-bat"
+update = "sudo apt-get install -y --only-upgrade bat"
+updateVia = "system"
+
+[registry]
+disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi", "zsh", "zimfw", "tealdeer"]
+`);
+
+      const result = await runBootstrapUpdate({ tools: 'bat', dryRun: true });
+      expect(result.plan?.ordered.map((t) => t.id)).toEqual(['bat']);
     });
 
     it('throws NonInteractivePromptError when no --all/--tools in non-TTY mode', async () => {

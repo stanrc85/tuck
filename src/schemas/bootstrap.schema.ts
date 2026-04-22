@@ -56,6 +56,20 @@ export const toolDefinitionSchema = z.object({
    * means "re-run install", which is the common case for most tools.
    */
   update: z.string().optional(),
+  /**
+   * Who owns the update path.
+   *   - unset / `'self'` (default): `tuck bootstrap update` runs `update`
+   *     (or `install` as the fallback). The tool is offered in the
+   *     picker, included in `--all`, and flagged by `--check` when
+   *     drifted.
+   *   - `'system'`: updates are delegated to the host package manager
+   *     (apt/dnf/brew/…). `tuck bootstrap update` skips the tool under
+   *     the picker / `--all` / `--check` — you run `apt upgrade` (or
+   *     equivalent) instead. `--tools <id>` still forces the tool's
+   *     `update` script to run, as an explicit escape hatch.
+   * Install is unaffected either way — tuck still bootstraps the tool.
+   */
+  updateVia: z.enum(['self', 'system']).optional(),
   /** Signals used by the picker's auto-detection. */
   detect: toolDetectSchema,
   /**

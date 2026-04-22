@@ -13,6 +13,7 @@ export const fzf: ToolDefinition = {
   check: 'command -v fzf >/dev/null 2>&1',
   install: 'sudo apt-get install -y fzf',
   update: 'sudo apt-get install -y --only-upgrade fzf',
+  updateVia: 'system',
   detect: {
     paths: ['~/.fzf.zsh', '~/.fzf.bash'],
     rcReferences: ['fzf'],

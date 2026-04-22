@@ -18,6 +18,7 @@ export const ripgrep: ToolDefinition = {
   check: 'command -v rg >/dev/null 2>&1',
   install: 'sudo apt-get install -y ripgrep',
   update: 'sudo apt-get install -y --only-upgrade ripgrep',
+  updateVia: 'system',
   detect: {
     paths: [],
     rcReferences: ['rg', 'ripgrep'],

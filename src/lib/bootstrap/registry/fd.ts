@@ -40,6 +40,7 @@ if ! command -v fd >/dev/null 2>&1 && command -v fdfind >/dev/null 2>&1; then
     ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
   fi
 fi`,
+  updateVia: 'system',
   detect: {
     paths: [],
     rcReferences: ['fd'],

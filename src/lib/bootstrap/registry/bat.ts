@@ -53,6 +53,11 @@ BAT_BIN="$(command -v bat 2>/dev/null || command -v batcat 2>/dev/null || true)"
 if [ -n "$BAT_BIN" ]; then
   "$BAT_BIN" cache --build >/dev/null 2>&1 || true
 fi`,
+  // apt owns the update path — `tuck update` skips by default so users
+  // aren't hitting the apt mirror on every run for something `apt upgrade`
+  // already handles. `tuck update --tools bat` still runs the script above
+  // as an explicit escape hatch.
+  updateVia: 'system',
   detect: {
     paths: ['~/.config/bat'],
     rcReferences: ['bat'],

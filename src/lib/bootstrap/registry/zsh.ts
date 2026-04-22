@@ -19,6 +19,7 @@ export const zsh: ToolDefinition = {
   check: 'command -v zsh >/dev/null 2>&1',
   install: 'sudo apt-get install -y zsh',
   update: 'sudo apt-get install -y --only-upgrade zsh',
+  updateVia: 'system',
   detect: {
     paths: [
       '~/.zshrc',

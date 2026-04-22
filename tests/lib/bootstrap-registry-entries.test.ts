@@ -60,6 +60,41 @@ describe('BUILT_IN_TOOLS catalog', () => {
     const ids = BUILT_IN_TOOLS.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it('apt-managed tools declare updateVia: system', () => {
+    // Any built-in whose `update` just runs `apt-get install --only-upgrade`
+    // should opt into updateVia:'system' so `tuck update` defers to apt
+    // and doesn't hit the apt mirror on every run. Lock in the set of
+    // tools currently in that bucket — adding a new apt-update built-in
+    // without the flag (or flipping one off) should fail this test so the
+    // tradeoff is a conscious one.
+    const expectedSystemManaged = ['bat', 'eza', 'fd', 'fzf', 'ripgrep', 'zsh'];
+    const actualSystemManaged = BUILT_IN_TOOLS.filter(
+      (t) => t.updateVia === 'system'
+    )
+      .map((t) => t.id)
+      .sort();
+    expect(actualSystemManaged).toEqual([...expectedSystemManaged].sort());
+
+    // Belt-and-braces: each flagged tool's `update` really is an apt call,
+    // so users who escape-hatch via `--tools <id>` get the apt path they
+    // expect.
+    for (const id of expectedSystemManaged) {
+      const tool = byId[id]!;
+      expect(tool.update ?? tool.install).toContain('apt-get install');
+    }
+  });
+
+  it('non-apt built-ins leave updateVia unset (default self)', () => {
+    // Tools whose update path isn't apt shouldn't accidentally opt into
+    // system-managed skipping. Use the schema default (unset) so they
+    // keep showing up in the picker / --all / --check.
+    const nonApt = ['neovim', 'neovim-plugins', 'pet', 'yazi', 'tealdeer', 'zimfw'];
+    for (const id of nonApt) {
+      const tool = byId[id]!;
+      expect(tool.updateVia).toBeUndefined();
+    }
+  });
 });
 
 describe('registry requires graph', () => {

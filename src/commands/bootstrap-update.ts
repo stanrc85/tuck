@@ -113,7 +113,11 @@ export const runBootstrapUpdate = async (
 
   if (options.check) {
     reportPending(pending);
-    const anyPending = pending.some((p) => p.hasPendingUpdate);
+    // System-managed tools are not tuck's problem — exclude them from
+    // both the "pending" exit-code signal and the returned payload so
+    // `tuck bootstrap update --check` doesn't flag apt-owned drift.
+    const actionable = pending.filter((p) => !p.systemManaged);
+    const anyPending = actionable.some((p) => p.hasPendingUpdate);
     // Non-zero exit so `tuck bootstrap update --check` is scriptable the
     // same way `tuck self-update --check` is.
     process.exitCode = anyPending ? 1 : 0;
@@ -122,7 +126,7 @@ export const runBootstrapUpdate = async (
       plan: null,
       counts: null,
       dryRun: false,
-      pending: pending.filter((p) => p.hasPendingUpdate).map(stripInternal),
+      pending: actionable.filter((p) => p.hasPendingUpdate).map(stripInternal),
     };
   }
 
@@ -228,10 +232,25 @@ const determineUpdateSelection = async (
   pending: EnrichedPending[],
   installedIds: string[]
 ): Promise<string[]> => {
+  const systemManagedIds = new Set(
+    pending.filter((p) => p.systemManaged).map((p) => p.id)
+  );
   if (options.all) {
-    return installedIds;
+    // --all obeys the updateVia: 'system' filter — users running
+    // `tuck update --all` don't want apt-owned tools included. Surfacing
+    // the deferred set lets them see WHY bat/eza/fd/… aren't in the plan.
+    const filtered = installedIds.filter((id) => !systemManagedIds.has(id));
+    const deferred = installedIds.filter((id) => systemManagedIds.has(id));
+    if (deferred.length > 0) {
+      prompts.log.info(
+        `Deferred to system package manager: ${deferred.join(', ')}`
+      );
+    }
+    return filtered;
   }
   if (options.tools) {
+    // Explicit --tools is the escape hatch — if the user names a
+    // system-managed tool by id, honour it without filtering.
     return parseIdList(options.tools);
   }
   return runUpdatePicker(pending);
@@ -248,8 +267,16 @@ const runUpdatePicker = async (pending: EnrichedPending[]): Promise<string[]> =>
 
   // Surface pending-update tools first so the default multiselect focus is
   // useful. Orphaned entries aren't offered — we can't update a tool whose
-  // definition isn't in the catalog anymore.
-  const selectable = pending.filter((p) => !p.orphaned);
+  // definition isn't in the catalog anymore. System-managed tools are also
+  // excluded (apt/brew/dnf owns their update path); if any were filtered
+  // out we log them so the user isn't confused about missing entries.
+  const deferred = pending.filter((p) => p.systemManaged && !p.orphaned);
+  if (deferred.length > 0) {
+    prompts.log.info(
+      `Deferred to system package manager: ${deferred.map((p) => p.id).join(', ')}`
+    );
+  }
+  const selectable = pending.filter((p) => !p.orphaned && !p.systemManaged);
   if (selectable.length === 0) {
     prompts.log.warning('No installed tools have definitions in the current catalog.');
     return [];
@@ -280,11 +307,19 @@ const runUpdatePicker = async (pending: EnrichedPending[]): Promise<string[]> =>
 interface EnrichedPending extends PendingUpdate {
   /** Convenience: `versionBump || hashDrift`. Not persisted. */
   hasPendingUpdate: boolean;
+  /**
+   * Tool's catalog definition sets `updateVia: 'system'` — apt/dnf/brew
+   * owns the update path and `tuck update` skips it under the default
+   * flow (`--all`, picker, `--check`). `--tools <id>` still runs the
+   * tool's own `update` script as an explicit escape hatch.
+   */
+  systemManaged: boolean;
 }
 
 const stripInternal = (p: EnrichedPending): PendingUpdate => {
-  const { hasPendingUpdate: _unused, ...rest } = p;
-  void _unused;
+  const { hasPendingUpdate: _a, systemManaged: _b, ...rest } = p;
+  void _a;
+  void _b;
   return rest;
 };
 
@@ -304,6 +339,7 @@ const computePendingUpdates = (
         hashDrift: false,
         orphaned: true,
         hasPendingUpdate: false,
+        systemManaged: false,
       });
       continue;
     }
@@ -317,6 +353,7 @@ const computePendingUpdates = (
       hashDrift,
       orphaned: false,
       hasPendingUpdate: versionBump || hashDrift,
+      systemManaged: tool.updateVia === 'system',
     });
   }
   return out;
@@ -358,8 +395,13 @@ const formatPendingHint = (p: EnrichedPending): string => {
 };
 
 const reportPending = (pending: EnrichedPending[]): void => {
-  const pendingOnly = pending.filter((p) => p.hasPendingUpdate);
-  const orphaned = pending.filter((p) => p.orphaned);
+  // System-managed tools are excluded from the drift signal — apt/brew/dnf
+  // owns their update path, so tuck reporting "pending" for bat/eza/fd is
+  // noise that would drive scripted users to run `tuck update` needlessly.
+  const actionable = pending.filter((p) => !p.systemManaged);
+  const pendingOnly = actionable.filter((p) => p.hasPendingUpdate);
+  const orphaned = actionable.filter((p) => p.orphaned);
+  const deferred = pending.filter((p) => p.systemManaged);
 
   if (pendingOnly.length === 0) {
     prompts.log.success('All installed tools are up to date.');
@@ -371,6 +413,12 @@ const reportPending = (pending: EnrichedPending[]): void => {
         : 'definition changed';
       prompts.log.message(`  • ${p.id} (${tag})`);
     }
+  }
+
+  if (deferred.length > 0) {
+    prompts.log.info(
+      `Deferred to system package manager: ${deferred.map((p) => p.id).join(', ')}`
+    );
   }
 
   if (orphaned.length > 0) {

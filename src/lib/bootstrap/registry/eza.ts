@@ -13,6 +13,7 @@ export const eza: ToolDefinition = {
   check: 'command -v eza >/dev/null 2>&1',
   install: 'sudo apt-get install -y eza',
   update: 'sudo apt-get install -y --only-upgrade eza',
+  updateVia: 'system',
   detect: {
     // No config directory; detection is rc-based (alias) or binary presence.
     paths: [],
