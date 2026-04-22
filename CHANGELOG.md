@@ -1,3 +1,10 @@
+## [2.18.1](https://github.com/stanrc85/tuck/compare/v2.18.0...v2.18.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **security:** address CodeQL findings in CI permissions and URL parsing ([46f1b86](https://github.com/stanrc85/tuck/commit/46f1b86117b001d549176bd6a488ef8a0b65c370)), closes [#1-4](https://github.com/stanrc85/tuck/issues/1-4) [#18](https://github.com/stanrc85/tuck/issues/18) [#6](https://github.com/stanrc85/tuck/issues/6) [#7-8](https://github.com/stanrc85/tuck/issues/7-8)
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.18.0](https://github.com/stanrc85/tuck/compare/v2.17.3...v2.18.0) (2026-04-22)
