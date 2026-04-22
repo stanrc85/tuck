@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.18.2](https://github.com/stanrc85/tuck/compare/v2.18.1...v2.18.2) (2026-04-22)
 
 
 ### Bug Fixes
 
 * **security:** close remaining CodeQL findings in config + gitlab provider ([9ded18e](https://github.com/stanrc85/tuck/commit/9ded18e15a5ee6cbd940c461a519aef10f34f1ea)), closes [#13](https://github.com/stanrc85/tuck/issues/13) [#6](https://github.com/stanrc85/tuck/issues/6)
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.18.1](https://github.com/stanrc85/tuck/compare/v2.18.0...v2.18.1) (2026-04-22)
 
