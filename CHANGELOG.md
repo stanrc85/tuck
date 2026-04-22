@@ -1,3 +1,10 @@
+## [2.16.1](https://github.com/stanrc85/tuck/compare/v2.16.0...v2.16.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **git:** prevent sync hang on hosts without git credentials ([dec3cce](https://github.com/stanrc85/tuck/commit/dec3cce6fa8323204777162b763ae8d4aedd1d48))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.16.0](https://github.com/stanrc85/tuck/compare/v2.15.0...v2.16.0) (2026-04-22)
