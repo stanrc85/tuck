@@ -50,9 +50,15 @@ const createGit = (dir: string): SimpleGit => {
   // the parent never writes to — the failure mode observed on fresh hosts
   // with no credential helper configured. With GIT_TERMINAL_PROMPT=0 git
   // fails fast with "could not read Username", which we translate to a
-  // GitAuthError with remediation. Existing auth paths (SSH keys, cached
-  // tokens, credential helpers) are unaffected — they don't prompt.
-  return git.env('GIT_TERMINAL_PROMPT', '0');
+  // GitAuthError with remediation.
+  //
+  // simple-git's `.env()` REPLACES the child env instead of adding to it, so
+  // we must spread `process.env` to preserve HOME / PATH / SSH_AUTH_SOCK /
+  // the credential-helper env vars git needs to authenticate and to read
+  // `~/.gitconfig` for `user.name` + `user.email`. The previous version
+  // passed only the single variable and broke commits on any host that relied
+  // on gitconfig-from-HOME (every normal workstation).
+  return git.env({ ...process.env, GIT_TERMINAL_PROMPT: '0' });
 };
 
 export const isGitRepo = async (dir: string): Promise<boolean> => {

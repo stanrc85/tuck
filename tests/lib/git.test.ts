@@ -341,7 +341,20 @@ describe('git', () => {
   describe('credential handling', () => {
     it('disables git interactive terminal prompt on every git instance', async () => {
       await push(TEST_TUCK_DIR);
-      expect(mockGitInstance.env).toHaveBeenCalledWith('GIT_TERMINAL_PROMPT', '0');
+      expect(mockGitInstance.env).toHaveBeenCalledTimes(1);
+      const envArg = mockGitInstance.env.mock.calls[0][0] as Record<string, string | undefined>;
+      expect(envArg.GIT_TERMINAL_PROMPT).toBe('0');
+    });
+
+    it('preserves process.env on the git subprocess (HOME, PATH, etc.)', async () => {
+      // Regression: simple-git's .env() REPLACES rather than appends. An earlier
+      // version passed only {GIT_TERMINAL_PROMPT:"0"}, which wiped HOME and
+      // caused "author identity unknown" on every commit.
+      await push(TEST_TUCK_DIR);
+      const envArg = mockGitInstance.env.mock.calls[0][0] as Record<string, string | undefined>;
+      // Every realistic process.env has at least HOME or PATH — sample one.
+      const sampleInheritedKey = process.env.HOME ? 'HOME' : 'PATH';
+      expect(envArg[sampleInheritedKey]).toBe(process.env[sampleInheritedKey]);
     });
 
     it('translates HTTPS-no-credentials push failure into GitAuthError', async () => {
