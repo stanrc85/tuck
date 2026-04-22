@@ -1,3 +1,10 @@
+## [2.17.3](https://github.com/stanrc85/tuck/compare/v2.17.2...v2.17.3) (2026-04-22)
+
+
+### Bug Fixes
+
+* **bootstrap:** resolve ZIM_HOME in zimfw update script for XDG layouts ([7a14254](https://github.com/stanrc85/tuck/commit/7a14254e49b052b0af1677a943f7d799c2445747))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.17.2](https://github.com/stanrc85/tuck/compare/v2.17.1...v2.17.2) (2026-04-22)
