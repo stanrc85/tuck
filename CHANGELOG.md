@@ -1,3 +1,10 @@
+## [2.17.1](https://github.com/stanrc85/tuck/compare/v2.17.0...v2.17.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **git:** preserve process.env when setting GIT_TERMINAL_PROMPT ([03f08ad](https://github.com/stanrc85/tuck/commit/03f08ad1e2cf5e84c5e69b1bcddd3ed24fe10435))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.17.0](https://github.com/stanrc85/tuck/compare/v2.16.1...v2.17.0) (2026-04-22)
