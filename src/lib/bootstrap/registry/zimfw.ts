@@ -52,7 +52,12 @@ fi
 # login-shell change against a real TTY where the password prompt works.
 ZSH_PATH="$(command -v zsh)"
 curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | SHELL="$ZSH_PATH" zsh`,
-  update: 'zsh -c "source \\"$HOME/.zim/init.zsh\\" && zimfw upgrade && zimfw update"',
+  // Update resolves ZIM_HOME the same way `check` does — through a
+  // `zsh -c` subshell so ~/.zshenv sets ZDOTDIR, then picking the first
+  // defined of ZIM_HOME / ${ZDOTDIR}/.zim / $HOME/.zim. Without this the
+  // script hardcoded $HOME/.zim/init.zsh and blew up for XDG users whose
+  // framework lives at ~/.config/zsh/.zim.
+  update: `zsh -c 'source "\${ZIM_HOME:-\${ZDOTDIR:-$HOME}/.zim}/init.zsh" && zimfw upgrade && zimfw update'`,
   detect: {
     paths: ['~/.zim', '~/.zimrc', '~/.config/zsh/.zimrc'],
     rcReferences: ['zimfw'],

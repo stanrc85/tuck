@@ -107,6 +107,21 @@ describe('registry requires graph', () => {
     expect(zimfw.check).toContain('command -v zsh');
   });
 
+  it('zimfw update resolves ZIM_HOME the same way check does (no hardcoded $HOME/.zim)', () => {
+    // Regression for XDG users: the update script used to hardcode
+    // `source "$HOME/.zim/init.zsh"` which blew up on hosts where ZimFW
+    // lives at ${ZDOTDIR}/.zim (e.g. ~/.config/zsh/.zim). Must go through
+    // a `zsh -c` subshell so ~/.zshenv sets ZDOTDIR, and pick the first
+    // defined of ZIM_HOME / ${ZDOTDIR}/.zim / $HOME/.zim — identical
+    // resolution to the `check` script.
+    const zimfw = byId.zimfw!;
+    expect(zimfw.update).toBeDefined();
+    expect(zimfw.update).toContain('zsh -c');
+    expect(zimfw.update).toContain('ZIM_HOME:-${ZDOTDIR:-$HOME}/.zim');
+    expect(zimfw.update).toContain('/init.zsh');
+    expect(zimfw.update).not.toMatch(/"\$HOME\/\.zim\/init\.zsh"/);
+  });
+
   it('pet check is a plain presence test — version drift is tracked via state.json', () => {
     // An earlier version grep'd `pet --version` for a version-literal
     // match; the output format isn't stable across pet releases (newer
