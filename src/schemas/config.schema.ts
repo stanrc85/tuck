@@ -61,6 +61,21 @@ export const tuckConfigSchema = z.object({
    */
   defaultGroups: z.array(z.string()).optional().default([]),
 
+  /**
+   * Host-groups that should be treated as read-only (consumer) roles.
+   * Any host whose `defaultGroups` intersects this list refuses write
+   * commands (`sync`, `push`, `add`, `remove`) with a HostReadOnlyError.
+   *
+   * Lives in the shared `.tuckrc.json` so every clone agrees on which
+   * groups are consumer-only. Typical setup: producer host uses group
+   * `kubuntu`; consumer kali VMs use group `kali`; set
+   * `readOnlyGroups: ["kali"]` in shared config. Hosts with no
+   * `defaultGroups` assigned aren't gated (role is ambiguous, no reason
+   * to block). Override per invocation with `--force-write` or
+   * `TUCK_FORCE_WRITE=true`.
+   */
+  readOnlyGroups: z.array(z.string()).optional().default([]),
+
   hooks: z
     .object({
       preSync: z.string().optional(),
@@ -171,6 +186,7 @@ export const defaultConfig: TuckConfigOutput = {
   categories: {},
   ignore: [],
   defaultGroups: [],
+  readOnlyGroups: [],
   hooks: {},
   encryption: {
     enabled: false,

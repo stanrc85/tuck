@@ -67,6 +67,48 @@ export class GitError extends TuckError {
 }
 
 /**
+ * Thrown by write-side commands (`sync`, `push`, `add`, `remove`) when
+ * the current host is assigned to a group listed in `readOnlyGroups`.
+ * The consumer-host guardrail added in TASK-CONSUMER-HOST-MODE.
+ */
+export class HostReadOnlyError extends TuckError {
+  constructor(matchedGroups: string[], readOnlyGroups: string[]) {
+    const groupList = matchedGroups.join(', ');
+    super(
+      `This host is configured as read-only (matched group${matchedGroups.length === 1 ? '' : 's'}: ${groupList})`,
+      'HOST_READ_ONLY',
+      [
+        "Use 'tuck update' to pull + restore without writing.",
+        "Override this invocation with '--force-write' (or TUCK_FORCE_WRITE=true).",
+        `readOnlyGroups configured: ${readOnlyGroups.join(', ')}`,
+        "Lift the guardrail globally by editing readOnlyGroups in .tuckrc.json.",
+      ]
+    );
+  }
+}
+
+/**
+ * Thrown by write-side commands when `readOnlyGroups` is configured but
+ * the current host has no `defaultGroups` set. Conservative default:
+ * an unassigned host might be a future consumer that hasn't declared
+ * its role yet, and blocking writes until the role is declared keeps
+ * muscle-memory mistakes from creating cross-host commit noise.
+ */
+export class HostRoleUnassignedError extends TuckError {
+  constructor(readOnlyGroups: string[]) {
+    super(
+      'This host has no group assignment, but readOnlyGroups is configured',
+      'HOST_ROLE_UNASSIGNED',
+      [
+        "Declare this host's role: tuck config set defaultGroups <group>",
+        `readOnlyGroups configured: ${readOnlyGroups.join(', ')}`,
+        "Override this invocation with '--force-write' (or TUCK_FORCE_WRITE=true).",
+      ]
+    );
+  }
+}
+
+/**
  * Thrown when a git remote operation fails because no credentials are
  * available — e.g. HTTPS remote on a host with no credential helper or
  * SSH remote without a reachable key. Distinct from a generic GitError

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { prompts, logger } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
 import { loadManifest, assertMigrated } from '../lib/manifest.js';
+import { assertHostNotReadOnly } from '../lib/groupFilter.js';
 import { trackFilesWithProgress, type FileToTrack } from '../lib/fileTracking.js';
 import { NotInitializedError } from '../errors.js';
 import { CATEGORIES } from '../constants.js';
@@ -174,6 +175,7 @@ const runAdd = async (paths: string[], options: AddOptions): Promise<void> => {
     throw new NotInitializedError();
   }
   assertMigrated(manifest);
+  await assertHostNotReadOnly(tuckDir, { forceWrite: options.forceWrite });
 
   if (paths.length === 0) {
     await runInteractiveAdd(tuckDir, options);
@@ -229,6 +231,7 @@ export const addCommand = new Command('add')
   )
   .option('--symlink', 'Copy into tuck repo, then replace source path with a symlink')
   .option('-f, --force', 'Skip secret scanning (not recommended)')
+  .option('--force-write', 'Override the readOnlyGroups consumer-host guardrail')
   .action(async (paths: string[], options: AddOptions) => {
     await runAdd(paths, options);
   });

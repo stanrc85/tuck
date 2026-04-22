@@ -19,6 +19,7 @@ import {
 import { deleteFileOrDir } from '../lib/files.js';
 import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { stageAll, commit, push, hasRemote } from '../lib/git.js';
+import { assertHostNotReadOnly } from '../lib/groupFilter.js';
 import { NotInitializedError, FileNotTrackedError, GitError } from '../errors.js';
 import type { RemoveOptions } from '../types.js';
 
@@ -264,6 +265,7 @@ export const runRemove = async (paths: string[], options: RemoveOptions): Promis
     throw new NotInitializedError();
   }
   assertMigrated(manifest);
+  await assertHostNotReadOnly(tuckDir, { forceWrite: options.forceWrite });
 
   if (paths.length === 0) {
     await runInteractiveRemove(tuckDir);
@@ -301,6 +303,7 @@ export const removeCommand = new Command('remove')
   .option('--keep-original', "Don't restore symlinks to regular files")
   .option('--push', 'Untrack + delete from repo + commit + push (implies --delete)')
   .option('-m, --message <msg>', 'Override the auto-generated commit message (with --push)')
+  .option('--force-write', 'Override the readOnlyGroups consumer-host guardrail')
   .action(async (paths: string[], options: RemoveOptions) => {
     await runRemove(paths, options);
   });

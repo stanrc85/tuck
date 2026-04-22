@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GroupRequiredError } from '../../src/errors.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { GroupRequiredError, HostReadOnlyError, HostRoleUnassignedError } from '../../src/errors.js';
 
 // vi.mock() factories are hoisted to the top of the file, so any helper they
 // reference must be declared via vi.hoisted() to avoid "Cannot access X
@@ -17,7 +17,11 @@ vi.mock('../../src/lib/manifest.js', () => ({
   getAllGroups: getAllGroupsMock,
 }));
 
-import { resolveGroupFilter, assertHostGroupAssigned } from '../../src/lib/groupFilter.js';
+import {
+  resolveGroupFilter,
+  assertHostGroupAssigned,
+  assertHostNotReadOnly,
+} from '../../src/lib/groupFilter.js';
 
 describe('resolveGroupFilter', () => {
   beforeEach(() => {
@@ -116,5 +120,121 @@ describe('assertHostGroupAssigned', () => {
     await expect(assertHostGroupAssigned('/t', { group: [] })).rejects.toBeInstanceOf(
       GroupRequiredError
     );
+  });
+});
+
+describe('assertHostNotReadOnly', () => {
+  const originalForceWriteEnv = process.env.TUCK_FORCE_WRITE;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.TUCK_FORCE_WRITE;
+    loadConfigMock.mockResolvedValue({ defaultGroups: [], readOnlyGroups: [] });
+  });
+
+  afterEach(() => {
+    if (originalForceWriteEnv === undefined) {
+      delete process.env.TUCK_FORCE_WRITE;
+    } else {
+      process.env.TUCK_FORCE_WRITE = originalForceWriteEnv;
+    }
+  });
+
+  it('passes when readOnlyGroups is empty (feature not configured)', async () => {
+    loadConfigMock.mockResolvedValue({ defaultGroups: ['kubuntu'], readOnlyGroups: [] });
+    await expect(assertHostNotReadOnly('/t')).resolves.toBeUndefined();
+  });
+
+  it("passes when host's defaultGroups don't intersect readOnlyGroups (producer host)", async () => {
+    loadConfigMock.mockResolvedValue({
+      defaultGroups: ['kubuntu'],
+      readOnlyGroups: ['kali'],
+    });
+    await expect(assertHostNotReadOnly('/t')).resolves.toBeUndefined();
+  });
+
+  it("throws HostReadOnlyError when host's defaultGroups intersect readOnlyGroups", async () => {
+    loadConfigMock.mockResolvedValue({
+      defaultGroups: ['kali'],
+      readOnlyGroups: ['kali'],
+    });
+    await expect(assertHostNotReadOnly('/t')).rejects.toBeInstanceOf(HostReadOnlyError);
+  });
+
+  it('names the matched group(s) in the HostReadOnlyError message', async () => {
+    loadConfigMock.mockResolvedValue({
+      defaultGroups: ['kali', 'extra'],
+      readOnlyGroups: ['kali', 'other'],
+    });
+    await expect(assertHostNotReadOnly('/t')).rejects.toThrow(/kali/);
+  });
+
+  it('throws HostRoleUnassignedError when readOnlyGroups is set but host has no defaultGroups', async () => {
+    loadConfigMock.mockResolvedValue({ defaultGroups: [], readOnlyGroups: ['kali'] });
+    await expect(assertHostNotReadOnly('/t')).rejects.toBeInstanceOf(HostRoleUnassignedError);
+  });
+
+  it('throws HostRoleUnassignedError when defaultGroups field is absent entirely', async () => {
+    // Defensive: partial configs without a defaultGroups key should still gate.
+    loadConfigMock.mockResolvedValue({ readOnlyGroups: ['kali'] });
+    await expect(assertHostNotReadOnly('/t')).rejects.toBeInstanceOf(HostRoleUnassignedError);
+  });
+
+  it('--force-write bypasses the gate even when host is in a read-only group', async () => {
+    loadConfigMock.mockResolvedValue({
+      defaultGroups: ['kali'],
+      readOnlyGroups: ['kali'],
+    });
+    await expect(
+      assertHostNotReadOnly('/t', { forceWrite: true })
+    ).resolves.toBeUndefined();
+    // loadConfig should short-circuit before being called — we bail on forceWrite first
+    expect(loadConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('TUCK_FORCE_WRITE=true env var bypasses the gate', async () => {
+    process.env.TUCK_FORCE_WRITE = 'true';
+    loadConfigMock.mockResolvedValue({
+      defaultGroups: ['kali'],
+      readOnlyGroups: ['kali'],
+    });
+    await expect(assertHostNotReadOnly('/t')).resolves.toBeUndefined();
+    expect(loadConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('HostReadOnlyError carries remediation suggestions', async () => {
+    loadConfigMock.mockResolvedValue({
+      defaultGroups: ['kali'],
+      readOnlyGroups: ['kali'],
+    });
+    try {
+      await assertHostNotReadOnly('/t');
+      expect.fail('should have thrown');
+    } catch (err: unknown) {
+      const tuckErr = err as { code?: string; suggestions?: string[] };
+      expect(tuckErr.code).toBe('HOST_READ_ONLY');
+      expect(tuckErr.suggestions).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/tuck update/),
+          expect.stringMatching(/--force-write|TUCK_FORCE_WRITE/),
+        ])
+      );
+    }
+  });
+
+  it('HostRoleUnassignedError carries role-declaration suggestions', async () => {
+    loadConfigMock.mockResolvedValue({ defaultGroups: [], readOnlyGroups: ['kali'] });
+    try {
+      await assertHostNotReadOnly('/t');
+      expect.fail('should have thrown');
+    } catch (err: unknown) {
+      const tuckErr = err as { code?: string; suggestions?: string[] };
+      expect(tuckErr.code).toBe('HOST_ROLE_UNASSIGNED');
+      expect(tuckErr.suggestions).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/tuck config set defaultGroups/),
+        ])
+      );
+    }
   });
 });

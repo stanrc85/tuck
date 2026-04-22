@@ -1,6 +1,10 @@
 import { loadConfig } from './config.js';
 import { getAllGroups } from './manifest.js';
-import { GroupRequiredError } from '../errors.js';
+import {
+  GroupRequiredError,
+  HostReadOnlyError,
+  HostRoleUnassignedError,
+} from '../errors.js';
 
 /**
  * Resolve the host-group filter for a command invocation.
@@ -59,4 +63,47 @@ export const assertHostGroupAssigned = async (
     return;
   }
   throw new GroupRequiredError(allGroups);
+};
+
+/**
+ * Refuse to proceed on write-side commands (`sync`, `push`, `add`,
+ * `remove`) when `readOnlyGroups` is configured AND the current host is
+ * either:
+ *   - assigned to a group that intersects `readOnlyGroups` → read-only, or
+ *   - unassigned (empty `defaultGroups`) → role not declared yet, block
+ *     conservatively so a not-yet-configured consumer host doesn't create
+ *     cross-host commit noise.
+ *
+ * Passes when any of:
+ *   - caller passed `--force-write` (explicit one-shot override)
+ *   - `TUCK_FORCE_WRITE=true` env var (CI escape hatch)
+ *   - `config.readOnlyGroups` is empty (feature not configured —
+ *     backward-compatible for users who never set this)
+ *   - host's groups don't intersect `readOnlyGroups`
+ *
+ * Throws `HostReadOnlyError` for the matched-group case or
+ * `HostRoleUnassignedError` for the unassigned case — different
+ * remediation: the former wants `tuck update`; the latter wants
+ * `tuck config set defaultGroups <role>`.
+ */
+export const assertHostNotReadOnly = async (
+  tuckDir: string,
+  options: { forceWrite?: boolean } = {}
+): Promise<void> => {
+  if (options.forceWrite) return;
+  if (process.env.TUCK_FORCE_WRITE === 'true') return;
+
+  const config = await loadConfig(tuckDir);
+  const readOnlyGroups = config?.readOnlyGroups ?? [];
+  if (readOnlyGroups.length === 0) return;
+
+  const hostGroups = config?.defaultGroups ?? [];
+  if (hostGroups.length === 0) {
+    throw new HostRoleUnassignedError(readOnlyGroups);
+  }
+
+  const matched = hostGroups.filter((g) => readOnlyGroups.includes(g));
+  if (matched.length === 0) return;
+
+  throw new HostReadOnlyError(matched, readOnlyGroups);
 };

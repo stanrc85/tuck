@@ -20,7 +20,7 @@ import {
   assertMigrated,
   fileMatchesGroups,
 } from '../lib/manifest.js';
-import { resolveGroupFilter, assertHostGroupAssigned } from '../lib/groupFilter.js';
+import { resolveGroupFilter, assertHostGroupAssigned, assertHostNotReadOnly } from '../lib/groupFilter.js';
 import { stageAll, commit, getStatus, push, hasRemote, fetch, pull } from '../lib/git.js';
 import {
   copyFileOrDir,
@@ -872,6 +872,10 @@ export const runSync = async (options: SyncOptions = {}): Promise<void> => {
     return;
   }
 
+  // Block writes on consumer/unassigned hosts (readOnlyGroups guard).
+  // Placed after the --list early-return so list stays read-only.
+  await assertHostNotReadOnly(tuckDir, { forceWrite: options.forceWrite });
+
   // Always run interactive sync when called programmatically
   await runInteractiveSync(tuckDir, options);
 };
@@ -896,6 +900,10 @@ export const runSyncCommand = async (
     await runSyncList(tuckDir, options);
     return;
   }
+
+  // Block writes on consumer/unassigned hosts (readOnlyGroups guard).
+  // Placed after the --list early-return so list stays read-only.
+  await assertHostNotReadOnly(tuckDir, { forceWrite: options.forceWrite });
 
   // If no options (except --no-push), run interactive
   if (!messageArg && !options.message && !options.noCommit) {
@@ -1002,6 +1010,7 @@ export const syncCommand = new Command('sync')
   .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
   .option('--list', 'Preview which tracked files would be synced, then exit (no writes)')
   .option('-f, --force', 'Skip secret scanning (not recommended)')
+  .option('--force-write', 'Override the readOnlyGroups consumer-host guardrail')
   .action(async (messageArg: string | undefined, options: SyncOptions) => {
     await runSyncCommand(messageArg, options);
   });

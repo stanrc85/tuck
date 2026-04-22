@@ -108,6 +108,8 @@ export interface AddOptions {
   force?: boolean; // Skip secret scanning (secrets will not be detected)
   /** Host-groups to assign. Repeatable via `-g name1 -g name2`. */
   group?: string[];
+  /** Override the readOnlyGroups guardrail for this invocation. */
+  forceWrite?: boolean;
   // TODO: Encryption and templating are planned for a future version
   // encrypt?: boolean;
   // template?: boolean;
@@ -120,6 +122,8 @@ export interface RemoveOptions {
   push?: boolean;
   /** Override the auto-generated commit message used with --push. */
   message?: string;
+  /** Override the readOnlyGroups guardrail for this invocation. */
+  forceWrite?: boolean;
 }
 
 export interface SyncOptions {
@@ -138,11 +142,15 @@ export interface SyncOptions {
   group?: string[];
   /** Preview which tracked files would be synced, then exit. No writes, no commit, no push. */
   list?: boolean;
+  /** Override the readOnlyGroups guardrail for this invocation. */
+  forceWrite?: boolean;
 }
 
 export interface PushOptions {
   force?: boolean;
   setUpstream?: string;
+  /** Override the readOnlyGroups guardrail for this invocation. */
+  forceWrite?: boolean;
 }
 
 export interface PullOptions {

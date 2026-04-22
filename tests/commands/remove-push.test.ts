@@ -71,6 +71,12 @@ vi.mock('../../src/lib/files.js', () => ({
   deleteFileOrDir: deleteFileOrDirMock,
 }));
 
+// Stub the readOnlyGroups guardrail — these tests don't exercise consumer-host
+// gating and don't want to configure loadConfig's full dependency graph.
+vi.mock('../../src/lib/groupFilter.js', () => ({
+  assertHostNotReadOnly: vi.fn(async () => {}),
+}));
+
 vi.mock('../../src/lib/git.js', () => ({
   stageAll: stageAllMock,
   commit: commitMock,
