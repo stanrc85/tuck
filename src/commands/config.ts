@@ -100,6 +100,18 @@ const UNSUPPORTED_CONFIG_KEY_PREFIXES = [
   'encryption.files',
 ];
 
+const BLOCKED_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
+const assertSafeConfigPath = (path: string): void => {
+  for (const segment of path.split('.')) {
+    if (BLOCKED_PATH_SEGMENTS.has(segment)) {
+      throw new ConfigError(
+        `Refusing to access reserved key '${segment}' in path '${path}'`
+      );
+    }
+  }
+};
+
 const getKeyInfo = (path: string): ConfigKeyInfo | undefined => {
   return CONFIG_KEYS.find((k) => k.path === path);
 };
@@ -133,13 +145,18 @@ const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => 
   return current;
 };
 
-const setNestedValue = (obj: Record<string, unknown>, path: string, value: unknown): void => {
+export const setNestedValue = (
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown
+): void => {
+  assertSafeConfigPath(path);
   const keys = path.split('.');
   let current = obj;
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
-    if (!(key in current) || typeof current[key] !== 'object') {
+    if (!Object.prototype.hasOwnProperty.call(current, key) || typeof current[key] !== 'object') {
       current[key] = {};
     }
     current = current[key] as Record<string, unknown>;
@@ -166,9 +183,10 @@ const resolveSchemaAtPath = (
 ): z.ZodTypeAny | null => {
   let current = unwrapSchema(rootSchema);
   for (const key of path.split('.')) {
+    if (BLOCKED_PATH_SEGMENTS.has(key)) return null;
     if (!(current instanceof z.ZodObject)) return null;
     const shape = current.shape as Record<string, z.ZodTypeAny>;
-    if (!(key in shape)) return null;
+    if (!Object.prototype.hasOwnProperty.call(shape, key)) return null;
     current = unwrapSchema(shape[key]);
   }
   return current;

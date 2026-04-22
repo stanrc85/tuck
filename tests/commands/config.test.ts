@@ -3,6 +3,7 @@ import { vol } from 'memfs';
 import { TEST_TUCK_DIR } from '../setup.js';
 import { initTestTuck, getTestConfig } from '../utils/testHelpers.js';
 import { createMockConfig } from '../utils/factories.js';
+import { ConfigError } from '../../src/errors.js';
 
 // Mock modules
 vi.mock('../../src/ui/index.js', () => ({
@@ -246,6 +247,52 @@ describe('config command', () => {
     it('returns null for unknown key paths (falls through to raw parse)', async () => {
       const { parseValue } = await import('../../src/commands/config.js');
       expect(parseValue('hello', 'nonexistent.path')).toBe('hello');
+    });
+  });
+
+  describe('prototype-pollution guard', () => {
+    afterEach(() => {
+      // Defensive cleanup: if a test ever did pollute Object.prototype, scrub it
+      // before the next test runs. The guard should make this a no-op, but it
+      // protects the rest of the suite from a regression here.
+      delete (Object.prototype as Record<string, unknown>).polluted;
+    });
+
+    it.each(['__proto__', 'constructor', 'prototype'])(
+      'setNestedValue rejects blocked segment "%s" with ConfigError',
+      async (blocked) => {
+        const { setNestedValue } = await import('../../src/commands/config.js');
+        const target: Record<string, unknown> = {};
+        expect(() => setNestedValue(target, `${blocked}.polluted`, 'bad')).toThrow(ConfigError);
+        // Probe a fresh object — Object.prototype must NOT have been polluted
+        const probe: Record<string, unknown> = {};
+        expect(probe.polluted).toBeUndefined();
+      }
+    );
+
+    it('setNestedValue rejects a blocked segment anywhere in the dotted path', async () => {
+      const { setNestedValue } = await import('../../src/commands/config.js');
+      const target: Record<string, unknown> = {};
+      expect(() => setNestedValue(target, 'repository.__proto__.polluted', 'x')).toThrow(
+        ConfigError
+      );
+      const probe: Record<string, unknown> = {};
+      expect(probe.polluted).toBeUndefined();
+    });
+
+    it('setNestedValue still accepts safe nested paths', async () => {
+      const { setNestedValue } = await import('../../src/commands/config.js');
+      const target: Record<string, unknown> = {};
+      setNestedValue(target, 'repository.defaultBranch', 'develop');
+      expect(target).toEqual({ repository: { defaultBranch: 'develop' } });
+    });
+
+    it('parseValue falls through cleanly when path contains a blocked segment', async () => {
+      // resolveSchemaAtPath also walks dotted paths; the guard there should
+      // return null so parseValue falls back to the raw-string return.
+      const { parseValue } = await import('../../src/commands/config.js');
+      expect(parseValue('hello', '__proto__.polluted')).toBe('hello');
+      expect(parseValue('hello', 'constructor.polluted')).toBe('hello');
     });
   });
 });
