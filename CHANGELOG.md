@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.22.1](https://github.com/stanrc85/tuck/compare/v2.22.0...v2.22.1) (2026-04-23)
 
 
 ### Bug Fixes
 
 * **optimize:** narrow rule detection to real command invocations ([46df0fc](https://github.com/stanrc85/tuck/commit/46df0fc5e4d7b1f57863ffdaed8838ba025b8fe1))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.22.0](https://github.com/stanrc85/tuck/compare/v2.21.1...v2.22.0) (2026-04-23)
 
