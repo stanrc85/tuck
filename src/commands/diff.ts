@@ -32,6 +32,7 @@ import { highlightLine } from '../lib/syntaxHighlight.js';
 import type { DiffOptions } from '../types.js';
 import { readFile } from 'fs/promises';
 import { join, relative } from 'path';
+import { toPosixPath } from '../lib/platform.js';
 
 interface FileDiff {
   source: string;
@@ -308,7 +309,10 @@ export const expandDirectoryDiff = async (
 
   for (const rel of [...relpaths].sort()) {
     const subSource = collapsePath(join(expandedTrackedSource, rel));
-    const subDestination = join(trackedDestination, rel);
+    // Destinations are always posix-style per tuck's manifest convention
+    // (forward slashes even on Windows). System/repo filesystem paths use
+    // the platform-native separator via `join`.
+    const subDestination = toPosixPath(join(trackedDestination, rel));
     const subSystemPath = systemDir ? join(systemDir, rel) : null;
     const subRepoPath = repoDir ? join(repoDir, rel) : null;
     const subDiff = await buildContentDiff(
