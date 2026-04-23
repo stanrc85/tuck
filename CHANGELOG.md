@@ -1,3 +1,10 @@
+# [2.20.0](https://github.com/stanrc85/tuck/compare/v2.19.0...v2.20.0) (2026-04-23)
+
+
+### Features
+
+* **diff:** side-by-side layout via -s flag ([93ba227](https://github.com/stanrc85/tuck/commit/93ba227e6316550d0a226b2e5d0ddd54b72b4b79))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.19.0](https://github.com/stanrc85/tuck/compare/v2.18.3...v2.19.0) (2026-04-23)
