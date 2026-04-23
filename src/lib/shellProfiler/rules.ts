@@ -1,4 +1,4 @@
-import type { ProfileReport } from './parser.js';
+import type { ProfileEvent, ProfileReport } from './parser.js';
 
 export interface Recommendation {
   rule: string;
@@ -16,28 +16,47 @@ export interface SourceMap {
   [filename: string]: string;
 }
 
+// Return the first whitespace-delimited token of the command, trimmed.
+// Used to distinguish real invocations (`compinit -C`) from no-op comments
+// (`: compinit '(anon)' ...`) and from loads (`autoload -Uz compinit`).
+const firstToken = (command: string): string => command.trim().split(/\s+/)[0] ?? '';
+
+// When a function runs under xtrace, every line inside its body emits an
+// event with sourceFile=<function name>. Rules that count invocations of a
+// command must exclude these internal events — otherwise a single real call
+// inflates to hundreds of false-positive matches.
+const isDirectInvocation = (event: ProfileEvent, command: string): boolean =>
+  event.sourceFile !== command && firstToken(event.command) === command;
+
+const SKIP_GLOBAL_COMPINIT_RE = /^\s*skip_global_compinit\s*=\s*1\s*(?:#.*)?$/m;
+
 // `compinit` is idempotent but expensive — each call rescans $fpath and
-// rebuilds the completion cache. zsh ships with `setopt SKIP_GLOBAL_COMPINIT=1`
-// (via /etc/zshrc) that suppresses the distro-level call, leaving only the
-// user's own compinit to run once.
+// rebuilds the completion cache. zsh ships with `skip_global_compinit=1`
+// (read by /etc/zshrc) that suppresses the distro-level call, leaving only
+// the user's own compinit to run once.
 const detectMultipleCompinit = (
   report: ProfileReport,
   sources: SourceMap,
 ): Recommendation | null => {
-  const compinitCalls = report.events.filter((e) => /\bcompinit\b/.test(e.command));
-  if (compinitCalls.length < 2) return null;
+  const calls = report.events.filter((e) => isDirectInvocation(e, 'compinit'));
+  if (calls.length < 2) return null;
+
+  // Already mitigated — user set skip_global_compinit but compinit still runs
+  // more than once (e.g. their .zshrc calls it after a plugin framework has
+  // already called it). The suggested fix is already in place; don't nag.
+  const alreadyMitigated = Object.values(sources).some((content) =>
+    SKIP_GLOBAL_COMPINIT_RE.test(content),
+  );
+  if (alreadyMitigated) return null;
+
   return {
     rule: 'multiple-compinit',
     severity: 'warn',
-    message: `compinit called ${compinitCalls.length} times during startup — each call rescans fpath (~100ms)`,
+    message: `compinit called ${calls.length} times during startup — each call rescans fpath (~100ms)`,
     suggestion:
       'Add `skip_global_compinit=1` to ~/.zshenv to suppress the distro-level compinit. Your user-level compinit in .zshrc stays in charge.',
-    evidence: compinitCalls
-      .slice(0, 5)
-      .map((e) => `${e.sourceFile}:${e.line}> ${e.command}`),
+    evidence: calls.slice(0, 5).map((e) => `${e.sourceFile}:${e.line}> ${e.command}`),
   };
-  // keep `sources` referenced for future rules that may inspect file contents
-  void sources;
 };
 
 // Duplicate PATH segments bloat the PATH string and slow every command lookup
@@ -76,16 +95,37 @@ const detectDuplicatePath = (sources: SourceMap): Recommendation | null => {
 // when initialised synchronously. Every shell that doesn't actually use them
 // pays the cost. Lazy-load snippets wrap the command in a shim that does
 // the real init only on first call.
-const VERSION_MANAGER_MARKERS = [
-  { name: 'nvm', re: /\bnvm\.sh\b|\bnvm\s+use\b/, url: 'github.com/nvm-sh/nvm' },
-  { name: 'rbenv', re: /\brbenv\s+init\b/, url: 'github.com/rbenv/rbenv' },
-  { name: 'pyenv', re: /\bpyenv\s+init\b/, url: 'github.com/pyenv/pyenv' },
+const VERSION_MANAGER_MARKERS: Array<{
+  name: string;
+  // Match the real invocation (source ~/.nvm/nvm.sh, eval "$(rbenv init)").
+  commandRe: RegExp;
+  // Filter out events inside the script itself — those show up with
+  // sourceFile matching this regex.
+  internalSourceRe: RegExp;
+}> = [
+  {
+    name: 'nvm',
+    commandRe: /\bnvm\.sh\b|\bnvm\s+use\b/,
+    internalSourceRe: /nvm\.sh$|\/nvm\//,
+  },
+  {
+    name: 'rbenv',
+    commandRe: /\brbenv\s+init\b/,
+    internalSourceRe: /rbenv\/rbenv\.d|\/rbenv$/,
+  },
+  {
+    name: 'pyenv',
+    commandRe: /\bpyenv\s+init\b/,
+    internalSourceRe: /pyenv\.d|\/pyenv$/,
+  },
 ];
 
 const detectSyncVersionManagers = (report: ProfileReport): Recommendation | null => {
   const found: Array<{ name: string; evidence: string }> = [];
-  for (const { name, re } of VERSION_MANAGER_MARKERS) {
-    const hit = report.events.find((e) => re.test(e.command));
+  for (const { name, commandRe, internalSourceRe } of VERSION_MANAGER_MARKERS) {
+    const hit = report.events.find(
+      (e) => commandRe.test(e.command) && !internalSourceRe.test(e.sourceFile),
+    );
     if (hit) {
       found.push({ name, evidence: `${hit.sourceFile}:${hit.line}> ${hit.command}` });
     }
@@ -104,10 +144,27 @@ const detectSyncVersionManagers = (report: ProfileReport): Recommendation | null
 // Blocking network / crypto calls during startup (curl, ssh, gpg, git pull)
 // gate every shell behind a live connection. Even a fast response adds
 // 100-200ms; a slow DNS lookup or unreachable host stalls the shell.
-const BLOCKING_COMMANDS = /\b(curl|wget|ssh|gpg|gpg2|git pull|gh auth|op signin)\b/;
+const BLOCKING_COMMAND_NAMES = new Set([
+  'curl',
+  'wget',
+  'ssh',
+  'gpg',
+  'gpg2',
+]);
+
+// Multi-word patterns — matched against the full command rather than just
+// the first token. `git pull` has first-token `git`; we want to match the
+// action, not every git command.
+const BLOCKING_COMMAND_PHRASES = [/^git\s+pull\b/, /^gh\s+auth\b/, /^op\s+signin\b/];
+
+const isBlockingCommand = (command: string): boolean => {
+  const trimmed = command.trim();
+  if (BLOCKING_COMMAND_NAMES.has(firstToken(trimmed))) return true;
+  return BLOCKING_COMMAND_PHRASES.some((re) => re.test(trimmed));
+};
 
 const detectBlockingStartup = (report: ProfileReport): Recommendation | null => {
-  const hits = report.events.filter((e) => BLOCKING_COMMANDS.test(e.command));
+  const hits = report.events.filter((e) => isBlockingCommand(e.command));
   if (hits.length === 0) return null;
   return {
     rule: 'blocking-startup',

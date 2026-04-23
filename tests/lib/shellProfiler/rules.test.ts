@@ -31,6 +31,53 @@ describe('applyRules', () => {
     expect(rule!.suggestion).toContain('skip_global_compinit');
   });
 
+  it('does not count compinit function-body events as invocations', () => {
+    // When compinit runs under xtrace, every line INSIDE compinit emits an
+    // event with sourceFile='compinit'. Those are not invocations — they're
+    // the single call unfurling line-by-line.
+    const internals = Array.from({ length: 100 }, (_, i) => ({
+      file: 'compinit',
+      line: 100 + i,
+      command: `: compinit internal line ${i}`,
+    }));
+    const report = buildReport([
+      { file: '.zshrc', line: 10, command: 'compinit' },
+      ...internals,
+    ]);
+    // Only 1 real call — rule should NOT fire.
+    expect(applyRules(report, {}).find((r) => r.rule === 'multiple-compinit')).toBeUndefined();
+  });
+
+  it('does not count `autoload -Uz compinit` as an invocation', () => {
+    // Autoload just marks the function as loadable — does not execute it.
+    const report = buildReport([
+      { file: '.zshrc', line: 5, command: 'autoload -Uz compinit' },
+      { file: '.zshrc', line: 6, command: 'autoload -Uz compinit' },
+    ]);
+    expect(applyRules(report, {}).find((r) => r.rule === 'multiple-compinit')).toBeUndefined();
+  });
+
+  it('does not count `: compinit ...` no-op comments as invocations', () => {
+    // zsh uses `: command args` as a no-op that leaves args in the trace for
+    // debugging. compinit's internals are full of these.
+    const report = buildReport([
+      { file: '.zshrc', line: 5, command: ": compinit '(anon)' /etc/zsh/zshrc" },
+      { file: '.zshrc', line: 6, command: ': compinit bar' },
+    ]);
+    expect(applyRules(report, {}).find((r) => r.rule === 'multiple-compinit')).toBeUndefined();
+  });
+
+  it('suppresses multiple-compinit when skip_global_compinit=1 is already set', () => {
+    const report = buildReport([
+      { file: '.zshrc', line: 6, command: 'compinit' },
+      { file: '/etc/zsh/zshrc', line: 1, command: 'compinit' },
+    ]);
+    const sources = {
+      '.zshenv': 'skip_global_compinit=1\nexport EDITOR=nvim\n',
+    };
+    expect(applyRules(report, sources).find((r) => r.rule === 'multiple-compinit')).toBeUndefined();
+  });
+
   it('flags duplicate PATH segments across sources', () => {
     const sources: SourceMap = {
       '.zshenv': 'export PATH="/usr/local/bin:/usr/bin"\n',
@@ -60,6 +107,16 @@ describe('applyRules', () => {
     expect(rule).toBeDefined();
     expect(rule!.message).toContain('nvm');
     expect(rule!.message).toContain('rbenv');
+  });
+
+  it('does not false-positive on nvm events inside nvm.sh itself', () => {
+    // Once the user sources nvm.sh, every line inside runs under sourceFile
+    // matching nvm.sh / nvm/ — those should not count as user-level init.
+    const report = buildReport([
+      { file: '/home/user/.nvm/nvm.sh', line: 50, command: 'nvm_use_if_needed()' },
+      { file: '/home/user/.nvm/nvm.sh', line: 100, command: 'nvm use default' },
+    ]);
+    expect(applyRules(report, {}).find((r) => r.rule === 'sync-version-managers')).toBeUndefined();
   });
 
   it('flags blocking network commands at startup', () => {
