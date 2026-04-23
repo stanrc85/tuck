@@ -28,6 +28,7 @@ import {
 import { NotInitializedError, FileNotFoundError, PermissionError } from '../errors.js';
 import { isBinaryExecutable } from '../lib/binary.js';
 import { isIgnored } from '../lib/tuckignore.js';
+import { highlightLine } from '../lib/syntaxHighlight.js';
 import type { DiffOptions } from '../types.js';
 import { readFile } from 'fs/promises';
 
@@ -259,11 +260,18 @@ const formatUnifiedDiff = (diff: FileDiff): string => {
   const systemMissing = systemContent === undefined;
   const repoMissing = repoContent === undefined;
 
+  // `hl` runs syntax highlighting per line if the source path maps to a known
+  // language; otherwise it's a pass-through. Wrapping the highlighted string
+  // in a diff color lets chalk compose — named ANSI tokens inside respect the
+  // user's terminal theme, and chalk re-applies the outer color across any
+  // nested resets so the `+`/`-` tint stays consistent across the row.
+  const hl = (line: string): string => highlightLine(line, diff.source);
+
   if (systemMissing && !repoMissing) {
     lines.push(c.red('File missing on system'));
     lines.push(c.dim('Repository content:'));
     for (const line of repoContent!.split('\n')) {
-      lines.push(c.green(`+ ${line}`));
+      lines.push(c.green(`+ ${hl(line)}`));
     }
     return lines.join('\n');
   }
@@ -272,7 +280,7 @@ const formatUnifiedDiff = (diff: FileDiff): string => {
     lines.push(c.yellow('File not yet synced to repository'));
     lines.push(c.dim('System content:'));
     for (const line of systemContent!.split('\n')) {
-      lines.push(c.red(`- ${line}`));
+      lines.push(c.red(`- ${hl(line)}`));
     }
     return lines.join('\n');
   }
@@ -300,20 +308,20 @@ const formatUnifiedDiff = (diff: FileDiff): string => {
       continue;
     }
     if (row.kind === 'unchanged') {
-      lines.push(c.dim(`  ${row.system}`));
+      lines.push(c.dim(`  ${hl(row.system)}`));
       continue;
     }
     if (row.kind === 'add') {
-      lines.push(c.green(`+ ${row.repo}`));
+      lines.push(c.green(`+ ${hl(row.repo)}`));
       continue;
     }
     if (row.kind === 'delete') {
-      lines.push(c.red(`- ${row.system}`));
+      lines.push(c.red(`- ${hl(row.system)}`));
       continue;
     }
     // modified: show both sides in sequence
-    lines.push(c.red(`- ${row.system}`));
-    lines.push(c.green(`+ ${row.repo}`));
+    lines.push(c.red(`- ${hl(row.system)}`));
+    lines.push(c.green(`+ ${hl(row.repo)}`));
   }
 
   return lines.join('\n');
@@ -418,6 +426,12 @@ const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
     DIFF_CONTEXT_LINES
   );
 
+  // Pad first, then highlight — the highlighter tokenises only content, not
+  // the trailing spaces padOrTruncate adds, so column widths stay accurate
+  // and the diff-color wrapping composes correctly around the nested tokens.
+  const hl = (raw: string): string =>
+    highlightLine(padOrTruncate(raw, col), diff.source);
+
   const lines: string[] = [];
   lines.push(
     c.bold(padOrTruncate(`--- a/${diff.source} (system)`, col)) +
@@ -434,24 +448,20 @@ const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
       continue;
     }
     if (row.kind === 'unchanged') {
-      lines.push(
-        c.dim(padOrTruncate(row.system, col)) +
-          '   ' +
-          c.dim(padOrTruncate(row.repo, col))
-      );
+      lines.push(c.dim(hl(row.system)) + '   ' + c.dim(hl(row.repo)));
       continue;
     }
     if (row.kind === 'add') {
       lines.push(
         padOrTruncate('', col) +
           ' ' + c.green('+') + ' ' +
-          c.green(padOrTruncate(row.repo, col))
+          c.green(hl(row.repo))
       );
       continue;
     }
     if (row.kind === 'delete') {
       lines.push(
-        c.red(padOrTruncate(row.system, col)) +
+        c.red(hl(row.system)) +
           ' ' + c.red('-') + ' ' +
           padOrTruncate('', col)
       );
@@ -459,9 +469,9 @@ const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
     }
     // modified
     lines.push(
-      c.red(padOrTruncate(row.system, col)) +
+      c.red(hl(row.system)) +
         ' ' + c.yellow('|') + ' ' +
-        c.green(padOrTruncate(row.repo, col))
+        c.green(hl(row.repo))
     );
   }
 

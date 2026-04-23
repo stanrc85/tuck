@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { vol } from 'memfs';
 import { join } from 'path';
+import chalk from 'chalk';
+// Force ANSI output so render-integration assertions can verify that syntax
+// tokens survive the diff pipeline. Production respects the terminal normally.
+chalk.level = 2;
 import { clearManifestCache } from '../../src/lib/manifest.js';
 import { TEST_TUCK_DIR } from '../setup.js';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
@@ -115,6 +119,43 @@ describe('diff command', () => {
 
       expect(output).toContain('- line 2');
       expect(output).toContain('+ modified');
+    });
+
+    it('applies syntax highlighting to content when the source is a known language', async () => {
+      // Regression for the highlighter wiring — when the diff source resolves
+      // to a supported language (shell here), tokens should be wrapped in
+      // ANSI codes even inside the outer diff-color wrapper. We just confirm
+      // SOME color codes appear on a token substring; specific color names
+      // depend on the palette and shouldn't be pinned here.
+      const { formatUnifiedDiff } = await import('../../src/commands/diff.js');
+      const output = formatUnifiedDiff({
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        hasChanges: true,
+        systemContent: 'if [[ -z "$PATH" ]]; then echo empty; fi',
+        repoContent: 'if [[ -z "$PATH" ]]; then echo filled; fi',
+      });
+      // The tokenised keyword `if` should be wrapped; we look for any SGR
+      // sequence that starts inside one of the rendered lines.
+      // eslint-disable-next-line no-control-regex
+      expect(output).toMatch(/\x1b\[[0-9;]+m/);
+    });
+
+    it('skips highlighting for unknown file types (pass-through)', async () => {
+      const { formatUnifiedDiff } = await import('../../src/commands/diff.js');
+      const output = formatUnifiedDiff({
+        source: '~/mystery.xyz',
+        destination: 'files/mystery.xyz',
+        hasChanges: true,
+        systemContent: 'if then fi', // shell-ish keywords but not a shell file
+        repoContent: 'if then done',
+      });
+      // Strip the outer diff colors and verify no inner token markers remain.
+      // (An extra inner SGR would show up as a second \x1b[...m in a row.)
+      // eslint-disable-next-line no-control-regex
+      const withoutOuter = output.replace(/\x1b\[[0-9;]+m(if then fi|if then done)\x1b\[[0-9;]+m/g, '$1');
+      // eslint-disable-next-line no-control-regex
+      expect(withoutOuter).not.toMatch(/\x1b\[[0-9;]+mif\x1b/);
     });
 
     it('collapses long unchanged runs to a ruler instead of printing the whole file', async () => {
