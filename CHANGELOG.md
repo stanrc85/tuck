@@ -1,3 +1,10 @@
+## [2.21.1](https://github.com/stanrc85/tuck/compare/v2.21.0...v2.21.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **security:** inline __proto__/constructor/prototype guards in setNestedValue ([99e087d](https://github.com/stanrc85/tuck/commit/99e087d46c77bfc7d8a8c16227a9e25a1093a0dd))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.21.0](https://github.com/stanrc85/tuck/compare/v2.20.1...v2.21.0) (2026-04-23)
