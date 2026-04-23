@@ -150,12 +150,23 @@ export const setNestedValue = (
   path: string,
   value: unknown
 ): void => {
+  // assertSafeConfigPath is the defense-in-depth runtime guard. The inline
+  // string-equality checks below duplicate the intent at each usage site —
+  // CodeQL's js/prototype-polluting-assignment dataflow can't follow values
+  // through custom assertion helpers, so the inline form is what silences
+  // the query. Don't collapse this into a helper: the visible inline check
+  // is the load-bearing part for the static analyser.
   assertSafeConfigPath(path);
   const keys = path.split('.');
   let current = obj;
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      throw new ConfigError(
+        `Refusing to access reserved key '${key}' in path '${path}'`
+      );
+    }
     if (!Object.prototype.hasOwnProperty.call(current, key) || typeof current[key] !== 'object') {
       Object.defineProperty(current, key, {
         value: {},
@@ -167,7 +178,13 @@ export const setNestedValue = (
     current = current[key] as Record<string, unknown>;
   }
 
-  Object.defineProperty(current, keys[keys.length - 1], {
+  const finalKey = keys[keys.length - 1];
+  if (finalKey === '__proto__' || finalKey === 'constructor' || finalKey === 'prototype') {
+    throw new ConfigError(
+      `Refusing to access reserved key '${finalKey}' in path '${path}'`
+    );
+  }
+  Object.defineProperty(current, finalKey, {
     value,
     writable: true,
     enumerable: true,
