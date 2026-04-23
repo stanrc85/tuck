@@ -1,3 +1,10 @@
+## [2.20.1](https://github.com/stanrc85/tuck/compare/v2.20.0...v2.20.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **diff:** stop printing the whole file after the first change ([71208e1](https://github.com/stanrc85/tuck/commit/71208e1d16f6a5772d1fdb90d07f90419f0f7cf9))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.20.0](https://github.com/stanrc85/tuck/compare/v2.19.0...v2.20.0) (2026-04-23)
