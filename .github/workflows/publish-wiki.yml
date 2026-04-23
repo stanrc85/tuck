@@ -1,0 +1,37 @@
+name: Publish Wiki
+
+# Sync docs/wiki/ to the repo's GitHub Wiki (stanrc85/tuck.wiki.git) whenever
+# pushes to main touch wiki source. The wiki repo is separate from main; this
+# workflow is the only path for docs/wiki/ → wiki to keep them from drifting.
+#
+# One-time setup: initialize the wiki via the GitHub UI (create any
+# placeholder page) so the wiki repo exists before this workflow runs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/wiki/**'
+      - '.github/workflows/publish-wiki.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Sync docs/wiki/ → repo wiki
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Sync to wiki repo
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        with:
+          path: docs/wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
