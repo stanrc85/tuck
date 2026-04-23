@@ -6,7 +6,7 @@ import chalk from 'chalk';
 // tokens survive the diff pipeline. Production respects the terminal normally.
 chalk.level = 2;
 import { clearManifestCache } from '../../src/lib/manifest.js';
-import { TEST_TUCK_DIR } from '../setup.js';
+import { TEST_HOME, TEST_TUCK_DIR } from '../setup.js';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
 
 interface TestFileDiff {
@@ -598,6 +598,235 @@ describe('diff command', () => {
       vol.writeFileSync(join(TEST_TUCK_DIR, '.tuckmanifest.json'), JSON.stringify(manifest));
 
       await expect(runDiff([], {})).rejects.toThrow('Unsafe manifest destination');
+    });
+  });
+
+  describe('expandDirectoryDiff', () => {
+    // Sub-file FileDiffs are what let every renderer and the syntax highlighter
+    // work per-file without further plumbing. These tests exercise the walk
+    // logic directly rather than through runDiff so failures point at the
+    // primitive.
+    const TRACKED_SOURCE = '~/.config/app';
+    const TRACKED_DEST = 'files/config/app';
+    const SYSTEM_DIR = `${TEST_HOME}/.config/app`;
+    const REPO_DIR = `${TEST_TUCK_DIR}/${TRACKED_DEST}`;
+
+    it('returns an empty list when both sides are missing', async () => {
+      const { expandDirectoryDiff } = await import('../../src/commands/diff.js');
+      const result = await expandDirectoryDiff(
+        TRACKED_SOURCE,
+        TRACKED_DEST,
+        SYSTEM_DIR,
+        REPO_DIR,
+      );
+      expect(result).toEqual([]);
+    });
+
+    it('emits one add diff per repo-only sub-file', async () => {
+      const { expandDirectoryDiff } = await import('../../src/commands/diff.js');
+      vol.mkdirSync(REPO_DIR, { recursive: true });
+      vol.writeFileSync(`${REPO_DIR}/a.conf`, 'alpha\n');
+      vol.writeFileSync(`${REPO_DIR}/b.conf`, 'beta\n');
+
+      const result = await expandDirectoryDiff(
+        TRACKED_SOURCE,
+        TRACKED_DEST,
+        null,
+        REPO_DIR,
+      );
+      expect(result).toHaveLength(2);
+      expect(result.map((d) => d.source).sort()).toEqual([
+        '~/.config/app/a.conf',
+        '~/.config/app/b.conf',
+      ]);
+      expect(result.every((d) => d.hasChanges && d.systemContent === undefined)).toBe(true);
+      expect(result.find((d) => d.source === '~/.config/app/a.conf')?.repoContent).toBe(
+        'alpha\n'
+      );
+    });
+
+    it('emits one delete diff per system-only sub-file', async () => {
+      const { expandDirectoryDiff } = await import('../../src/commands/diff.js');
+      vol.mkdirSync(SYSTEM_DIR, { recursive: true });
+      vol.writeFileSync(`${SYSTEM_DIR}/only.conf`, 'local\n');
+
+      const result = await expandDirectoryDiff(
+        TRACKED_SOURCE,
+        TRACKED_DEST,
+        SYSTEM_DIR,
+        null,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].source).toBe('~/.config/app/only.conf');
+      expect(result[0].hasChanges).toBe(true);
+      expect(result[0].systemContent).toBe('local\n');
+      expect(result[0].repoContent).toBeUndefined();
+    });
+
+    it('skips unchanged sub-files and surfaces only changed pairs', async () => {
+      const { expandDirectoryDiff } = await import('../../src/commands/diff.js');
+      vol.mkdirSync(SYSTEM_DIR, { recursive: true });
+      vol.mkdirSync(REPO_DIR, { recursive: true });
+      // Identical on both sides — should not appear.
+      vol.writeFileSync(`${SYSTEM_DIR}/same.conf`, 'shared\n');
+      vol.writeFileSync(`${REPO_DIR}/same.conf`, 'shared\n');
+      // Differs — should appear.
+      vol.writeFileSync(`${SYSTEM_DIR}/diff.conf`, 'sys\n');
+      vol.writeFileSync(`${REPO_DIR}/diff.conf`, 'repo\n');
+
+      const result = await expandDirectoryDiff(
+        TRACKED_SOURCE,
+        TRACKED_DEST,
+        SYSTEM_DIR,
+        REPO_DIR,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].source).toBe('~/.config/app/diff.conf');
+      expect(result[0].systemContent).toBe('sys\n');
+      expect(result[0].repoContent).toBe('repo\n');
+    });
+
+    it('attributes sub-file sources with the tracked-source prefix for nested paths', async () => {
+      const { expandDirectoryDiff } = await import('../../src/commands/diff.js');
+      vol.mkdirSync(`${REPO_DIR}/lua/plugins`, { recursive: true });
+      vol.writeFileSync(`${REPO_DIR}/lua/plugins/lsp.lua`, 'return {}\n');
+
+      const result = await expandDirectoryDiff(
+        TRACKED_SOURCE,
+        TRACKED_DEST,
+        null,
+        REPO_DIR,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].source).toBe('~/.config/app/lua/plugins/lsp.lua');
+      expect(result[0].destination).toBe('files/config/app/lua/plugins/lsp.lua');
+    });
+
+    it('returns paired add + delete + change in one pass', async () => {
+      const { expandDirectoryDiff } = await import('../../src/commands/diff.js');
+      vol.mkdirSync(SYSTEM_DIR, { recursive: true });
+      vol.mkdirSync(REPO_DIR, { recursive: true });
+      // system-only — delete
+      vol.writeFileSync(`${SYSTEM_DIR}/removed.conf`, 'bye\n');
+      // repo-only — add
+      vol.writeFileSync(`${REPO_DIR}/added.conf`, 'hi\n');
+      // paired + different — modified
+      vol.writeFileSync(`${SYSTEM_DIR}/changed.conf`, 'old\n');
+      vol.writeFileSync(`${REPO_DIR}/changed.conf`, 'new\n');
+
+      const result = await expandDirectoryDiff(
+        TRACKED_SOURCE,
+        TRACKED_DEST,
+        SYSTEM_DIR,
+        REPO_DIR,
+      );
+      expect(result).toHaveLength(3);
+      const bySource = Object.fromEntries(result.map((d) => [d.source, d]));
+      expect(bySource['~/.config/app/removed.conf'].systemContent).toBe('bye\n');
+      expect(bySource['~/.config/app/removed.conf'].repoContent).toBeUndefined();
+      expect(bySource['~/.config/app/added.conf'].repoContent).toBe('hi\n');
+      expect(bySource['~/.config/app/added.conf'].systemContent).toBeUndefined();
+      expect(bySource['~/.config/app/changed.conf'].systemContent).toBe('old\n');
+      expect(bySource['~/.config/app/changed.conf'].repoContent).toBe('new\n');
+    });
+  });
+
+  describe('directory expansion via runDiff', () => {
+    // End-to-end verification that a tracked directory renders as per-file
+    // sub-diffs with a cyan header instead of the old "Directory content
+    // changed" collapse.
+    const stripAnsi = (s: string): string =>
+      // eslint-disable-next-line no-control-regex
+      s.replace(/\x1b\[[0-9;]*m/g, '');
+
+    const setupTrackedDirectory = (): void => {
+      const manifest = createMockManifest();
+      manifest.files['app'] = createMockTrackedFile({
+        source: '~/.config/app',
+        destination: 'files/config/app',
+        category: 'misc',
+      });
+      vol.writeFileSync(
+        join(TEST_TUCK_DIR, '.tuckmanifest.json'),
+        JSON.stringify(manifest)
+      );
+      const systemDir = `${TEST_HOME}/.config/app`;
+      const repoDir = `${TEST_TUCK_DIR}/files/config/app`;
+      vol.mkdirSync(systemDir, { recursive: true });
+      vol.mkdirSync(repoDir, { recursive: true });
+      // Unchanged pair — must NOT appear in output.
+      vol.writeFileSync(`${systemDir}/unchanged.conf`, 'same\n');
+      vol.writeFileSync(`${repoDir}/unchanged.conf`, 'same\n');
+      // Modified pair — must appear.
+      vol.writeFileSync(`${systemDir}/modified.conf`, 'old\n');
+      vol.writeFileSync(`${repoDir}/modified.conf`, 'new\n');
+    };
+
+    const captureConsole = (): { output: () => string; restore: () => void } => {
+      const chunks: string[] = [];
+      const original = console.log;
+      // eslint-disable-next-line no-console
+      console.log = (...args: unknown[]) => {
+        chunks.push(args.map(String).join(' '));
+      };
+      return {
+        output: () => stripAnsi(chunks.join('\n')),
+        restore: () => {
+          // eslint-disable-next-line no-console
+          console.log = original;
+        },
+      };
+    };
+
+    it('prints a directory header + per-sub-file diff in full mode', async () => {
+      setupTrackedDirectory();
+      const { runDiff } = await import('../../src/commands/diff.js');
+      const cap = captureConsole();
+      try {
+        await runDiff([], {});
+      } finally {
+        cap.restore();
+      }
+      const out = cap.output();
+      expect(out).toContain('Directory ~/.config/app — 1 file changed');
+      // Per-sub-file diff header uses the `--- a/<path> (system)` shape.
+      expect(out).toContain('--- a/~/.config/app/modified.conf (system)');
+      // The unchanged sub-file must not appear.
+      expect(out).not.toContain('unchanged.conf');
+      // The old collapsed line must be gone.
+      expect(out).not.toContain('Directory content changed');
+    });
+
+    it('shows per-sub-file rows in --stat mode under the directory header', async () => {
+      setupTrackedDirectory();
+      const { runDiff } = await import('../../src/commands/diff.js');
+      const cap = captureConsole();
+      try {
+        await runDiff([], { stat: true });
+      } finally {
+        cap.restore();
+      }
+      const out = cap.output();
+      expect(out).toContain('Directory ~/.config/app — 1 file changed');
+      // Per-sub-file row with the git-style bar pattern.
+      expect(out).toMatch(/modified\.conf\s+\|\s+2\s+\+-/);
+      // Footer aggregates sub-file totals across the directory.
+      expect(out).toMatch(/1 file changed, 1 insertion\(\+\), 1 deletion\(-\)/);
+    });
+
+    it('lists each sub-file under the directory header in --name-only mode', async () => {
+      setupTrackedDirectory();
+      const { runDiff } = await import('../../src/commands/diff.js');
+      const cap = captureConsole();
+      try {
+        await runDiff([], { nameOnly: true });
+      } finally {
+        cap.restore();
+      }
+      const out = cap.output();
+      expect(out).toContain('Directory ~/.config/app — 1 file changed');
+      expect(out).toContain('~/.config/app/modified.conf');
+      expect(out).not.toContain('unchanged.conf');
     });
   });
 

@@ -31,6 +31,7 @@ import { isIgnored } from '../lib/tuckignore.js';
 import { highlightLine } from '../lib/syntaxHighlight.js';
 import type { DiffOptions } from '../types.js';
 import { readFile } from 'fs/promises';
+import { join, relative } from 'path';
 
 interface FileDiff {
   source: string;
@@ -179,6 +180,199 @@ const getFileDiff = async (tuckDir: string, source: string): Promise<FileDiff | 
   }
 
   return diff;
+};
+
+// Single-file comparison given pre-resolved absolute paths. Shared between the
+// directory-expansion path (where a tracked directory's sub-files need their
+// own FileDiff) and could be used to simplify getFileDiff in a future pass.
+// Kept narrowly scoped: assumes neither side is a directory — caller filters
+// those out — and swallows read errors on binary probes the same way
+// getFileDiff does.
+const buildContentDiff = async (
+  source: string,
+  destination: string,
+  systemPath: string | null,
+  repoPath: string | null,
+): Promise<FileDiff | null> => {
+  const systemExists = systemPath !== null && (await pathExists(systemPath));
+  const repoExists = repoPath !== null && (await pathExists(repoPath));
+
+  if (!systemExists && !repoExists) return null;
+
+  const diff: FileDiff = { source, destination, hasChanges: false };
+
+  if (!systemExists) {
+    diff.hasChanges = true;
+    // Sub-files should never be directories — expandDirectoryDiff walks files
+    // only. If we see one, skip silently rather than produce a misleading diff.
+    if (await isDirectory(repoPath!)) return null;
+    if (await isBinary(repoPath!)) {
+      diff.isBinary = true;
+      try {
+        diff.repoSize = (await readFile(repoPath!)).length;
+      } catch {
+        // Ignore read errors for binaries
+      }
+      return diff;
+    }
+    const repoContent = await readFile(repoPath!, 'utf-8');
+    diff.repoContent = repoContent;
+    diff.repoSize = repoContent.length;
+    return diff;
+  }
+
+  if (!repoExists) {
+    diff.hasChanges = true;
+    if (await isDirectory(systemPath!)) return null;
+    if (await isBinary(systemPath!)) {
+      diff.isBinary = true;
+      try {
+        diff.systemSize = (await readFile(systemPath!)).length;
+      } catch {
+        // Ignore read errors for binaries
+      }
+      return diff;
+    }
+    const systemContent = await readFile(systemPath!, 'utf-8');
+    diff.systemContent = systemContent;
+    diff.systemSize = systemContent.length;
+    return diff;
+  }
+
+  // Both sides present
+  if ((await isDirectory(systemPath!)) || (await isDirectory(repoPath!))) {
+    return null;
+  }
+
+  if ((await isBinary(systemPath!)) || (await isBinary(repoPath!))) {
+    diff.isBinary = true;
+    const systemChecksum = await getFileChecksum(systemPath!);
+    const repoChecksum = await getFileChecksum(repoPath!);
+    diff.hasChanges = systemChecksum !== repoChecksum;
+    try {
+      diff.systemSize = (await readFile(systemPath!)).length;
+    } catch {
+      // Ignore read errors for binaries
+    }
+    try {
+      diff.repoSize = (await readFile(repoPath!)).length;
+    } catch {
+      // Ignore read errors for binaries
+    }
+    return diff;
+  }
+
+  try {
+    const systemSizeCheck = await checkFileSizeThreshold(systemPath!);
+    const repoSizeCheck = await checkFileSizeThreshold(repoPath!);
+    diff.systemSize = systemSizeCheck.size;
+    diff.repoSize = repoSizeCheck.size;
+  } catch {
+    // Size check failed, continue with diff
+  }
+
+  const systemChecksum = await getFileChecksum(systemPath!);
+  const repoChecksum = await getFileChecksum(repoPath!);
+  if (systemChecksum !== repoChecksum) {
+    diff.hasChanges = true;
+    diff.systemContent = await readFile(systemPath!, 'utf-8');
+    diff.repoContent = await readFile(repoPath!, 'utf-8');
+  }
+
+  return diff;
+};
+
+// Expand a tracked directory into per-file FileDiff entries. Walks both the
+// system and repo sides (tolerating either missing), unions the relative
+// paths, and builds one FileDiff per sub-file that has changed. Returned
+// diffs carry the sub-file path as `source` so every existing renderer and
+// the syntax highlighter work per-file without further plumbing.
+export const expandDirectoryDiff = async (
+  trackedSource: string,
+  trackedDestination: string,
+  systemDir: string | null,
+  repoDir: string | null,
+): Promise<FileDiff[]> => {
+  const relpaths = new Set<string>();
+  if (systemDir && (await pathExists(systemDir))) {
+    const files = await getDirectoryFiles(systemDir);
+    for (const f of files) relpaths.add(relative(systemDir, f));
+  }
+  if (repoDir && (await pathExists(repoDir))) {
+    const files = await getDirectoryFiles(repoDir);
+    for (const f of files) relpaths.add(relative(repoDir, f));
+  }
+
+  const expandedTrackedSource = expandPath(trackedSource);
+  const diffs: FileDiff[] = [];
+
+  for (const rel of [...relpaths].sort()) {
+    const subSource = collapsePath(join(expandedTrackedSource, rel));
+    const subDestination = join(trackedDestination, rel);
+    const subSystemPath = systemDir ? join(systemDir, rel) : null;
+    const subRepoPath = repoDir ? join(repoDir, rel) : null;
+    const subDiff = await buildContentDiff(
+      subSource,
+      subDestination,
+      subSystemPath,
+      subRepoPath,
+    );
+    if (subDiff && subDiff.hasChanges) diffs.push(subDiff);
+  }
+
+  return diffs;
+};
+
+interface FileDiffsResult {
+  diffs: FileDiff[];
+  // Present when the tracked entry was a directory and expansion produced at
+  // least one per-file sub-diff. runDiff uses this to emit a header above the
+  // group so users see which directory the sub-files belong to.
+  directory?: { source: string };
+}
+
+const getFileDiffs = async (
+  tuckDir: string,
+  source: string,
+): Promise<FileDiffsResult> => {
+  const single = await getFileDiff(tuckDir, source);
+  if (!single) return { diffs: [] };
+  if (!single.isDirectory) {
+    return { diffs: single.hasChanges ? [single] : [] };
+  }
+  if (!single.hasChanges) return { diffs: [] };
+
+  // Directory with changes: expand into per-file sub-diffs.
+  const tracked = await getTrackedFileBySource(tuckDir, source);
+  if (!tracked) return { diffs: [single] };
+
+  const systemPath = expandPath(source);
+  const repoPath = getSafeRepoPathFromDestination(tuckDir, tracked.file.destination);
+  const systemExists = await pathExists(systemPath);
+  const repoExists = await pathExists(repoPath);
+
+  const sub = await expandDirectoryDiff(
+    source,
+    tracked.file.destination,
+    systemExists ? systemPath : null,
+    repoExists ? repoPath : null,
+  );
+
+  // Fall back to the directory summary if expansion yields nothing — a
+  // checksum mismatch at the directory root can fire on mtime-only changes
+  // (permissions, ownership) that have no file-level content delta.
+  if (sub.length === 0) return { diffs: [single] };
+  return { diffs: sub, directory: { source } };
+};
+
+interface DiffGroup {
+  diffs: FileDiff[];
+  directoryHeader?: { source: string; count: number };
+}
+
+const formatDirectoryHeader = (header: { source: string; count: number }): string => {
+  const fileWord = header.count === 1 ? 'file' : 'files';
+  return c.cyan(c.bold(`Directory ${header.source} — ${header.count} ${fileWord} changed`));
 };
 
 const DIFF_CONTEXT_LINES = 3;
@@ -478,24 +672,40 @@ const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
   return lines.join('\n');
 };
 
-const formatStat = (diffs: FileDiff[]): string => {
+interface StatLayout {
+  pathWidth: number;
+  countWidth: number;
+  barWidth: number;
+}
+
+// Layout is computed across the full flat diff list so column widths line up
+// across groups — each directory-group's rows reuse the same layout, avoiding
+// a jagged per-group column.
+const computeStatLayout = (diffs: FileDiff[]): StatLayout => {
   const termWidth = process.stdout.columns || 80;
   const rawMaxPath = Math.max(...diffs.map((d) => d.source.length));
   const pathWidth = Math.min(rawMaxPath, Math.max(20, Math.floor(termWidth * 0.5)));
 
-  const perFileStats = diffs.map((d) => ({ diff: d, stats: computeDiffStats(d) }));
   const maxTotal = Math.max(
-    ...perFileStats.map(({ stats }) => stats.insertions + stats.deletions)
+    ...diffs.map((d) => {
+      const s = computeDiffStats(d);
+      return s.insertions + s.deletions;
+    })
   );
   const countWidth = Math.max(1, maxTotal.toString().length);
 
-  // ` path | NN ` — four spaces + separator. Remaining columns go to the bar.
   const fixedOverhead = pathWidth + countWidth + 4;
   const barWidth = Math.max(10, termWidth - fixedOverhead - 2);
 
+  return { pathWidth, countWidth, barWidth };
+};
+
+const formatStatRows = (diffs: FileDiff[], layout: StatLayout): string => {
+  const { pathWidth, countWidth, barWidth } = layout;
   const lines: string[] = [];
 
-  for (const { diff: d, stats } of perFileStats) {
+  for (const d of diffs) {
+    const stats = computeDiffStats(d);
     const paddedPath = truncatePath(d.source, pathWidth).padEnd(pathWidth);
 
     if (d.isBinary) {
@@ -526,9 +736,14 @@ const formatStat = (diffs: FileDiff[]): string => {
     lines.push(` ${paddedPath} | ${countStr} ${bar}`);
   }
 
-  lines.push('');
-  lines.push(` ${formatSummaryLine(diffs.length, sumDiffStats(diffs))}`);
   return lines.join('\n');
+};
+
+const formatStat = (diffs: FileDiff[]): string => {
+  const layout = computeStatLayout(diffs);
+  const rows = formatStatRows(diffs, layout);
+  const footer = ` ${formatSummaryLine(diffs.length, sumDiffStats(diffs))}`;
+  return `${rows}\n\n${footer}`;
 };
 
 const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => {
@@ -556,7 +771,7 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
 
   // Get all tracked files
   const allFiles = await getAllTrackedFiles(tuckDir);
-  const changedFiles: FileDiff[] = [];
+  const groups: DiffGroup[] = [];
   const filterGroups = await resolveGroupFilter(tuckDir, options);
 
   // If no paths specified, check all files
@@ -594,10 +809,14 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
     }
 
     try {
-      const diff = await getFileDiff(tuckDir, file.source);
-      if (diff && diff.hasChanges) {
-        changedFiles.push(diff);
-      }
+      const result = await getFileDiffs(tuckDir, file.source);
+      if (result.diffs.length === 0) continue;
+      groups.push({
+        diffs: result.diffs,
+        directoryHeader: result.directory
+          ? { source: result.directory.source, count: result.diffs.length }
+          : undefined,
+      });
     } catch (error) {
       if (error instanceof FileNotFoundError) {
         logger.warning(`File not found: ${file.source}`);
@@ -609,7 +828,9 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
     }
   }
 
-  if (changedFiles.length === 0) {
+  const allDiffs = groups.flatMap((g) => g.diffs);
+
+  if (allDiffs.length === 0) {
     if (paths.length > 0) {
       logger.success('No differences found');
     } else {
@@ -624,31 +845,51 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   prompts.intro('tuck diff');
   console.log();
 
-  // --name-only: plain path list, no stats.
+  // --name-only: plain path list, no stats. Directory groups emit their header
+  // so expanded sub-files are visually attributed to the tracked directory.
   if (options.nameOnly) {
     console.log(c.bold('Changed files:'));
     console.log();
-    for (const diff of changedFiles) {
-      const status = diff.isDirectory ? c.dim('[dir]') : diff.isBinary ? c.dim('[bin]') : '';
-      console.log(`  ${c.yellow('~')} ${diff.source} ${status}`);
+    for (const group of groups) {
+      if (group.directoryHeader) {
+        console.log(`  ${formatDirectoryHeader(group.directoryHeader)}`);
+      }
+      for (const diff of group.diffs) {
+        const status = diff.isDirectory
+          ? c.dim('[dir]')
+          : diff.isBinary
+            ? c.dim('[bin]')
+            : '';
+        console.log(`  ${c.yellow('~')} ${diff.source} ${status}`);
+      }
     }
     console.log();
-    prompts.outro(`Found ${changedFiles.length} changed file(s)`);
+    prompts.outro(`Found ${allDiffs.length} changed file(s)`);
     return;
   }
 
-  // --stat: git-style bar graph. Footer line carries the insertion/deletion totals.
+  // --stat: git-style bar graph. Column widths are computed across every diff
+  // (including directory sub-files) so groups line up visually. Footer prints
+  // once at the end with totals across everything.
   if (options.stat) {
-    console.log(formatStat(changedFiles));
+    const layout = computeStatLayout(allDiffs);
+    for (const group of groups) {
+      if (group.directoryHeader) {
+        console.log(formatDirectoryHeader(group.directoryHeader));
+      }
+      console.log(formatStatRows(group.diffs, layout));
+    }
     console.log();
-    prompts.outro(`Found ${changedFiles.length} changed file(s)`);
+    console.log(` ${formatSummaryLine(allDiffs.length, sumDiffStats(allDiffs))}`);
+    console.log();
+    prompts.outro(`Found ${allDiffs.length} changed file(s)`);
     return;
   }
 
   // Full-diff mode: summary header above the per-file output so long runs show
   // their scale upfront. Binary/directory diffs contribute 0/0 to the totals.
-  const totals = sumDiffStats(changedFiles);
-  console.log(c.bold(formatSummaryLine(changedFiles.length, totals)));
+  const totals = sumDiffStats(allDiffs);
+  console.log(c.bold(formatSummaryLine(allDiffs.length, totals)));
   console.log();
 
   // Side-by-side renders only when the terminal is wide enough — a two-column
@@ -664,14 +905,20 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
     console.log();
   }
 
-  for (const diff of changedFiles) {
-    console.log(
-      useSideBySide ? formatSideBySide(diff, termWidth) : formatUnifiedDiff(diff)
-    );
-    console.log();
+  for (const group of groups) {
+    if (group.directoryHeader) {
+      console.log(formatDirectoryHeader(group.directoryHeader));
+      console.log();
+    }
+    for (const diff of group.diffs) {
+      console.log(
+        useSideBySide ? formatSideBySide(diff, termWidth) : formatUnifiedDiff(diff)
+      );
+      console.log();
+    }
   }
 
-  prompts.outro(`Found ${changedFiles.length} changed file(s)`);
+  prompts.outro(`Found ${allDiffs.length} changed file(s)`);
 
   // Return exit code 1 if differences found and --exit-code is set
   if (options.exitCode) {
