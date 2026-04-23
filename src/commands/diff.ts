@@ -281,6 +281,126 @@ const formatUnifiedDiff = (diff: FileDiff): string => {
   return lines.join('\n');
 };
 
+interface DiffStats {
+  insertions: number;
+  deletions: number;
+}
+
+const computeDiffStats = (diff: FileDiff): DiffStats => {
+  if (diff.isBinary || diff.isDirectory) {
+    return { insertions: 0, deletions: 0 };
+  }
+
+  const { systemContent, repoContent } = diff;
+  const systemMissing = systemContent === undefined;
+  const repoMissing = repoContent === undefined;
+
+  if (systemMissing && !repoMissing) {
+    return { insertions: repoContent!.split('\n').length, deletions: 0 };
+  }
+  if (!systemMissing && repoMissing) {
+    return { insertions: 0, deletions: systemContent!.split('\n').length };
+  }
+  if (systemMissing && repoMissing) {
+    return { insertions: 0, deletions: 0 };
+  }
+
+  // Both present — match formatUnifiedDiff's naive index-pair comparison so the
+  // reported stats equal what the unified renderer actually prints.
+  const systemLines = systemContent!.split('\n');
+  const repoLines = repoContent!.split('\n');
+  const maxLines = Math.max(systemLines.length, repoLines.length);
+  let insertions = 0;
+  let deletions = 0;
+  for (let i = 0; i < maxLines; i++) {
+    const sysLine = systemLines[i];
+    const repoLine = repoLines[i];
+    if (sysLine !== repoLine) {
+      if (sysLine !== undefined) deletions++;
+      if (repoLine !== undefined) insertions++;
+    }
+  }
+  return { insertions, deletions };
+};
+
+const sumDiffStats = (diffs: FileDiff[]): DiffStats =>
+  diffs.reduce<DiffStats>(
+    (acc, d) => {
+      const s = computeDiffStats(d);
+      return {
+        insertions: acc.insertions + s.insertions,
+        deletions: acc.deletions + s.deletions,
+      };
+    },
+    { insertions: 0, deletions: 0 }
+  );
+
+const formatSummaryLine = (files: number, stats: DiffStats): string => {
+  const fileWord = files === 1 ? 'file' : 'files';
+  const insWord = stats.insertions === 1 ? 'insertion' : 'insertions';
+  const delWord = stats.deletions === 1 ? 'deletion' : 'deletions';
+  return `${files} ${fileWord} changed, ${c.green(`${stats.insertions} ${insWord}(+)`)}, ${c.red(`${stats.deletions} ${delWord}(-)`)}`;
+};
+
+const truncatePath = (path: string, max: number): string => {
+  if (path.length <= max) return path;
+  if (max <= 3) return path.slice(0, max);
+  return '...' + path.slice(-(max - 3));
+};
+
+const formatStat = (diffs: FileDiff[]): string => {
+  const termWidth = process.stdout.columns || 80;
+  const rawMaxPath = Math.max(...diffs.map((d) => d.source.length));
+  const pathWidth = Math.min(rawMaxPath, Math.max(20, Math.floor(termWidth * 0.5)));
+
+  const perFileStats = diffs.map((d) => ({ diff: d, stats: computeDiffStats(d) }));
+  const maxTotal = Math.max(
+    ...perFileStats.map(({ stats }) => stats.insertions + stats.deletions)
+  );
+  const countWidth = Math.max(1, maxTotal.toString().length);
+
+  // ` path | NN ` — four spaces + separator. Remaining columns go to the bar.
+  const fixedOverhead = pathWidth + countWidth + 4;
+  const barWidth = Math.max(10, termWidth - fixedOverhead - 2);
+
+  const lines: string[] = [];
+
+  for (const { diff: d, stats } of perFileStats) {
+    const paddedPath = truncatePath(d.source, pathWidth).padEnd(pathWidth);
+
+    if (d.isBinary) {
+      lines.push(` ${paddedPath} | ${c.dim('Bin')}`);
+      continue;
+    }
+    if (d.isDirectory) {
+      const n = d.fileCount || 0;
+      lines.push(` ${paddedPath} | ${c.dim(`Dir (${n} file${n === 1 ? '' : 's'})`)}`);
+      continue;
+    }
+
+    const total = stats.insertions + stats.deletions;
+    const countStr = total.toString().padStart(countWidth);
+
+    let insBar = stats.insertions;
+    let delBar = stats.deletions;
+    if (total > barWidth) {
+      const scale = barWidth / total;
+      insBar = Math.round(stats.insertions * scale);
+      delBar = Math.round(stats.deletions * scale);
+      // Preserve at least one cell for any non-zero side after scaling
+      if (stats.insertions > 0 && insBar === 0) insBar = 1;
+      if (stats.deletions > 0 && delBar === 0) delBar = 1;
+    }
+
+    const bar = c.green('+'.repeat(insBar)) + c.red('-'.repeat(delBar));
+    lines.push(` ${paddedPath} | ${countStr} ${bar}`);
+  }
+
+  lines.push('');
+  lines.push(` ${formatSummaryLine(diffs.length, sumDiffStats(diffs))}`);
+  return lines.join('\n');
+};
+
 const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
@@ -374,25 +494,33 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   prompts.intro('tuck diff');
   console.log();
 
-  // Show stats/name-only if requested
-  if (options.stat || options.nameOnly) {
-    const label = options.nameOnly
-      ? 'Changed files:'
-      : `${changedFiles.length} file${changedFiles.length > 1 ? 's' : ''} changed:`;
-    console.log(c.bold(label));
+  // --name-only: plain path list, no stats.
+  if (options.nameOnly) {
+    console.log(c.bold('Changed files:'));
     console.log();
-
     for (const diff of changedFiles) {
       const status = diff.isDirectory ? c.dim('[dir]') : diff.isBinary ? c.dim('[bin]') : '';
       console.log(`  ${c.yellow('~')} ${diff.source} ${status}`);
     }
-
     console.log();
     prompts.outro(`Found ${changedFiles.length} changed file(s)`);
     return;
   }
 
-  // Show full diff for each file
+  // --stat: git-style bar graph. Footer line carries the insertion/deletion totals.
+  if (options.stat) {
+    console.log(formatStat(changedFiles));
+    console.log();
+    prompts.outro(`Found ${changedFiles.length} changed file(s)`);
+    return;
+  }
+
+  // Full-diff mode: summary header above the per-file output so long runs show
+  // their scale upfront. Binary/directory diffs contribute 0/0 to the totals.
+  const totals = sumDiffStats(changedFiles);
+  console.log(c.bold(formatSummaryLine(changedFiles.length, totals)));
+  console.log();
+
   for (const diff of changedFiles) {
     console.log(formatUnifiedDiff(diff));
     console.log();
@@ -406,7 +534,7 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   }
 };
 
-export { runDiff, formatUnifiedDiff };
+export { runDiff, formatUnifiedDiff, computeDiffStats, formatStat };
 
 const collectGroup = (value: string, previous: string[] = []): string[] => [
   ...previous,

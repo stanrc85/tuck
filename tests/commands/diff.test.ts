@@ -156,6 +156,171 @@ describe('diff command', () => {
     });
   });
 
+  describe('computeDiffStats', () => {
+    it('counts repo lines as insertions when system is missing', async () => {
+      const { computeDiffStats } = await import('../../src/commands/diff.js');
+      const stats = computeDiffStats({
+        source: '~/.test.txt',
+        destination: 'files/test.txt',
+        hasChanges: true,
+        repoContent: 'line 1\nline 2\nline 3',
+      });
+      expect(stats).toEqual({ insertions: 3, deletions: 0 });
+    });
+
+    it('counts system lines as deletions when repo is missing', async () => {
+      const { computeDiffStats } = await import('../../src/commands/diff.js');
+      const stats = computeDiffStats({
+        source: '~/.test.txt',
+        destination: 'files/test.txt',
+        hasChanges: true,
+        systemContent: 'line 1\nline 2',
+      });
+      expect(stats).toEqual({ insertions: 0, deletions: 2 });
+    });
+
+    it('pairs line-by-line when both sides exist', async () => {
+      const { computeDiffStats } = await import('../../src/commands/diff.js');
+      // system:  line 1 | line 2 | line 3 | line 4
+      // repo:    line 1 | changed| line 3 | line 4
+      // one differing index → +1 / -1
+      const stats = computeDiffStats({
+        source: '~/.test.txt',
+        destination: 'files/test.txt',
+        hasChanges: true,
+        systemContent: 'line 1\nline 2\nline 3\nline 4',
+        repoContent: 'line 1\nchanged\nline 3\nline 4',
+      });
+      expect(stats).toEqual({ insertions: 1, deletions: 1 });
+    });
+
+    it('counts trailing lines on the longer side without a pair', async () => {
+      const { computeDiffStats } = await import('../../src/commands/diff.js');
+      const stats = computeDiffStats({
+        source: '~/.test.txt',
+        destination: 'files/test.txt',
+        hasChanges: true,
+        systemContent: 'a\nb',
+        repoContent: 'a\nb\nc\nd',
+      });
+      // indices 2, 3 on repo side have no system pair — 2 insertions, 0 deletions
+      expect(stats).toEqual({ insertions: 2, deletions: 0 });
+    });
+
+    it('returns zeros for binary diffs', async () => {
+      const { computeDiffStats } = await import('../../src/commands/diff.js');
+      expect(
+        computeDiffStats({
+          source: '~/.bin',
+          destination: 'files/bin',
+          hasChanges: true,
+          isBinary: true,
+          systemSize: 100,
+          repoSize: 200,
+        })
+      ).toEqual({ insertions: 0, deletions: 0 });
+    });
+
+    it('returns zeros for directory diffs', async () => {
+      const { computeDiffStats } = await import('../../src/commands/diff.js');
+      expect(
+        computeDiffStats({
+          source: '~/.config/test',
+          destination: 'files/test',
+          hasChanges: true,
+          isDirectory: true,
+          fileCount: 5,
+        })
+      ).toEqual({ insertions: 0, deletions: 0 });
+    });
+  });
+
+  describe('formatStat', () => {
+    const stripAnsi = (s: string): string =>
+      // Strip ANSI escape sequences so assertions don't depend on color codes.
+      // eslint-disable-next-line no-control-regex
+      s.replace(/\[[0-9;]*m/g, '');
+
+    it('renders a per-file line with pipe separator, count, and +/- bar', async () => {
+      const { formatStat } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatStat([
+          {
+            source: '~/.zshrc',
+            destination: 'files/shell/zshrc',
+            hasChanges: true,
+            systemContent: 'a\nb\nc',
+            repoContent: 'a\nchanged\nc',
+          },
+        ])
+      );
+      expect(output).toMatch(/~\/\.zshrc\s+\|\s+2\s+\+-/);
+    });
+
+    it('labels binary files as Bin and directories as Dir', async () => {
+      const { formatStat } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatStat([
+          {
+            source: '~/.bin',
+            destination: 'files/bin',
+            hasChanges: true,
+            isBinary: true,
+            systemSize: 100,
+            repoSize: 200,
+          },
+          {
+            source: '~/.config/app',
+            destination: 'files/app',
+            hasChanges: true,
+            isDirectory: true,
+            fileCount: 3,
+          },
+        ])
+      );
+      expect(output).toContain('| Bin');
+      expect(output).toContain('| Dir (3 files)');
+    });
+
+    it('ends with a git-style footer summary', async () => {
+      const { formatStat } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatStat([
+          {
+            source: '~/.a',
+            destination: 'files/a',
+            hasChanges: true,
+            repoContent: 'new\nline',
+          },
+          {
+            source: '~/.b',
+            destination: 'files/b',
+            hasChanges: true,
+            systemContent: 'gone',
+          },
+        ])
+      );
+      // Pluralization: 2 files, 2 insertions, 1 deletion
+      expect(output).toMatch(/2 files changed, 2 insertions\(\+\), 1 deletion\(-\)/);
+    });
+
+    it('singularizes file / insertion / deletion counts of 1', async () => {
+      const { formatStat } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatStat([
+          {
+            source: '~/.a',
+            destination: 'files/a',
+            hasChanges: true,
+            systemContent: 'a',
+            repoContent: 'b',
+          },
+        ])
+      );
+      expect(output).toMatch(/1 file changed, 1 insertion\(\+\), 1 deletion\(-\)/);
+    });
+  });
+
   describe('FileDiff interface', () => {
     it('should have required fields', () => {
       const diff: TestFileDiff = {
