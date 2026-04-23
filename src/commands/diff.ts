@@ -348,6 +348,139 @@ const truncatePath = (path: string, max: number): string => {
   return '...' + path.slice(-(max - 3));
 };
 
+const SBS_MIN_WIDTH = 80;
+const SBS_CONTEXT_LINES = 3;
+const TAB_EXPANSION = '    ';
+
+const padOrTruncate = (raw: string, width: number): string => {
+  // Tabs render at different widths in different terminals — normalise to 4
+  // spaces so every row lines up with the gutter and no ANSI math is needed.
+  const normalized = raw.replace(/\t/g, TAB_EXPANSION);
+  if (normalized.length === width) return normalized;
+  if (normalized.length < width) return normalized.padEnd(width);
+  if (width <= 1) return normalized.slice(0, width);
+  return normalized.slice(0, width - 1) + '…';
+};
+
+type SbsRow =
+  | { kind: 'unchanged'; system: string; repo: string }
+  | { kind: 'modified'; system: string; repo: string }
+  | { kind: 'add'; repo: string }
+  | { kind: 'delete'; system: string }
+  | { kind: 'ruler'; skipped: number };
+
+const buildSbsRows = (systemLines: string[], repoLines: string[]): SbsRow[] => {
+  const maxLines = Math.max(systemLines.length, repoLines.length);
+  const rows: SbsRow[] = [];
+  for (let i = 0; i < maxLines; i++) {
+    const s = systemLines[i];
+    const r = repoLines[i];
+    if (s === undefined && r !== undefined) rows.push({ kind: 'add', repo: r });
+    else if (s !== undefined && r === undefined) rows.push({ kind: 'delete', system: s });
+    else if (s !== r) rows.push({ kind: 'modified', system: s!, repo: r! });
+    else rows.push({ kind: 'unchanged', system: s!, repo: r! });
+  }
+  return rows;
+};
+
+// Collapse runs of unchanged rows longer than 2*context to a single ruler row,
+// preserving `context` lines on each side that's adjacent to a change.
+const collapseUnchanged = (rows: SbsRow[], context: number): SbsRow[] => {
+  const out: SbsRow[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    if (rows[i].kind !== 'unchanged') {
+      out.push(rows[i]);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < rows.length && rows[j].kind === 'unchanged') j++;
+    const runLength = j - i;
+    const leading = i === 0 ? 0 : context;
+    const trailing = j === rows.length ? 0 : context;
+
+    if (runLength <= leading + trailing) {
+      for (let k = i; k < j; k++) out.push(rows[k]);
+    } else {
+      for (let k = i; k < i + leading; k++) out.push(rows[k]);
+      out.push({ kind: 'ruler', skipped: runLength - leading - trailing });
+      for (let k = j - trailing; k < j; k++) out.push(rows[k]);
+    }
+    i = j;
+  }
+  return out;
+};
+
+const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
+  // Binary, directory, and one-sided diffs don't benefit from a two-column
+  // layout — the second column would be empty or meaningless. Defer to the
+  // unified renderer which already handles those cases cleanly.
+  if (diff.isBinary || diff.isDirectory) return formatUnifiedDiff(diff);
+  const { systemContent, repoContent } = diff;
+  if (systemContent === undefined || repoContent === undefined) {
+    return formatUnifiedDiff(diff);
+  }
+
+  const gutter = 3;
+  const col = Math.max(10, Math.floor((termWidth - gutter) / 2));
+  const rowWidth = col * 2 + gutter;
+
+  const rows = collapseUnchanged(
+    buildSbsRows(systemContent.split('\n'), repoContent.split('\n')),
+    SBS_CONTEXT_LINES
+  );
+
+  const lines: string[] = [];
+  lines.push(
+    c.bold(padOrTruncate(`--- a/${diff.source} (system)`, col)) +
+      '   ' +
+      c.bold(padOrTruncate(`+++ b/${diff.source} (repository)`, col))
+  );
+  lines.push(c.dim('─'.repeat(rowWidth)));
+
+  for (const row of rows) {
+    if (row.kind === 'ruler') {
+      const label = `┄ ${row.skipped} unchanged line${row.skipped === 1 ? '' : 's'} ┄`;
+      const pad = Math.max(0, Math.floor((rowWidth - label.length) / 2));
+      lines.push(c.dim(' '.repeat(pad) + label));
+      continue;
+    }
+    if (row.kind === 'unchanged') {
+      lines.push(
+        c.dim(padOrTruncate(row.system, col)) +
+          '   ' +
+          c.dim(padOrTruncate(row.repo, col))
+      );
+      continue;
+    }
+    if (row.kind === 'add') {
+      lines.push(
+        padOrTruncate('', col) +
+          ' ' + c.green('+') + ' ' +
+          c.green(padOrTruncate(row.repo, col))
+      );
+      continue;
+    }
+    if (row.kind === 'delete') {
+      lines.push(
+        c.red(padOrTruncate(row.system, col)) +
+          ' ' + c.red('-') + ' ' +
+          padOrTruncate('', col)
+      );
+      continue;
+    }
+    // modified
+    lines.push(
+      c.red(padOrTruncate(row.system, col)) +
+        ' ' + c.yellow('|') + ' ' +
+        c.green(padOrTruncate(row.repo, col))
+    );
+  }
+
+  return lines.join('\n');
+};
+
 const formatStat = (diffs: FileDiff[]): string => {
   const termWidth = process.stdout.columns || 80;
   const rawMaxPath = Math.max(...diffs.map((d) => d.source.length));
@@ -521,8 +654,23 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   console.log(c.bold(formatSummaryLine(changedFiles.length, totals)));
   console.log();
 
+  // Side-by-side renders only when the terminal is wide enough — a two-column
+  // layout under 80 cols truncates too aggressively to be useful. Warn the
+  // user when we fall back so the flag doesn't silently no-op.
+  const termWidth = process.stdout.columns || 80;
+  const wantsSideBySide = options.sideBySide === true;
+  const useSideBySide = wantsSideBySide && termWidth >= SBS_MIN_WIDTH;
+  if (wantsSideBySide && !useSideBySide) {
+    logger.warning(
+      `Terminal width ${termWidth} < ${SBS_MIN_WIDTH} cols — falling back to unified diff`
+    );
+    console.log();
+  }
+
   for (const diff of changedFiles) {
-    console.log(formatUnifiedDiff(diff));
+    console.log(
+      useSideBySide ? formatSideBySide(diff, termWidth) : formatUnifiedDiff(diff)
+    );
     console.log();
   }
 
@@ -534,7 +682,7 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   }
 };
 
-export { runDiff, formatUnifiedDiff, computeDiffStats, formatStat };
+export { runDiff, formatUnifiedDiff, computeDiffStats, formatStat, formatSideBySide };
 
 const collectGroup = (value: string, previous: string[] = []): string[] => [
   ...previous,
@@ -555,6 +703,10 @@ export const diffCommand = new Command('diff')
   )
   .option('-g, --group <name>', 'Filter by host-group (repeatable)', collectGroup, [])
   .option('--name-only', 'Show only changed file names')
+  .option(
+    '-s, --side-by-side',
+    'Render diffs in two columns (auto-falls back on narrow terminals)'
+  )
   .option('--exit-code', 'Return exit code 1 if differences found')
   .action(async (paths: string[], options: DiffOptions) => {
     await runDiff(paths, options);

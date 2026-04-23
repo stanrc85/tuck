@@ -321,6 +321,170 @@ describe('diff command', () => {
     });
   });
 
+  describe('formatSideBySide', () => {
+    const stripAnsi = (s: string): string =>
+      // eslint-disable-next-line no-control-regex
+      s.replace(/\x1b\[[0-9;]*m/g, '');
+
+    const TERM = 120;
+
+    it('emits a header row with both system and repository labels', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.zshrc',
+            destination: 'files/shell/zshrc',
+            hasChanges: true,
+            systemContent: 'a',
+            repoContent: 'b',
+          },
+          TERM
+        )
+      );
+      expect(output).toContain('--- a/~/.zshrc (system)');
+      expect(output).toContain('+++ b/~/.zshrc (repository)');
+    });
+
+    it('uses `|` for modified, `+` for add-only, `-` for delete-only rows', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.zshrc',
+            destination: 'files/shell/zshrc',
+            hasChanges: true,
+            // system has 3 lines, repo has 4 — index 1 differs, index 3 repo-only
+            systemContent: 'same\nsys-only\nmatch',
+            repoContent: 'same\nrepo-ver\nmatch\nextra',
+          },
+          TERM
+        )
+      );
+      // Modified row carries `|`
+      expect(output).toMatch(/sys-only\s+\|\s+repo-ver/);
+      // Repo-only row carries `+`
+      expect(output).toMatch(/\+\s+extra/);
+    });
+
+    it('collapses unchanged runs longer than 2*context to a ruler', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      // 10 identical lines + 1 change at the end — the leading 10 should
+      // collapse to a ruler (context = 3, so 10 > 0 + 3 → ruler with 7 skipped
+      // + 3 context rows before the change).
+      const same = Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n');
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.big',
+            destination: 'files/big',
+            hasChanges: true,
+            systemContent: same + '\nold',
+            repoContent: same + '\nnew',
+          },
+          TERM
+        )
+      );
+      expect(output).toMatch(/┄\s+7 unchanged lines\s+┄/);
+      expect(output).toContain('old');
+      expect(output).toContain('new');
+      // The early unchanged lines (0–6) should NOT appear inline.
+      expect(output).not.toMatch(/line 0\s/);
+    });
+
+    it('keeps unchanged runs short enough to sit within context inline', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      // 4 identical lines between two changes — context on each side = 3, so
+      // run length 4 <= 3 + 3; no ruler should appear.
+      const systemLines = ['start-sys', 'c1', 'c2', 'c3', 'c4', 'end-sys'];
+      const repoLines = ['start-repo', 'c1', 'c2', 'c3', 'c4', 'end-repo'];
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.small',
+            destination: 'files/small',
+            hasChanges: true,
+            systemContent: systemLines.join('\n'),
+            repoContent: repoLines.join('\n'),
+          },
+          TERM
+        )
+      );
+      expect(output).not.toContain('unchanged line');
+      expect(output).toContain('c2');
+    });
+
+    it('truncates lines that overflow the column with an ellipsis', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      const longLine = 'x'.repeat(200);
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.long',
+            destination: 'files/long',
+            hasChanges: true,
+            systemContent: longLine,
+            repoContent: longLine + 'DIFFERENT',
+          },
+          TERM
+        )
+      );
+      expect(output).toContain('…');
+    });
+
+    it('defers binary diffs to the unified renderer', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.bin',
+            destination: 'files/bin',
+            hasChanges: true,
+            isBinary: true,
+            systemSize: 100,
+            repoSize: 200,
+          },
+          TERM
+        )
+      );
+      expect(output).toContain('Binary files differ');
+      expect(output).not.toContain('|'); // no modified-row marker
+    });
+
+    it('defers directory diffs to the unified renderer', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.config/app',
+            destination: 'files/app',
+            hasChanges: true,
+            isDirectory: true,
+            fileCount: 3,
+          },
+          TERM
+        )
+      );
+      expect(output).toContain('Directory content changed');
+    });
+
+    it('defers one-sided diffs to the unified renderer', async () => {
+      const { formatSideBySide } = await import('../../src/commands/diff.js');
+      const output = stripAnsi(
+        formatSideBySide(
+          {
+            source: '~/.newfile',
+            destination: 'files/newfile',
+            hasChanges: true,
+            repoContent: 'only in repo',
+          },
+          TERM
+        )
+      );
+      expect(output).toContain('File missing on system');
+    });
+  });
+
   describe('FileDiff interface', () => {
     it('should have required fields', () => {
       const diff: TestFileDiff = {
