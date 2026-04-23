@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.18.3](https://github.com/stanrc85/tuck/compare/v2.18.2...v2.18.3) (2026-04-23)
 
 
 ### Bug Fixes
 
 * **security:** use Object.defineProperty in setNestedValue ([389ff4d](https://github.com/stanrc85/tuck/commit/389ff4d126fd3f63b06d3717d3ab91f40ecf25c5))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.18.2](https://github.com/stanrc85/tuck/compare/v2.18.1...v2.18.2) (2026-04-22)
 
