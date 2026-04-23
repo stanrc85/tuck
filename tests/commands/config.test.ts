@@ -287,6 +287,32 @@ describe('config command', () => {
       expect(target).toEqual({ repository: { defaultBranch: 'develop' } });
     });
 
+    it('setNestedValue writes enumerable, writable, configurable own properties', async () => {
+      // Regression: the walker uses Object.defineProperty (not bracket
+      // assignment) to neutralise the CodeQL prototype-pollution sink.
+      // Verify the resulting descriptor still behaves like a normal assignment
+      // so JSON.stringify / Object.keys / overwrites keep working.
+      const { setNestedValue } = await import('../../src/commands/config.js');
+      const target: Record<string, unknown> = {};
+      setNestedValue(target, 'repository.defaultBranch', 'develop');
+
+      const descriptor = Object.getOwnPropertyDescriptor(
+        target.repository as Record<string, unknown>,
+        'defaultBranch'
+      );
+      expect(descriptor).toMatchObject({
+        value: 'develop',
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+      expect(JSON.stringify(target)).toBe('{"repository":{"defaultBranch":"develop"}}');
+
+      // Overwriting an existing value should also work.
+      setNestedValue(target, 'repository.defaultBranch', 'main');
+      expect((target.repository as Record<string, unknown>).defaultBranch).toBe('main');
+    });
+
     it('parseValue falls through cleanly when path contains a blocked segment', async () => {
       // resolveSchemaAtPath also walks dotted paths; the guard there should
       // return null so parseValue falls back to the raw-string return.

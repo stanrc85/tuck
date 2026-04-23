@@ -157,12 +157,22 @@ export const setNestedValue = (
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];
     if (!Object.prototype.hasOwnProperty.call(current, key) || typeof current[key] !== 'object') {
-      current[key] = {};
+      Object.defineProperty(current, key, {
+        value: {},
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     }
     current = current[key] as Record<string, unknown>;
   }
 
-  current[keys[keys.length - 1]] = value;
+  Object.defineProperty(current, keys[keys.length - 1], {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
 };
 
 const unwrapSchema = (schema: z.ZodTypeAny): z.ZodTypeAny => {
