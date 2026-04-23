@@ -1,3 +1,10 @@
+# [2.19.0](https://github.com/stanrc85/tuck/compare/v2.18.3...v2.19.0) (2026-04-23)
+
+
+### Features
+
+* **diff:** summary header + git-style --stat bar graph ([4c0e19f](https://github.com/stanrc85/tuck/commit/4c0e19f280b4337fd1778c6142c7963ea2c971ca))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.18.3](https://github.com/stanrc85/tuck/compare/v2.18.2...v2.18.3) (2026-04-23)
