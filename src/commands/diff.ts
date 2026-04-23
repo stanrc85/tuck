@@ -180,6 +180,59 @@ const getFileDiff = async (tuckDir: string, source: string): Promise<FileDiff | 
   return diff;
 };
 
+const DIFF_CONTEXT_LINES = 3;
+
+type SbsRow =
+  | { kind: 'unchanged'; system: string; repo: string }
+  | { kind: 'modified'; system: string; repo: string }
+  | { kind: 'add'; repo: string }
+  | { kind: 'delete'; system: string }
+  | { kind: 'ruler'; skipped: number };
+
+const buildSbsRows = (systemLines: string[], repoLines: string[]): SbsRow[] => {
+  const maxLines = Math.max(systemLines.length, repoLines.length);
+  const rows: SbsRow[] = [];
+  for (let i = 0; i < maxLines; i++) {
+    const s = systemLines[i];
+    const r = repoLines[i];
+    if (s === undefined && r !== undefined) rows.push({ kind: 'add', repo: r });
+    else if (s !== undefined && r === undefined) rows.push({ kind: 'delete', system: s });
+    else if (s !== r) rows.push({ kind: 'modified', system: s!, repo: r! });
+    else rows.push({ kind: 'unchanged', system: s!, repo: r! });
+  }
+  return rows;
+};
+
+// Collapse runs of unchanged rows longer than 2*context to a single ruler row,
+// preserving `context` lines on each side adjacent to a change. Runs that
+// lead/trail the file only keep context on the side facing a change.
+const collapseUnchanged = (rows: SbsRow[], context: number): SbsRow[] => {
+  const out: SbsRow[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    if (rows[i].kind !== 'unchanged') {
+      out.push(rows[i]);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < rows.length && rows[j].kind === 'unchanged') j++;
+    const runLength = j - i;
+    const leading = i === 0 ? 0 : context;
+    const trailing = j === rows.length ? 0 : context;
+
+    if (runLength <= leading + trailing) {
+      for (let k = i; k < j; k++) out.push(rows[k]);
+    } else {
+      for (let k = i; k < i + leading; k++) out.push(rows[k]);
+      out.push({ kind: 'ruler', skipped: runLength - leading - trailing });
+      for (let k = j - trailing; k < j; k++) out.push(rows[k]);
+    }
+    i = j;
+  }
+  return out;
+};
+
 const formatUnifiedDiff = (diff: FileDiff): string => {
   const lines: string[] = [];
 
@@ -203,79 +256,64 @@ const formatUnifiedDiff = (diff: FileDiff): string => {
   }
 
   const { systemContent, repoContent } = diff;
-
-  // Check if systemContent is explicitly undefined (missing) vs empty string
   const systemMissing = systemContent === undefined;
   const repoMissing = repoContent === undefined;
 
   if (systemMissing && !repoMissing) {
-    // File only in repo
     lines.push(c.red('File missing on system'));
     lines.push(c.dim('Repository content:'));
-    repoContent!.split('\n').forEach((line) => {
+    for (const line of repoContent!.split('\n')) {
       lines.push(c.green(`+ ${line}`));
-    });
-  } else if (!systemMissing && repoMissing) {
-    // File only on system
+    }
+    return lines.join('\n');
+  }
+
+  if (!systemMissing && repoMissing) {
     lines.push(c.yellow('File not yet synced to repository'));
     lines.push(c.dim('System content:'));
-    systemContent!.split('\n').forEach((line) => {
+    for (const line of systemContent!.split('\n')) {
       lines.push(c.red(`- ${line}`));
-    });
-  } else if (!systemMissing && !repoMissing) {
-    // Both files exist (may be empty)
-    const CONTEXT_LINES = 3;
-    const systemLines = systemContent!.split('\n');
-    const repoLines = repoContent!.split('\n');
-
-    const maxLines = Math.max(systemLines.length, repoLines.length);
-
-    let inDiff = false;
-    let diffStart = 0;
-
-    for (let i = 0; i < maxLines; i++) {
-      const sysLine = systemLines[i];
-      const repoLine = repoLines[i];
-
-      if (sysLine !== repoLine) {
-        if (!inDiff) {
-          inDiff = true;
-          diffStart = i;
-          const startLine = Math.max(0, diffStart - CONTEXT_LINES + 1);
-          const contextLineCount = Math.min(diffStart, CONTEXT_LINES);
-          const endLine = Math.min(maxLines, diffStart + CONTEXT_LINES + 1);
-
-          lines.push(
-            c.cyan(
-              `@@ -${startLine + 1},${contextLineCount + 1} +${startLine + 1},${endLine - startLine} @@`
-            )
-          );
-
-          // Print context lines before diff
-          for (let j = startLine; j < i; j++) {
-            const ctxLine = systemLines[j];
-            if (ctxLine !== undefined) {
-              lines.push(c.dim(`  ${ctxLine}`));
-            }
-          }
-        }
-
-        if (sysLine !== undefined) {
-          lines.push(c.red(`- ${sysLine}`));
-        }
-        if (repoLine !== undefined) {
-          lines.push(c.green(`+ ${repoLine}`));
-        }
-      } else if (inDiff) {
-        // Show context lines after diff changes
-        if (sysLine === repoLine && sysLine !== undefined) {
-          lines.push(c.dim(`  ${sysLine}`));
-        }
-      } else {
-        // Exit diff context after matching lines
-        inDiff = false;
-      }
     }
+    return lines.join('\n');
+  }
+
+  if (systemMissing && repoMissing) {
+    // Both sides absent — tracked but nothing to compare. Caller typically
+    // filters these out via getFileDiff, but guard here so the renderer
+    // never trips on undefined content.
+    return lines.join('\n');
+  }
+
+  // Both present. Build rows via the shared helper and collapse long unchanged
+  // runs to a single ruler row so the output stays compact on large files with
+  // isolated changes. Replaces the earlier inDiff-state loop whose reset branch
+  // never fired, so every line after the first change used to print as context.
+  const rows = collapseUnchanged(
+    buildSbsRows(systemContent!.split('\n'), repoContent!.split('\n')),
+    DIFF_CONTEXT_LINES
+  );
+
+  for (const row of rows) {
+    if (row.kind === 'ruler') {
+      const label = `┄ ${row.skipped} unchanged line${row.skipped === 1 ? '' : 's'} ┄`;
+      lines.push(c.dim(label));
+      continue;
+    }
+    if (row.kind === 'unchanged') {
+      lines.push(c.dim(`  ${row.system}`));
+      continue;
+    }
+    if (row.kind === 'add') {
+      lines.push(c.green(`+ ${row.repo}`));
+      continue;
+    }
+    if (row.kind === 'delete') {
+      lines.push(c.red(`- ${row.system}`));
+      continue;
+    }
+    // modified: show both sides in sequence
+    lines.push(c.red(`- ${row.system}`));
+    lines.push(c.green(`+ ${row.repo}`));
   }
 
   return lines.join('\n');
@@ -349,7 +387,6 @@ const truncatePath = (path: string, max: number): string => {
 };
 
 const SBS_MIN_WIDTH = 80;
-const SBS_CONTEXT_LINES = 3;
 const TAB_EXPANSION = '    ';
 
 const padOrTruncate = (raw: string, width: number): string => {
@@ -360,56 +397,6 @@ const padOrTruncate = (raw: string, width: number): string => {
   if (normalized.length < width) return normalized.padEnd(width);
   if (width <= 1) return normalized.slice(0, width);
   return normalized.slice(0, width - 1) + '…';
-};
-
-type SbsRow =
-  | { kind: 'unchanged'; system: string; repo: string }
-  | { kind: 'modified'; system: string; repo: string }
-  | { kind: 'add'; repo: string }
-  | { kind: 'delete'; system: string }
-  | { kind: 'ruler'; skipped: number };
-
-const buildSbsRows = (systemLines: string[], repoLines: string[]): SbsRow[] => {
-  const maxLines = Math.max(systemLines.length, repoLines.length);
-  const rows: SbsRow[] = [];
-  for (let i = 0; i < maxLines; i++) {
-    const s = systemLines[i];
-    const r = repoLines[i];
-    if (s === undefined && r !== undefined) rows.push({ kind: 'add', repo: r });
-    else if (s !== undefined && r === undefined) rows.push({ kind: 'delete', system: s });
-    else if (s !== r) rows.push({ kind: 'modified', system: s!, repo: r! });
-    else rows.push({ kind: 'unchanged', system: s!, repo: r! });
-  }
-  return rows;
-};
-
-// Collapse runs of unchanged rows longer than 2*context to a single ruler row,
-// preserving `context` lines on each side that's adjacent to a change.
-const collapseUnchanged = (rows: SbsRow[], context: number): SbsRow[] => {
-  const out: SbsRow[] = [];
-  let i = 0;
-  while (i < rows.length) {
-    if (rows[i].kind !== 'unchanged') {
-      out.push(rows[i]);
-      i++;
-      continue;
-    }
-    let j = i;
-    while (j < rows.length && rows[j].kind === 'unchanged') j++;
-    const runLength = j - i;
-    const leading = i === 0 ? 0 : context;
-    const trailing = j === rows.length ? 0 : context;
-
-    if (runLength <= leading + trailing) {
-      for (let k = i; k < j; k++) out.push(rows[k]);
-    } else {
-      for (let k = i; k < i + leading; k++) out.push(rows[k]);
-      out.push({ kind: 'ruler', skipped: runLength - leading - trailing });
-      for (let k = j - trailing; k < j; k++) out.push(rows[k]);
-    }
-    i = j;
-  }
-  return out;
 };
 
 const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
@@ -428,7 +415,7 @@ const formatSideBySide = (diff: FileDiff, termWidth: number): string => {
 
   const rows = collapseUnchanged(
     buildSbsRows(systemContent.split('\n'), repoContent.split('\n')),
-    SBS_CONTEXT_LINES
+    DIFF_CONTEXT_LINES
   );
 
   const lines: string[] = [];

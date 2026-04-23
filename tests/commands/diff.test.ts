@@ -117,6 +117,34 @@ describe('diff command', () => {
       expect(output).toContain('+ modified');
     });
 
+    it('collapses long unchanged runs to a ruler instead of printing the whole file', async () => {
+      // Regression for the pre-fix behavior where `inDiff` never reset once
+      // set, so every line after the first change was printed as context. A
+      // 15-line file with one edit at line 2 used to dump all 13 trailing
+      // lines; the fix caps trailing context at DIFF_CONTEXT_LINES (3) and
+      // collapses the rest to a ruler.
+      const { formatUnifiedDiff } = await import('../../src/commands/diff.js');
+
+      const systemLines = Array.from({ length: 15 }, (_, i) => `line ${i}`);
+      const repoLines = [...systemLines];
+      repoLines[1] = 'changed';
+
+      const output = formatUnifiedDiff({
+        source: '~/.big',
+        destination: 'files/big',
+        hasChanges: true,
+        systemContent: systemLines.join('\n'),
+        repoContent: repoLines.join('\n'),
+      });
+
+      expect(output).toContain('- line 1');
+      expect(output).toContain('+ changed');
+      expect(output).toMatch(/┄\s+\d+ unchanged lines\s+┄/);
+      // Lines 8-14 are beyond the trailing context window — must not appear.
+      expect(output).not.toContain('line 10');
+      expect(output).not.toContain('line 14');
+    });
+
     it('should format binary file diff correctly', async () => {
       const { formatUnifiedDiff } = await import('../../src/commands/diff.js');
 
