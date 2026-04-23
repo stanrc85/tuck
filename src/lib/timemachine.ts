@@ -99,7 +99,9 @@ export type SnapshotKind =
   | 'sync'
   | 'remove'
   | 'clean'
-  | 'manual';
+  | 'manual'
+  | 'validate-fix'
+  | 'optimize-auto';
 
 export interface SnapshotMetadata {
   id: string;
@@ -600,6 +602,10 @@ export const formatSnapshotKind = (kind: SnapshotKind | undefined): string => {
       return 'clean';
     case 'manual':
       return 'manual';
+    case 'validate-fix':
+      return 'validate-fix';
+    case 'optimize-auto':
+      return 'optimize-auto';
     default:
       return String(kind);
   }

@@ -23,3 +23,5 @@ export { selfUpdateCommand } from './self-update.js';
 export { bootstrapCommand } from './bootstrap.js';
 export { updateCommand } from './update.js';
 export { cheatsheetCommand } from './cheatsheet.js';
+export { validateCommand } from './validate.js';
+export { optimizeCommand } from './optimize.js';
