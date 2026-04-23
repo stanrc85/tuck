@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.21.0](https://github.com/stanrc85/tuck/compare/v2.20.1...v2.21.0) (2026-04-23)
 
 
 ### Features
 
 * **diff:** syntax-highlight shell/json/yaml/toml/lua ([35f3b9f](https://github.com/stanrc85/tuck/commit/35f3b9f6f9e131030960f4f796e91ddd9cd5e309)), closes [#ff8800](https://github.com/stanrc85/tuck/issues/ff8800)
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.20.1](https://github.com/stanrc85/tuck/compare/v2.20.0...v2.20.1) (2026-04-23)
 
