@@ -1,3 +1,16 @@
+# [2.22.0](https://github.com/stanrc85/tuck/compare/v2.21.1...v2.22.0) (2026-04-23)
+
+
+### Bug Fixes
+
+* **diff:** use posix separators for directory-expansion sub-destinations ([2e74bf9](https://github.com/stanrc85/tuck/commit/2e74bf9d0b8792f899bd8589e7d39372315ee23d))
+
+
+### Features
+
+* **commands:** add tuck validate + tuck optimize (TASK-053, TASK-054) ([74093b6](https://github.com/stanrc85/tuck/commit/74093b69b1e9f66d06a92aafb1002c74e2ea5fa4))
+* **diff:** expand tracked directories into per-file diffs (TASK-063) ([15fa2ec](https://github.com/stanrc85/tuck/commit/15fa2ec23cf5d1c9951fb4e676488577575e2705))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.21.1](https://github.com/stanrc85/tuck/compare/v2.21.0...v2.21.1) (2026-04-23)
