@@ -11,6 +11,8 @@ Task-oriented cookbook. "I want to do X" — find the closest recipe and adapt.
 - [Add a new tool to your `bootstrap.toml`](#add-a-new-tool-to-your-bootstraptoml)
 - [Run `tuck update` on a schedule](#run-tuck-update-on-a-schedule)
 - [Preview a potentially destructive sync](#preview-a-potentially-destructive-sync)
+- [Lint tracked files before syncing](#lint-tracked-files-before-syncing)
+- [Profile and trim a slow zsh startup](#profile-and-trim-a-slow-zsh-startup)
 
 ---
 
@@ -393,6 +395,82 @@ If something looks wrong:
 - Scope wrong? Fix the tags: `tuck group rm <group> <path>` or `tuck group add <group> <path>`.
 - Content drift you didn't expect? `tuck restore <path>` pulls the repo version back onto the host, reverting your local edit. Or `tuck diff <path>` alone to read the full diff in detail.
 - Accidentally staged deletion (file missing on disk but tuck would untrack it)? Check if you renamed or moved the file; tuck only sees "source path doesn't exist" and assumes you meant to untrack. Restore from [time machine](./Time-Machine-and-Undo) if needed.
+
+## Lint tracked files before syncing
+
+**Scenario:** you edited `~/.zshrc` in a hurry and want to catch a syntax error before it lands in git and breaks every consumer host on the next `tuck pull`.
+
+```bash
+# 1. Validate everything tracked. Exit 1 if any file fails.
+tuck validate
+
+# 2. If something fails, read the error + column and fix the source.
+# Re-run to confirm clean.
+tuck validate ~/.zshrc
+
+# 3. Pipe through to sync only if validation passes.
+tuck validate && tuck sync
+```
+
+`tuck validate` dispatches by filename: `.zshrc` → `zsh -n`, `config.json` → `JSON.parse`, `bootstrap.toml` → `smol-toml.parse`, `*.lua` → `luac -p`. Files whose validator isn't installed warn-skip rather than fail.
+
+If the failure is a trivial hygiene issue — trailing whitespace or missing EOF newline — `--fix` previews the unified diff and applies on confirmation:
+
+```bash
+tuck validate --fix
+```
+
+Before writing, `--fix` takes a Time Machine snapshot. If the rewrite breaks something, `tuck undo` rolls it back.
+
+**CI mode:**
+
+```yaml
+# .github/workflows/dotfiles-lint.yml
+- run: tuck validate --format json
+```
+
+`--format json` emits `{ summary, results }`. Exit 1 on any failure.
+
+**See also:** [tuck validate](./Command-Reference#tuck-validate), [Time Machine & Undo](./Time-Machine-and-Undo).
+
+---
+
+## Profile and trim a slow zsh startup
+
+**Scenario:** your new shell takes 800ms to open. You want to know where the time goes and what to cut.
+
+```bash
+# 1. Profile only — per-source wall-clock attribution, no recommendations.
+tuck optimize --profile
+
+# 2. Full run — profile + rule-based recommendations.
+tuck optimize
+```
+
+`tuck optimize` runs `zsh -ixc exit` with a custom `PS4` tracer and attributes each line's time to its source file. Output is a descending-by-time list; the biggest contributors are at the top.
+
+**Common findings:**
+
+- **`compinit` called more than once** → the rule suggests `skip_global_compinit=1` in `~/.zshenv`, which disables the distro's global compinit call so yours is the only one.
+- **nvm / rbenv / pyenv loaded synchronously** → the rule suggests lazy-loading (`nvm` only when you actually run `nvm`, `node`, `npm`, etc.).
+- **Blocking network / auth call** at startup (`curl`, `ssh-add`, `gpg --list-keys`, `gh auth status`) → move to an on-demand function or background it.
+- **Duplicated `PATH` entries** across `~/.zshenv` / `~/.zprofile` / `~/.zshrc` → consolidate into one file.
+
+**Apply the safe auto-fix:**
+
+```bash
+tuck optimize --auto
+```
+
+Today `--auto` only applies one fix: append `skip_global_compinit=1` to `~/.zshenv` when `multiple-compinit` fires and the line isn't already there. It previews the change, prompts before writing, and snapshots to Time Machine — `tuck undo` rolls it back.
+
+PATH dedup and lazy-load rewrites are suggestions only (too easy to get wrong across variable expansions, conditionals, and substitutions). Apply them manually and re-profile to verify.
+
+**After every fix:** `tuck optimize --profile` again and compare. A change should visibly move or disappear from the top of the list.
+
+**See also:** [tuck optimize](./Command-Reference#tuck-optimize), [Time Machine & Undo](./Time-Machine-and-Undo).
+
+---
 
 ## See also
 

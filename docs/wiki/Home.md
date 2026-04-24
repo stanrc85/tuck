@@ -34,6 +34,8 @@
 - **Can tuck talk to my self-hosted GitLab?** → [Git Providers](./Git-Providers)
 - **How do I run a script after every sync?** → [Hooks](./Hooks)
 - **How do I keep secrets out of my committed dotfiles?** → [Security & Secrets](./Security-and-Secrets)
+- **How do I catch a syntax error before it lands in git?** → [Recipes → Lint tracked files](./Recipes#lint-tracked-files-before-syncing)
+- **Why is my shell startup slow?** → [Recipes → Profile and trim zsh](./Recipes#profile-and-trim-a-slow-zsh-startup)
 
 ## Contributing to these docs
 
