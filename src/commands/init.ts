@@ -1819,16 +1819,20 @@ const maybePromptRestoreBootstrap = async (tuckDir: string): Promise<void> => {
     return;
   }
 
-  logger.dim(
-    `  This will restore all tracked dotfiles for the '${group}' group and install the '${group}' bundle of tools.`
+  prompts.log.message(
+    c.dim(
+      `This will restore all tracked dotfiles for the '${group}' group and install the '${group}' bundle of tools.`
+    )
   );
   const proceed = await prompts.confirm(
     `Run 'tuck restore --bootstrap -g ${group}' now?`,
     true
   );
   if (!proceed) {
-    logger.dim(
-      `Skipped — run \`tuck restore --bootstrap -g ${group}\` later to restore files and install the bundle.`
+    prompts.log.message(
+      c.dim(
+        `Skipped — run \`tuck restore --bootstrap -g ${group}\` later to restore files and install the bundle.`
+      )
     );
     return;
   }
