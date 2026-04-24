@@ -16,7 +16,8 @@ The tuck wiki lives at https://github.com/stanrc85/tuck/wiki. The **source of tr
 | --------------------------------------------- | ---------------------------------------------- |
 | Landing page + 30-second pitch                | `README.md`                                    |
 | User-facing deep reference                    | `docs/wiki/<Page>.md` → published to wiki      |
-| Contributor notes (AI + human)                | `CLAUDE.md`, `AGENTS.md`                       |
+| Contributor reference (module map, data formats, provider interface) | `docs/wiki/Architecture.md` → published to wiki |
+| Agent-facing conventions (AI workflows)       | `CLAUDE.md`, `AGENTS.md`                       |
 | Running tests / benchmarks / tuck doctor plan | `docs/TESTING.md`, `docs/BENCHMARKING.md`, etc. |
 | Error code reference                          | `docs/ERROR_CODES.md`                          |
 | Man pages                                     | `docs/man/`                                    |
@@ -49,6 +50,7 @@ When a feature lands, touch the wiki in the same PR as the code:
 - [ ] **Command Reference** — new command? New flag? Add it under the right heading with synopsis + flags + example.
 - [ ] **Relevant topic page** — new config field goes in Configuration Reference; new behavior on sync goes in Command Reference + (if it changes the mental model) the relevant topic page.
 - [ ] **Recipes** — if this enables a workflow users will want to discover, add a recipe or extend an existing one.
+- [ ] **Architecture** — new library module, new on-disk format, new provider, new `SnapshotKind`, new `STATE_VERSION`? Extend the relevant section so contributors don't rediscover it from source.
 - [ ] **Home.md** — new page? Link it from the navigation grids.
 - [ ] **README** — only touch README when changing the top-level pitch, the top-8 commands table, or the "what's new" hero. Most feature changes don't need README edits.
 

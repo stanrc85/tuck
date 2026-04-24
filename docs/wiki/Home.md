@@ -24,6 +24,7 @@
 | [Cheatsheet](./Cheatsheet) | `tuck cheatsheet` — parsers, JSON format, consumer recipes |
 | [Hooks](./Hooks) | `preSync` / `postSync` / `preRestore` / `postRestore` |
 | [Recipes](./Recipes) | Task-oriented cookbook |
+| [Architecture](./Architecture) | Contributor-facing: module map, data formats, provider interface |
 
 ## By question
 
