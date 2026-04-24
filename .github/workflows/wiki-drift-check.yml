@@ -1,0 +1,135 @@
+name: Wiki Drift Check
+
+# Soft-warning PR check: post a comment if a PR changes source in ways that
+# typically need a corresponding wiki update, but the wiki page wasn't
+# touched. Relies on reviewer discipline — this workflow never fails, never
+# blocks a merge. If a PR has a legitimate reason to skip docs (internal
+# refactor, test-only change, etc.) the comment is informational.
+#
+# Pair rules today:
+#   src/commands/*.ts                 → docs/wiki/Command-Reference.md
+#   src/schemas/{config,manifest}.schema.ts
+#                                     → docs/wiki/Configuration-Reference.md
+#   src/lib/timemachine.ts (SnapshotKind)
+#   src/lib/providers/*.ts (new provider)
+#   src/lib/bootstrap/state.ts (STATE_VERSION)
+#                                     → docs/wiki/Architecture.md
+#
+# The comment is idempotent — repeated runs on the same PR edit the same
+# comment rather than stacking new ones.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: wiki-drift-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check for wiki drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute changed files
+        id: changed
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          base="origin/${{ github.base_ref }}"
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          git diff --name-only "${base}...HEAD" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate pair rules
+        id: rules
+        run: |
+          changed='${{ steps.changed.outputs.files }}'
+          warnings=()
+
+          matches() { grep -qE "$1" <<< "$changed"; }
+
+          if matches '^src/commands/.+\.ts$' && ! matches '^docs/wiki/Command-Reference\.md$'; then
+            warnings+=("You changed \`src/commands/*.ts\` but did not touch \`docs/wiki/Command-Reference.md\`. New command, new flag, or changed behavior usually belongs there.")
+          fi
+
+          if matches '^src/schemas/(config|manifest)\.schema\.ts$' && ! matches '^docs/wiki/Configuration-Reference\.md$'; then
+            warnings+=("You changed a config/manifest schema but did not touch \`docs/wiki/Configuration-Reference.md\`. New fields and renames generally need a doc update.")
+          fi
+
+          archpair=false
+          if matches '^src/lib/timemachine\.ts$'; then archpair=true; fi
+          if matches '^src/lib/providers/[^/]+\.ts$'; then archpair=true; fi
+          if matches '^src/lib/bootstrap/state\.ts$'; then archpair=true; fi
+          if $archpair && ! matches '^docs/wiki/Architecture\.md$'; then
+            warnings+=("You changed a module referenced by \`docs/wiki/Architecture.md\` (timemachine / providers / bootstrap state) but did not update that page. New \`SnapshotKind\`, new provider, or a bumped \`STATE_VERSION\` should be reflected there.")
+          fi
+
+          if [ ${#warnings[@]} -eq 0 ]; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo 'body<<BODYEOF'
+            echo '<!-- wiki-drift-check -->'
+            echo '### Wiki drift reminder'
+            echo ''
+            echo 'This PR changes source code that the wiki documents. A quick check turned up:'
+            echo ''
+            for w in "${warnings[@]}"; do
+              echo "- $w"
+            done
+            echo ''
+            echo 'If this PR has a legitimate reason to skip the docs update (internal refactor, test-only change, rename handled elsewhere), you can ignore this comment — it is informational, not a blocking check. See [`docs/wiki-sync.md`](https://github.com/stanrc85/tuck/blob/main/docs/wiki-sync.md) for the per-feature docs checklist.'
+            echo 'BODYEOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "drift=true" >> "$GITHUB_OUTPUT"
+
+      - name: Post / update PR comment
+        if: steps.rules.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BODY: ${{ steps.rules.outputs.body }}
+        run: |
+          # Find an existing drift-check comment (identified by the HTML
+          # marker at the top of the body) and update it; otherwise create.
+          existing=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- wiki-drift-check -->")) | .id' \
+            | head -n1)
+
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${existing}" \
+              -f body="${BODY}"
+          else
+            gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+              -f body="${BODY}"
+          fi
+
+      - name: Delete stale comment when drift resolved
+        if: steps.rules.outputs.drift == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # If a previous run left a drift warning and the PR has since been
+          # updated to touch the docs, delete the stale comment so the final
+          # PR state is clean.
+          existing=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- wiki-drift-check -->")) | .id' \
+            | head -n1)
+          if [ -n "$existing" ]; then
+            gh api -X DELETE "repos/${REPO}/issues/comments/${existing}"
+          fi
