@@ -1,3 +1,10 @@
+## [2.22.3](https://github.com/stanrc85/tuck/compare/v2.22.2...v2.22.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* **init:** route bootstrap-restore description through prompts.log ([b34eacd](https://github.com/stanrc85/tuck/commit/b34eacdcc069fc807dabb4ef3405586c4427b6b5))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.22.2](https://github.com/stanrc85/tuck/compare/v2.22.1...v2.22.2) (2026-04-24)
