@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { vol } from 'memfs';
+import { join } from 'path';
 import { TEST_TUCK_DIR } from '../setup.js';
 import { initTestTuck, getTestConfig } from '../utils/testHelpers.js';
 import { createMockConfig } from '../utils/factories.js';
@@ -112,6 +113,29 @@ describe('config command', () => {
 
       const updatedConfig = await loadConfig(TEST_TUCK_DIR);
       expect(updatedConfig.files.strategy).toBe('symlink');
+    });
+
+    // `defaultGroups` is per-host: it belongs in `.tuckrc.local.json`, not
+    // the shared `.tuckrc.json`. Writing it to shared leaks across every
+    // clone — which used to silently pre-assign new hosts to whatever
+    // group was set on the producer and suppressed the init-time prompt.
+    it('routes defaultGroups to .tuckrc.local.json, not .tuckrc.json', async () => {
+      await initTestTuck();
+
+      const { runConfigSet } = await import('../../src/commands/config.js');
+      await runConfigSet('defaultGroups', 'kubuntu');
+
+      const localRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(localRaw)).toEqual({ defaultGroups: ['kubuntu'] });
+
+      const sharedRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(sharedRaw).defaultGroups ?? []).toEqual([]);
     });
   });
 

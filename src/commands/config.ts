@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import { z } from 'zod';
 import { prompts, logger, banner, colors as c } from '../ui/index.js';
 import { getTuckDir, getConfigPath, collapsePath } from '../lib/paths.js';
-import { loadConfig, saveConfig, resetConfig } from '../lib/config.js';
+import { loadConfig, saveConfig, saveLocalConfig, resetConfig } from '../lib/config.js';
 import { loadManifest } from '../lib/manifest.js';
 import { addRemote, removeRemote, hasRemote } from '../lib/git.js';
 import { NotInitializedError, ConfigError } from '../errors.js';
@@ -261,7 +261,13 @@ const runConfigGet = async (key: string): Promise<void> => {
   }
 };
 
-const runConfigSet = async (key: string, value: string): Promise<void> => {
+// Keys that belong in the per-host `.tuckrc.local.json` rather than the
+// shared `.tuckrc.json`. Writing these to shared leaks host-specific state
+// across every clone — e.g. `defaultGroups` set on the producer host would
+// silently become the default for every consumer host that clones the repo.
+const LOCAL_ONLY_KEYS = new Set(['defaultGroups']);
+
+export const runConfigSet = async (key: string, value: string): Promise<void> => {
   const unsupportedPrefix = UNSUPPORTED_CONFIG_KEY_PREFIXES.find(
     (prefix) => key === prefix || key.startsWith(`${prefix}.`)
   );
@@ -273,9 +279,15 @@ const runConfigSet = async (key: string, value: string): Promise<void> => {
   }
 
   const tuckDir = getTuckDir();
-  const config = await loadConfig(tuckDir);
-
   const parsedValue = parseValue(value, key);
+
+  if (LOCAL_ONLY_KEYS.has(key)) {
+    await saveLocalConfig({ [key]: parsedValue } as never, tuckDir);
+    logger.success(`Set ${key} = ${JSON.stringify(parsedValue)} (.tuckrc.local.json)`);
+    return;
+  }
+
+  const config = await loadConfig(tuckDir);
   const configObj = config as unknown as Record<string, unknown>;
 
   setNestedValue(configObj, key, parsedValue);

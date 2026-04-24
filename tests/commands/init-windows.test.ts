@@ -49,6 +49,7 @@ vi.mock('../../src/lib/config.js', () => ({
   saveConfig: saveConfigMock,
   saveLocalConfig: vi.fn(),
   loadConfig: vi.fn().mockResolvedValue({ defaultGroups: [] }),
+  loadLocalConfig: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('../../src/lib/osDetect.js', () => ({

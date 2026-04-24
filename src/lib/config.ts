@@ -22,7 +22,7 @@ let cachedTuckDir: string | null = null;
  * JSON or unknown fields (the schema is `.strict()` to prevent silently
  * applying shared-only fields from the wrong file).
  */
-const loadLocalConfig = async (dir: string): Promise<Partial<TuckConfigOutput>> => {
+export const loadLocalConfig = async (dir: string): Promise<Partial<TuckConfigOutput>> => {
   const localPath = getLocalConfigPath(dir);
   if (!(await pathExists(localPath))) {
     return {};

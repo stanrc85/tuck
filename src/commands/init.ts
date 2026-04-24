@@ -12,7 +12,7 @@ import {
   pathExists,
   collapsePath,
 } from '../lib/paths.js';
-import { saveConfig, saveLocalConfig, loadConfig } from '../lib/config.js';
+import { saveConfig, saveLocalConfig, loadConfig, loadLocalConfig } from '../lib/config.js';
 import { detectOsGroup } from '../lib/osDetect.js';
 import { createManifest, getAllGroups } from '../lib/manifest.js';
 import type { TuckManifest, RemoteConfig } from '../types.js';
@@ -1713,7 +1713,10 @@ const runInteractiveInit = async (): Promise<void> => {
  *
  * Silent no-op when:
  *   - `options.detectOs === false` (user passed `--no-detect-os`)
- *   - existing `defaultGroups` already set in config
+ *   - `defaultGroups` is already set in the LOCAL file (`.tuckrc.local.json`)
+ *     — a shared `.tuckrc.json` value does NOT suppress the prompt, since
+ *     that value rides along on every clone and the point of this prompt
+ *     is to let each host confirm its own role
  *   - non-interactive (CI / piped stdout) — emits an advisory instead
  *   - nothing to offer (no detected OS AND no manifest groups)
  */
@@ -1723,8 +1726,8 @@ const maybePromptForOsGroup = async (
 ): Promise<void> => {
   if (options.detectOs === false) return;
 
-  const existing = await loadConfig(tuckDir).catch(() => null);
-  if (existing?.defaultGroups && existing.defaultGroups.length > 0) return;
+  const localExisting = await loadLocalConfig(tuckDir).catch(() => null);
+  if (localExisting?.defaultGroups && localExisting.defaultGroups.length > 0) return;
 
   const osGroup = await detectOsGroup();
   const repoGroups = await getAllGroups(tuckDir).catch(() => [] as string[]);

@@ -5,6 +5,7 @@ const createManifestMock = vi.fn();
 const saveConfigMock = vi.fn();
 const saveLocalConfigMock = vi.fn();
 const loadConfigMock = vi.fn();
+const loadLocalConfigMock = vi.fn();
 const detectOsGroupMock = vi.fn();
 const pathExistsMock = vi.fn();
 const loggerSuccessMock = vi.fn();
@@ -72,6 +73,7 @@ vi.mock('../../src/lib/config.js', () => ({
   saveConfig: saveConfigMock,
   saveLocalConfig: saveLocalConfigMock,
   loadConfig: loadConfigMock,
+  loadLocalConfig: loadLocalConfigMock,
 }));
 
 vi.mock('../../src/lib/osDetect.js', () => ({
@@ -163,6 +165,7 @@ describe('init command behavior', () => {
     saveConfigMock.mockResolvedValue(undefined);
     saveLocalConfigMock.mockResolvedValue(undefined);
     loadConfigMock.mockResolvedValue({ defaultGroups: [] });
+    loadLocalConfigMock.mockResolvedValue({});
     detectOsGroupMock.mockResolvedValue(null);
     getAllGroupsMock.mockResolvedValue([]);
     runRestoreMock.mockResolvedValue(undefined);
@@ -207,13 +210,37 @@ describe('init command behavior', () => {
       expect(saveLocalConfigMock).not.toHaveBeenCalled();
     });
 
-    it('skips when defaultGroups is already populated', async () => {
+    it('skips when LOCAL defaultGroups is already populated', async () => {
       pathExistsMock.mockResolvedValue(false);
-      loadConfigMock.mockResolvedValueOnce({ defaultGroups: ['ubuntu'] });
+      loadLocalConfigMock.mockResolvedValueOnce({ defaultGroups: ['ubuntu'] });
       const { runInit } = await import('../../src/commands/init.js');
       await runInit({ from: 'https://github.com/acme/dotfiles.git' });
       expect(detectOsGroupMock).not.toHaveBeenCalled();
       expect(saveLocalConfigMock).not.toHaveBeenCalled();
+    });
+
+    // Regression: a shared `.tuckrc.json` committed with `defaultGroups` used
+    // to silently suppress the per-host prompt on every fresh clone (the
+    // value rode along via git). The prompt must now fire based on the LOCAL
+    // file alone — shared values are inputs to the select list, not a
+    // suppression signal.
+    it('still prompts when only SHARED has defaultGroups (fresh-host bug)', async () => {
+      pathExistsMock.mockResolvedValue(false);
+      loadConfigMock.mockResolvedValue({ defaultGroups: ['kubuntu'] });
+      loadLocalConfigMock.mockResolvedValue({});
+      detectOsGroupMock.mockResolvedValueOnce('ubuntu');
+      getAllGroupsMock.mockResolvedValueOnce(['kali', 'kubuntu']);
+      const originalIsTTY = process.stdout.isTTY;
+      Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+      const ui = await import('../../src/ui/index.js');
+      (ui.prompts.select as ReturnType<typeof vi.fn>).mockResolvedValueOnce('__skip__');
+      try {
+        const { runInit } = await import('../../src/commands/init.js');
+        await runInit({ from: 'https://github.com/acme/dotfiles.git' });
+        expect(ui.prompts.select).toHaveBeenCalled();
+      } finally {
+        Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      }
     });
 
     it('skips silently when nothing detected and no repo groups', async () => {
