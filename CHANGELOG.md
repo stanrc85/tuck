@@ -1,3 +1,10 @@
+## [2.22.2](https://github.com/stanrc85/tuck/compare/v2.22.1...v2.22.2) (2026-04-24)
+
+
+### Bug Fixes
+
+* **init:** treat defaultGroups as per-host, not shared ([7984b96](https://github.com/stanrc85/tuck/commit/7984b96ebb3bdc63a457e743ef760a38e2852aa5))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.22.1](https://github.com/stanrc85/tuck/compare/v2.22.0...v2.22.1) (2026-04-23)
