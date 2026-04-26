@@ -538,6 +538,7 @@ Walk the manifest, run format-specific parsers against each tracked file's conte
 - `--format <fmt>` — `markdown` (default) or `json`.
 - `--sources <ids>` — restrict to specific parsers (e.g. `--sources tmux,zsh`).
 - `-g, --group <name>` — filter tracked files by host-group.
+- `--no-timestamp` — omit the `generated` timestamp from the output. Use this when committing the cheatsheet (e.g. via a `preSync` hook) — without the flag, every regen produces a 1-line `+/- generated:` diff regardless of whether keybinds changed. With it, the file only changes when content actually changes.
 
 **Supported parsers**
 
@@ -558,6 +559,9 @@ Dynamic mappings (mode or lhs driven by a variable or loop) are silently skipped
 
     # JSON for downstream tooling
     tuck cheatsheet --format json -o ~/.cache/tuck-keys.json
+
+    # Auto-regen on every sync without noisy commits
+    tuck config set --local hooks.preSync 'tuck cheatsheet --no-timestamp'
 
 **See also:** [Cheatsheet](./Cheatsheet) — consumer recipes (zsh+fzf picker, jq queries, etc).
 

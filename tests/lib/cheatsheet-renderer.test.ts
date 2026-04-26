@@ -188,3 +188,75 @@ describe('renderJson', () => {
     expect(renderJson(result, baseOpts).endsWith('\n')).toBe(true);
   });
 });
+
+// TASK-065: `--no-timestamp` mode lets users commit the cheatsheet without
+// every regen producing a 1-line `+/- generated:` diff. The renderer omits
+// the field entirely (not nullified) when `includeTimestamp` is false.
+describe('renderMarkdown with includeTimestamp=false', () => {
+  const noStampOpts = { ...baseOpts, includeTimestamp: false };
+
+  it('omits the generated frontmatter line when entries exist', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 1,
+      skippedParsers: [],
+      sections: [
+        {
+          parserId: 'tmux',
+          label: 'tmux',
+          entries: [
+            { keybind: 'Prefix + r', action: 'reload', sourceFile: '~/.tmux.conf', sourceLine: 3 },
+          ],
+        },
+      ],
+    };
+    const md = renderMarkdown(result, noStampOpts);
+    expect(md).not.toContain('generated:');
+    expect(md).not.toContain('2026-04-21'); // no date sneaking through the summary line either
+    expect(md).toContain('tuckVersion: 2.6.0'); // other frontmatter still present
+  });
+
+  it('omits the generated line in the empty-result frontmatter too', () => {
+    const result: CheatsheetResult = { sections: [], totalEntries: 0, skippedParsers: ['tmux'] };
+    const md = renderMarkdown(result, noStampOpts);
+    expect(md).not.toContain('generated:');
+    expect(md).toContain('tuckVersion: 2.6.0');
+    expect(md).toContain('totalEntries: 0');
+  });
+
+  it('default (no flag) still emits the timestamp — regression guard', () => {
+    const result: CheatsheetResult = { sections: [], totalEntries: 0, skippedParsers: [] };
+    const md = renderMarkdown(result, baseOpts);
+    expect(md).toContain('generated: 2026-04-21T12:00:00.000Z');
+  });
+});
+
+describe('renderJson with includeTimestamp=false', () => {
+  const noStampOpts = { ...baseOpts, includeTimestamp: false };
+
+  it('omits the generated key entirely (not null) from the payload', () => {
+    const result: CheatsheetResult = {
+      totalEntries: 1,
+      skippedParsers: [],
+      sections: [
+        {
+          parserId: 'tmux',
+          label: 'tmux',
+          entries: [
+            { keybind: 'Prefix + r', action: 'reload', sourceFile: '~/.tmux.conf', sourceLine: 3 },
+          ],
+        },
+      ],
+    };
+    const parsed = JSON.parse(renderJson(result, noStampOpts));
+    // Field is *omitted*, not nullified — `'generated' in parsed` must be false.
+    expect('generated' in parsed).toBe(false);
+    expect(parsed.tuckVersion).toBe('2.6.0');
+    expect(parsed.totalEntries).toBe(1);
+  });
+
+  it('default (no flag) still emits the timestamp — regression guard', () => {
+    const result: CheatsheetResult = { sections: [], totalEntries: 0, skippedParsers: [] };
+    const parsed = JSON.parse(renderJson(result, baseOpts));
+    expect(parsed.generated).toBe('2026-04-21T12:00:00.000Z');
+  });
+});

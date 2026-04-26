@@ -27,6 +27,14 @@ export interface CheatsheetOptions {
   group?: string[];
   /** Output format. Defaults to `md`. */
   format?: string;
+  /**
+   * Whether to include the wall-clock `generated` timestamp in the output.
+   * Commander populates this from the `--no-timestamp` flag: defaults to
+   * `true`; passing `--no-timestamp` sets it to `false`. Disable when the
+   * cheatsheet is committed and regenerated automatically — otherwise every
+   * regen produces a 1-line `+/- generated:` diff.
+   */
+  timestamp?: boolean;
 }
 
 const collectGroup = (value: string, previous: string[] = []): string[] => [
@@ -78,9 +86,10 @@ export const runCheatsheet = async (
     sources,
   });
 
+  const includeTimestamp = options.timestamp !== false;
   const rendered = format === 'json'
-    ? renderJson(result, { tuckVersion: VERSION })
-    : renderMarkdown(result, { tuckVersion: VERSION });
+    ? renderJson(result, { tuckVersion: VERSION, includeTimestamp })
+    : renderMarkdown(result, { tuckVersion: VERSION, includeTimestamp });
 
   if (options.stdout) {
     process.stdout.write(rendered);
@@ -135,6 +144,10 @@ export const cheatsheetCommand = new Command('cheatsheet')
     '--format <md|json>',
     'Output format: md (GitHub-flavored markdown) or json (flat entries for jq/fzf)',
     'md'
+  )
+  .option(
+    '--no-timestamp',
+    'Omit the wall-clock generated timestamp (avoids noisy diffs when the cheatsheet is auto-regenerated)'
   )
   .action(async (options: CheatsheetOptions) => {
     await runCheatsheet(options);
