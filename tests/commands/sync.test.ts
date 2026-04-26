@@ -24,6 +24,7 @@ const commitMock = vi.fn();
 const hasRemoteMock = vi.fn();
 const pushMock = vi.fn();
 const loggerInfoMock = vi.fn();
+const getStatusMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
@@ -107,7 +108,7 @@ vi.mock('../../src/lib/config.js', () => ({
 vi.mock('../../src/lib/git.js', () => ({
   stageAll: stageAllMock,
   commit: commitMock,
-  getStatus: vi.fn().mockResolvedValue({ behind: 0 }),
+  getStatus: getStatusMock,
   push: pushMock,
   hasRemote: hasRemoteMock,
   fetch: vi.fn(),
@@ -183,6 +184,7 @@ describe('sync command behavior', () => {
     getFileChecksumMock.mockResolvedValue('new-checksum');
     hasRemoteMock.mockResolvedValue(false);
     commitMock.mockResolvedValue('abc123def456');
+    getStatusMock.mockResolvedValue({ hasChanges: false, behind: 0 });
     loadConfigMock.mockResolvedValue({ defaultGroups: [] });
     // Default: single-group repo so the TASK-046 sync gate is a no-op. Tests
     // that want to exercise the gate override with `getAllGroupsMock.mockResolvedValueOnce([...])`.
@@ -238,6 +240,68 @@ describe('sync command behavior', () => {
     );
     expect(stageAllMock).not.toHaveBeenCalled();
     expect(commitMock).not.toHaveBeenCalled();
+  });
+
+  // preSync hook fires BEFORE change detection in both sync paths so that
+  // hooks which *produce* tracked files (e.g. regenerating cheatsheet.json
+  // on every sync) get their output picked up on the same run. Previously
+  // the hook lived inside syncFiles and only ran when changes were already
+  // detected — so a "regen on every sync" hook would never fire on the
+  // first sync (no changes → early-return → hook never runs → no file
+  // produced → still no changes next run).
+  it('runs preSync hook even when there are no changes (non-interactive)', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        checksum: 'same',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('same');
+    const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+    await runSyncCommand('sync: noop', { noCommit: true, scan: false, pull: false });
+
+    expect(runPreSyncHookMock).toHaveBeenCalledTimes(1);
+    expect(loggerInfoMock).toHaveBeenCalledWith('No changes detected');
+    expect(copyFileOrDirMock).not.toHaveBeenCalled();
+  });
+
+  it('runs preSync hook even when there are no changes (interactive)', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        checksum: 'same',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('same');
+    const { runSync } = await import('../../src/commands/sync.js');
+
+    await runSync({ scan: false, pull: false });
+
+    expect(runPreSyncHookMock).toHaveBeenCalledTimes(1);
+    expect(copyFileOrDirMock).not.toHaveBeenCalled();
+  });
+
+  // Regression guard: now that the hook lives upstream of syncFiles, a
+  // sync with detected changes must call it exactly once — not zero
+  // (regression on the move) and not twice (regression if a stale call
+  // is re-introduced inside syncFiles).
+  it('runs preSync hook exactly once when changes exist', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        checksum: 'old',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('new');
+    const { runSyncCommand } = await import('../../src/commands/sync.js');
+
+    await runSyncCommand('sync: update', { noCommit: true, scan: false, pull: false });
+
+    expect(runPreSyncHookMock).toHaveBeenCalledTimes(1);
   });
 
   it('creates a pre-sync snapshot (kind="sync") of repo copies before overwriting', async () => {

@@ -245,14 +245,14 @@ const syncFiles = async (
     deleted: [],
   };
 
-  // Prepare hook options
+  // Prepare hook options for the post-sync hook below. The pre-sync hook
+  // runs upstream of syncFiles (in runInteractiveSync / runSyncCommand)
+  // so it fires before change detection and can *produce* tracked files
+  // that the same sync then commits.
   const hookOptions: HookOptions = {
     skipHooks: options.noHooks,
     trustHooks: options.trustHooks,
   };
-
-  // Run pre-sync hook
-  await runPreSyncHook(tuckDir, hookOptions);
 
   // Pre-sync Time Machine snapshot of the repo-side copies that are about to
   // be overwritten. Git history already covers this, but a snapshot gives
@@ -578,6 +578,17 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
       pullSpinner.stop('Up to date with remote');
     }
   }
+
+  // ========== STEP 1.5: Run preSync hook ==========
+  // Fires BEFORE change detection so a hook that *produces* tracked files
+  // (e.g. `tuck cheatsheet --output ~/.config/tuck/cheatsheet.json`) gets
+  // its output picked up by detectChanges on the same run. Until v2.24.x
+  // this lived inside syncFiles, which only ran once changes were already
+  // detected — bootstrap-deadlocking the regen-on-sync use case.
+  await runPreSyncHook(tuckDir, {
+    skipHooks: options.noHooks,
+    trustHooks: options.trustHooks,
+  });
 
   // ========== STEP 2: Detect changes to tracked files ==========
   const changeSpinner = prompts.spinner();
@@ -959,6 +970,15 @@ export const runSyncCommand = async (
   if (groupFilter) {
     logger.info(`Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`);
   }
+
+  // Run preSync hook BEFORE change detection so hook output is picked up
+  // on the same run. See the matching call in runInteractiveSync for the
+  // full rationale (bootstrap deadlock when a hook is meant to *produce*
+  // the changes that would otherwise gate the hook from firing).
+  await runPreSyncHook(tuckDir, {
+    skipHooks: options.noHooks,
+    trustHooks: options.trustHooks,
+  });
 
   // Detect changes
   const changes = await detectChanges(tuckDir, groupFilter);
