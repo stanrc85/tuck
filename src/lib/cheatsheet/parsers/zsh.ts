@@ -1,9 +1,10 @@
 import type { Entry, Parser, ParserContext } from '../types.js';
 
 /**
- * Parse `bindkey` and `alias` statements from a zsh config.
+ * Parse `bindkey`, `alias`, and top-level function definitions from a
+ * zsh config.
  *
- * Two sub-formats, handled in the same pass:
+ * Three sub-formats, handled in the same pass:
  *
  *   bindkey '^R' history-incremental-search-backward
  *   bindkey "^[[A" up-line-or-history
@@ -12,32 +13,55 @@ import type { Entry, Parser, ParserContext } from '../types.js';
  *   alias g=git
  *   alias -g ...G='| grep'   # global alias — captured, category=alias
  *
+ *   function c(      ## Smart CD
+ *   ) { ... }
+ *   foo() {          ## bar
+ *
  * A trailing `# comment` (or `## comment` — the double-hash convention
  * some users adopt to visually distinguish "doc" comments from "note"
  * comments) is promoted to the Entry action when present. Any run of
  * `#` chars at the split point is consumed. When no comment is present
- * we fall back to the widget / alias value as action — less friendly
- * but always truthful.
+ * bindkey/alias fall back to the widget / alias value as action; functions
+ * without a docstring are skipped silently because the body is multi-line
+ * and not summarisable — uncommented helpers are usually internal.
  *
  *   bindkey '^a' beginning-of-line      ## Move to start of line
  *       -> keybind '^a', action 'Move to start of line'
  *   alias ll='ls -la'  # long listing
  *       -> keybind 'll', action 'long listing'
+ *   function c(  ## Smart CD
+ *       -> keybind 'c', action 'Smart CD', category 'function'
  *
  * Skipped:
  *   - comment-only lines and empty lines
  *   - mode-switch `bindkey -e` / `bindkey -v` (no binding, just options)
  *   - `unalias` (removes, not adds)
+ *   - functions without a trailing doc-comment
  *
- * Entries from aliases carry `category: 'alias'` to distinguish them
- * from keybinds when `--group-by category` ships. The v1 renderer
- * ignores the category and groups everything under the `zsh` section.
+ * Entries from aliases carry `category: 'alias'` and from functions
+ * `category: 'function'` to distinguish them from keybinds when
+ * `--group-by category` ships. The v1 renderer ignores the category and
+ * groups everything under the `zsh` section.
  */
 
 const LINE_COMMENT_RE = /^\s*#/;
 
 const BINDKEY_RE = /^\s*bindkey\s+/;
 const ALIAS_RE = /^\s*alias\s+/;
+
+/**
+ * Match a function definition prologue. Two accepted shapes:
+ *   - zsh-style:   `function NAME` (parens / brace optional, may dangle
+ *                   open-paren onto next line)
+ *   - POSIX-style: `NAME ( )` (parens required together to disambiguate
+ *                   from a bare identifier)
+ *
+ * After `splitCommentTrailing` removes any `## ...` tail, we only need
+ * to recognize the leading prologue — the brace and body may be on this
+ * line or on a following line, we don't care.
+ */
+const FUNCTION_KEYWORD_RE = /^\s*function\s+([A-Za-z_][A-Za-z0-9_:.+-]*)\b/;
+const POSIX_FUNCTION_RE = /^\s*([A-Za-z_][A-Za-z0-9_:.+-]*)\s*\(\s*\)/;
 
 /**
  * Match a section header comment like `# --- CURSOR MOVEMENT ---`,
@@ -144,6 +168,32 @@ const parseAlias = (
   };
 };
 
+const parseFunction = (
+  code: string,
+  index: number,
+  ctx: ParserContext,
+  comment: string | null,
+  section: string | null
+): Entry | null => {
+  // Functions without a docstring are skipped — body is multi-line and
+  // not summarisable, and uncommented functions are usually helpers the
+  // user doesn't want surfaced in a cheatsheet.
+  if (!comment) return null;
+
+  const name =
+    code.match(FUNCTION_KEYWORD_RE)?.[1] ?? code.match(POSIX_FUNCTION_RE)?.[1];
+  if (!name) return null;
+
+  return {
+    keybind: name,
+    action: comment,
+    sourceFile: ctx.sourceFile,
+    sourceLine: index + 1,
+    category: 'function',
+    ...(section ? { section } : {}),
+  };
+};
+
 export const zshParser: Parser = {
   id: 'zsh',
   label: 'zsh',
@@ -185,6 +235,12 @@ export const zshParser: Parser = {
 
       if (ALIAS_RE.test(code)) {
         const entry = parseAlias(code, index, ctx, comment, currentSection);
+        if (entry) entries.push(entry);
+        return;
+      }
+
+      if (FUNCTION_KEYWORD_RE.test(code) || POSIX_FUNCTION_RE.test(code)) {
+        const entry = parseFunction(code, index, ctx, comment, currentSection);
         if (entry) entries.push(entry);
       }
     });

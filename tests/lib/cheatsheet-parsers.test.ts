@@ -197,6 +197,77 @@ describe('zsh parser', () => {
     const entries = zshParser.parse(content, ctx('~/.zshrc'));
     expect(entries[0].section).toBeUndefined();
   });
+
+  it('captures top-level function definitions when they have a trailing doc-comment', () => {
+    const content = [
+      'function c(      ## Smart CD',
+      ') {',
+      '  cd "$@"',
+      '}',
+      '',
+      'mkcd() {  ## make and cd',
+      '  mkdir -p "$1" && cd "$1"',
+      '}',
+      '',
+      'function gco() {  # checkout helper',
+      '  git checkout "$@"',
+      '}',
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toMatchObject({
+      keybind: 'c',
+      action: 'Smart CD',
+      category: 'function',
+      sourceLine: 1,
+    });
+    expect(entries[1]).toMatchObject({
+      keybind: 'mkcd',
+      action: 'make and cd',
+      category: 'function',
+      sourceLine: 6,
+    });
+    expect(entries[2]).toMatchObject({
+      keybind: 'gco',
+      action: 'checkout helper',
+      category: 'function',
+      sourceLine: 10,
+    });
+  });
+
+  it('skips functions without a trailing doc-comment', () => {
+    const content = [
+      'function _internal() {',
+      '  : helper',
+      '}',
+      '',
+      'helper() {',
+      '  : noop',
+      '}',
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+    expect(entries).toEqual([]);
+  });
+
+  it('attaches the active section header to function entries', () => {
+    const content = [
+      '# --- NAVIGATION ---',
+      'function c(  ## Smart CD',
+      ') { cd "$@" }',
+    ].join('\n');
+
+    const entries = zshParser.parse(content, ctx('~/.zshrc'));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      keybind: 'c',
+      action: 'Smart CD',
+      category: 'function',
+      section: 'NAVIGATION',
+    });
+  });
 });
 
 describe('yazi parser', () => {
