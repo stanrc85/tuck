@@ -218,6 +218,44 @@ describe('config command', () => {
         },
       });
     });
+
+    // `trustHooks` is local-only by design — putting it in shared config
+    // would let a malicious commit bypass the per-execution prompt for
+    // every downstream clone. The shared schema doesn't include the field;
+    // the strict-shared-schema guard means a non-`--local` set rejects.
+    it('--local trustHooks=true round-trips through loadConfig', async () => {
+      await initTestTuck();
+
+      const { runConfigSet } = await import('../../src/commands/config.js');
+      await runConfigSet('trustHooks', 'true', { local: true });
+
+      const localRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(localRaw)).toEqual({ trustHooks: true });
+
+      const { loadConfig } = await import('../../src/lib/config.js');
+      const merged = await loadConfig(TEST_TUCK_DIR);
+      expect(merged.trustHooks).toBe(true);
+    });
+
+    it('rejects trustHooks without --local with a pointer to the right invocation', async () => {
+      await initTestTuck();
+
+      const { runConfigSet } = await import('../../src/commands/config.js');
+      await expect(runConfigSet('trustHooks', 'true')).rejects.toThrow(ConfigError);
+      await expect(runConfigSet('trustHooks', 'true')).rejects.toThrow(/must be set with --local/);
+
+      // Neither file should have been written.
+      expect(vol.existsSync(join(TEST_TUCK_DIR, '.tuckrc.local.json'))).toBe(false);
+      const sharedRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        'utf-8'
+      ) as string;
+      const sharedObj = JSON.parse(sharedRaw) as Record<string, unknown>;
+      expect(sharedObj.trustHooks).toBeUndefined();
+    });
   });
 
   describe('config list', () => {

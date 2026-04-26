@@ -905,12 +905,13 @@ const checkHooksSafety: DoctorCheck = {
 };
 
 /**
- * Visibility into the hooks trust model. `trustHooks` is a per-invocation
- * flag (`--trust-hooks` / programmatic option), not a persistent config
- * field, so a config-based check can't read a stored value — the plan
- * originally called for that and was reframed in TASK-029. Instead: when
- * any hook is configured, surface the fact that `--trust-hooks` + scripted
- * runs bypass the confirmation prompt. No hooks → silent pass.
+ * Visibility into the hooks trust model. Two trust escapes exist:
+ *  - per-invocation `--trust-hooks` (CLI flag), not visible to a config-based check
+ *  - per-host `trustHooks: true` in `.tuckrc.local.json` (since TASK-067)
+ * When any hook is configured, surface that interactive prompts guard
+ * execution but both escapes bypass them. When the local opt-in is set,
+ * escalate the message because the per-execution prompt is permanently off
+ * for this host.
  */
 const checkHooksTrustModel: DoctorCheck = {
   id: 'hooks.trust-model',
@@ -940,6 +941,19 @@ const checkHooksTrustModel: DoctorCheck = {
     }
 
     const names = configuredHooks.map(([name]) => name).join(', ');
+    const hostTrustsAll = context.config.trustHooks === true;
+
+    if (hostTrustsAll) {
+      return {
+        id: 'hooks.trust-model',
+        category: 'hooks',
+        status: 'warn',
+        message: `${configuredHooks.length} hook${configuredHooks.length === 1 ? '' : 's'} configured AND this host opted into trustHooks — confirmation prompts are bypassed for every sync/restore`,
+        details: `configured: ${names}; trustHooks: true (.tuckrc.local.json)`,
+        fix: 'Audit each hook command. To revoke the host-level trust, remove the `trustHooks` key from `.tuckrc.local.json` (or hand-edit / wait for `tuck config unset --local trustHooks`).',
+      };
+    }
+
     return {
       id: 'hooks.trust-model',
       category: 'hooks',

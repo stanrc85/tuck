@@ -272,6 +272,15 @@ const runConfigGet = async (key: string): Promise<void> => {
 // silently become the default for every consumer host that clones the repo.
 const LOCAL_ONLY_KEYS = new Set(['defaultGroups']);
 
+// Keys that MUST be written via `--local` (not silently auto-routed). These
+// have security implications strong enough that we want users to opt in
+// deliberately rather than land them in shared by accident — `trustHooks`
+// disables the per-execution hook prompt, and silent auto-routing would let
+// a typo (`tuck config set trustHooks true` meaning to scope it elsewhere)
+// turn into a one-line foot-gun. Refusing without `--local` forces an
+// acknowledgment that the field lives in the host-only file.
+const REQUIRES_LOCAL_FLAG = new Set(['trustHooks']);
+
 export interface ConfigSetOptions {
   /** Route the write to `.tuckrc.local.json`. Validates against the strict
    *  local schema; rejects shared-only keys like `repository.autoCommit`. */
@@ -290,6 +299,20 @@ export const runConfigSet = async (
   if (unsupportedPrefix) {
     throw new ConfigError(
       `Unsupported config key: ${key}. This setting is reserved but not wired yet.`
+    );
+  }
+
+  // Security-sensitive keys must be set with explicit `--local` so that
+  // writes can never land in shared `.tuckrc.json` (which travels with the
+  // repo) by accident. The shared schema strips unknown keys silently
+  // (default Zod behavior), so without this guard the write would appear
+  // to succeed but evaporate.
+  if (REQUIRES_LOCAL_FLAG.has(key) && !options.local) {
+    throw new ConfigError(
+      `Key '${key}' must be set with --local. ` +
+      `It lives in .tuckrc.local.json (host-specific, never committed) by design — ` +
+      `setting it in shared config would let a malicious commit bypass safety prompts ` +
+      `for every downstream clone. Re-run with: tuck config set --local ${key} ${value}`
     );
   }
 

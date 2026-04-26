@@ -149,7 +149,17 @@ export const tuckConfigSchema = z.object({
 });
 
 export type TuckConfigInput = z.input<typeof tuckConfigSchema>;
-export type TuckConfigOutput = z.output<typeof tuckConfigSchema>;
+/**
+ * Merged config returned by `loadConfig` — shared schema output plus
+ * local-only overlay fields (see `tuckLocalConfigSchema`). The shared
+ * Zod schema deliberately does NOT include local-only fields, so
+ * shared-config parsing rejects them; the type intersection here just
+ * lets callers read the merged field after the loader layers it in.
+ */
+export type TuckConfigOutput = z.output<typeof tuckConfigSchema> & {
+  /** Only set when `.tuckrc.local.json` opts in. See tuckLocalConfigSchema. */
+  trustHooks?: boolean;
+};
 export type ProviderMode = z.infer<typeof providerModeSchema>;
 export type RemoteConfigOutput = z.output<typeof remoteConfigSchema>;
 
@@ -181,6 +191,16 @@ export const tuckLocalConfigSchema = z
       .partial()
       .strict()
       .optional(),
+    /**
+     * When true, this host trusts every configured hook and skips the
+     * "Execute this hook?" confirmation prompt — equivalent to passing
+     * `--trust-hooks` on every invocation. LOCAL-ONLY by design: putting
+     * this in shared `.tuckrc.json` would let a malicious commit bypass
+     * the per-execution guard for every downstream clone. The shared
+     * `tuckConfigSchema` does not include this field; `.strict()` there
+     * rejects it on shared writes.
+     */
+    trustHooks: z.boolean().optional(),
   })
   .strict();
 

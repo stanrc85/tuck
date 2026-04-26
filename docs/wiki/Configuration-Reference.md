@@ -243,7 +243,8 @@ Strict — only these fields allowed. Anything else is a schema error.
   "defaultGroups": ["kali"],
   "hooks": {
     "postRestore": "sed -i 's|snippet.toml|snippet-kali.toml|' ~/.config/pet/config.toml"
-  }
+  },
+  "trustHooks": true
 }
 ```
 
@@ -251,10 +252,24 @@ Strict — only these fields allowed. Anything else is a schema error.
 | --------------- | ------------------- | ---------------------------------------------------------------- |
 | `defaultGroups` | string[]            | Per-host group tags auto-applied when `-g` is omitted            |
 | `hooks`         | { preSync?, postSync?, preRestore?, postRestore? } | Per-host hook overrides. Each hook type merged independently with the shared hook of the same name. |
+| `trustHooks`    | boolean             | When `true`, this host trusts every configured hook and skips the per-execution `Execute this hook?` prompt — equivalent to passing `--trust-hooks` on every invocation. **Local-only by design** (see security note below). |
 
 The strict schema exists to stop "I thought I was editing the local file but really wrote to the shared one" leaks. If you try to add `repository.autoPush` to `.tuckrc.local.json`, it's rejected with a clear error — because auto-push behavior is a repo-wide policy, not per-host.
 
 Use `tuck config set --local <key> <value>` to write any local-schema-allowed key (e.g. `hooks.preSync`) without hand-editing the file. `--local` validates against the strict schema above, so the same shared-only keys that would be rejected on hand-edit are also rejected on the CLI.
+
+### Why `trustHooks` is local-only
+
+Hooks run arbitrary shell commands on every sync/restore. The default per-execution prompt is the safety net: it forces you to look at the command before it runs, so a malicious commit landing in a shared hook can't silently execute on every clone.
+
+If `trustHooks` lived in the shared `.tuckrc.json`, that same malicious commit could flip the bit on alongside the malicious hook command — defeating the prompt for every downstream host that pulls. Restricting `trustHooks` to `.tuckrc.local.json` (which is gitignored, never travels with the repo) means each host opts in deliberately for its own configured commands. The CLI enforces this: `tuck config set trustHooks true` (without `--local`) is rejected with an error pointing at the correct invocation; only `tuck config set --local trustHooks true` is accepted.
+
+Set it only when:
+- You wrote the hooks yourself, or you've audited every hook command in shared `.tuckrc.json`
+- The host is yours alone (not a shared dev box)
+- The dotfiles repo is yours / from a trusted source
+
+To revoke: hand-edit `.tuckrc.local.json` and remove the `trustHooks` key (or wait for `tuck config unset --local trustHooks` once shipped).
 
 See [Host Groups — Defaults](./Host-Groups#defaults--per-host-vs-shared-config) for the load-order + merge rules.
 

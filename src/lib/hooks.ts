@@ -72,8 +72,15 @@ export const runHook = async (
   }
 
   // SECURITY: Always show the hook command and require confirmation
-  // unless trustHooks is explicitly set (for non-interactive/scripted use)
-  if (!options?.trustHooks) {
+  // unless trustHooks is explicitly set (for non-interactive/scripted use).
+  // Trust is additive: a per-call flag (`--trust-hooks`) OR a per-host
+  // opt-in via `.tuckrc.local.json`'s `trustHooks: true` raises the floor
+  // for that host. The shared `.tuckrc.json` schema rejects `trustHooks`
+  // by design — putting it in shared would let a malicious commit bypass
+  // the prompt for every downstream clone (see tuckLocalConfigSchema).
+  const trusted = options?.trustHooks === true || config.trustHooks === true;
+
+  if (!trusted) {
     console.log();
     console.log(chalk.yellow.bold('WARNING: Hook Execution'));
     console.log(chalk.dim('─'.repeat(50)));

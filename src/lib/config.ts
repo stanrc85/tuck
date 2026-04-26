@@ -65,7 +65,7 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
   if (!hasShared) {
     // No shared file: use defaults, then layer local overrides on top so a
     // fresh host still gets its `defaultGroups` / local hooks from
-    // `.tuckrc.local.json`.
+    // `.tuckrc.local.json`. `...localConfig` carries `trustHooks` through.
     cachedConfig = {
       ...defaultConfig,
       ...localConfig,

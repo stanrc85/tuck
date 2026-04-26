@@ -100,6 +100,53 @@ describe('hooks', () => {
       // The hook should attempt to execute (may fail in test environment)
       expect(result).toBeDefined();
     });
+
+    // TASK-067: per-host opt-in via `.tuckrc.local.json`'s `trustHooks: true`
+    // raises the floor for the host. The merged config carries the flag
+    // through, and runHook treats it as equivalent to `--trust-hooks`.
+    it('should bypass the prompt when config.trustHooks is true', async () => {
+      const { prompts } = await import('../../src/ui/prompts.js');
+      vi.mocked(loadConfig).mockResolvedValue({
+        repository: { path: TEST_TUCK_DIR },
+        files: { symlink: false },
+        hooks: {
+          preSync: 'echo "trusted-by-config"',
+        },
+        encryption: {},
+        ui: { color: true, verbose: false },
+        trustHooks: true,
+      });
+
+      // Hook attempts to exec; in the memfs test environment exec may fail —
+      // mirror the existing "should execute hook command with trustHooks
+      // option" pattern and only assert the prompt was NOT shown. That's the
+      // sole observable difference from the prompted path.
+      await runHook('preSync', TEST_TUCK_DIR, { silent: true });
+
+      expect(prompts.confirm).not.toHaveBeenCalled();
+    });
+
+    // Regression guard for the security default: with no per-call flag and
+    // no per-host opt-in, the prompt MUST fire on every invocation.
+    it('should prompt when neither options.trustHooks nor config.trustHooks is set', async () => {
+      const { prompts } = await import('../../src/ui/prompts.js');
+      vi.mocked(prompts.confirm).mockResolvedValueOnce(false); // user declines
+      vi.mocked(loadConfig).mockResolvedValue({
+        repository: { path: TEST_TUCK_DIR },
+        files: { symlink: false },
+        hooks: {
+          preSync: 'echo should-not-run',
+        },
+        encryption: {},
+        ui: { color: true, verbose: false },
+      });
+
+      const result = await runHook('preSync', TEST_TUCK_DIR, { silent: true });
+
+      expect(prompts.confirm).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(true);
+    });
   });
 
   // ============================================================================
