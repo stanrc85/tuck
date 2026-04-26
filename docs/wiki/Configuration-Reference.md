@@ -112,6 +112,22 @@ Both disabled (both `0`) = no pruning. See [Time Machine & Undo](./Time-Machine-
 
 Four hook types. Each is a shell command (sh/bash on Unix, pwsh on Windows) run in the `~/.tuck/` cwd with a few env vars passed through. Full reference in [Hooks](./Hooks).
 
+### `validation`
+
+```json
+{
+  "validation": {
+    "preSync": false
+  }
+}
+```
+
+| Field      | Type    | Default | Description |
+|------------|---------|---------|-------------|
+| `preSync`  | boolean | `false` | When `true`, run `tuck validate` against every tracked file at the start of `tuck sync`. Findings are reported inline; the sync continues regardless (warn-only). |
+
+Opt-in only. Default keeps `tuck sync` paying zero validation cost. When enabled, the sweep runs after secret-scanning and before any file writes — broken JSON / YAML / shell parses get surfaced before they land in your git history. Users who want hard-blocking can wire `tuck validate --format json` into a `hooks.preSync` hook instead (see [Hooks](./Hooks)). See also [tuck validate](./Command-Reference#tuck-validate).
+
 ### `ignore`
 
 ```json

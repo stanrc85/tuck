@@ -631,7 +631,7 @@ Run repository-health and safety diagnostics. Useful after upgrades or when some
 
 ### tuck validate
 
-Syntax-check tracked files — JSON, TOML, shell (bash/zsh), Lua. Report-only by default; `--fix` previews + applies a narrow set of safe rewrites after confirmation.
+Syntax-check tracked files — JSON, TOML, YAML, shell (bash/zsh), Lua. Report-only by default; `--fix` previews + applies a narrow set of safe rewrites after confirmation.
 
 **Synopsis**
 
@@ -640,7 +640,7 @@ Syntax-check tracked files — JSON, TOML, shell (bash/zsh), Lua. Report-only by
 **Options**
 
 - `--format <text|json>` — output format (default `text`). `json` emits `{ summary, results }` for scripting.
-- `--fix` — preview trailing-whitespace + missing-EOF-newline fixes as a unified diff, then prompt `Apply fixes to N files?` before writing.
+- `--fix` — preview trailing-whitespace, missing-EOF-newline, and JSON pretty-print fixes as a unified diff, then prompt `Apply fixes to N files?` before writing.
 - `-y, --yes` — skip the confirmation prompt (still previews, still snapshots). Required in non-TTY / CI mode when `--fix` is set.
 
 **Examples**
@@ -655,17 +655,17 @@ Syntax-check tracked files — JSON, TOML, shell (bash/zsh), Lua. Report-only by
 
 - **JSON** — `JSON.parse` + line:col extraction from the error message.
 - **TOML** — `smol-toml.parse`; surfaces `line` / `column` from `TomlError` when available.
-- **Shell** — `bash -n` / `zsh -n` dispatched by filename. `.zsh`, `.zshrc`, `.zshenv`, `.zprofile`, `.zlogin`, `.zlogout` → zsh; everything else → bash. Warn-skips when the shell binary isn't installed.
+- **YAML** — `yaml.parse` (eemeli/yaml); surfaces `line` / `column` from `YAMLError.linePos` when available.
+- **Shell** — `bash -n` / `zsh -n` dispatched by filename. `.zsh`, `.zshrc`, `.zshenv`, `.zprofile`, `.zlogin`, `.zlogout` → zsh; everything else → bash. Warn-skips when the shell binary isn't installed. When `shellcheck` is also on `$PATH`, bash files additionally run through `shellcheck --format=gcc` and lint findings (SC2086 quoting, SC2034 unused vars, etc.) merge in as `warning`-severity issues. zsh files skip shellcheck — it doesn't understand zsh syntax and would false-positive on common idioms.
 - **Lua** — `luac -p`. Warn-skips when `luac` isn't on `$PATH`.
-
-YAML is not validated today — tracked as a follow-up.
 
 **Behavior notes**
 
 - Exit code 1 if any file fails validation (so `tuck validate --format json` drops into CI as-is).
-- `--fix` only handles trailing whitespace and missing EOF newline in this release. Mixed tab/space normalisation, JSON pretty-print, TOML pretty-print, and shellcheck integration are follow-ups.
+- `--fix` handles three rewrite shapes: trailing whitespace, missing EOF newline, and (for `.json` files) canonical 2-space pretty-print via `JSON.stringify(JSON.parse(raw), null, 2)`. The pretty-print fires only when the file parses cleanly — broken JSON falls through to the line-level fixer so the parse error stays visible in the regular validate output.
 - Before any write, `--fix` creates a Time Machine snapshot (`SnapshotKind: validate-fix`) so `tuck undo` can roll it back.
 - Non-TTY invocation without `--yes` refuses to write — preview only. Guard against "CI silently fixed my files" surprise.
+- Set `validation.preSync: true` in `.tuckrc.json` to auto-run validation before every `tuck sync` and surface failures inline (warn-only — does not block the sync). See [Configuration Reference](./Configuration-Reference#validation).
 
 **See also:** [tuck doctor](#tuck-doctor), [tuck undo](#tuck-undo), [Time Machine & Undo](./Time-Machine-and-Undo)
 
@@ -673,7 +673,7 @@ YAML is not validated today — tracked as a follow-up.
 
 ### tuck optimize
 
-Profile zsh startup and flag rule-based recommendations. Zsh-only for now. Report-only by default; `--auto` previews + applies the safe subset of fixes after confirmation.
+Profile shell startup and flag rule-based recommendations. Supports zsh and bash. Report-only by default; `--auto` previews + applies the safe subset of fixes after confirmation.
 
 **Synopsis**
 
@@ -684,31 +684,34 @@ Profile zsh startup and flag rule-based recommendations. Zsh-only for now. Repor
 - `--profile` — profile only, skip the recommendation engine. Prints per-source wall-clock attribution.
 - `--auto` — preview + apply the safe subset of auto-fixes (today: append `skip_global_compinit=1` to `~/.zshenv` when `multiple-compinit` fires and the line isn't present).
 - `-y, --yes` — skip the confirmation prompt (still previews, still snapshots). Required in non-TTY / CI mode when `--auto` is set.
-- `--format <text|json>` — output format (default `text`). `json` emits structured recommendations for scripting.
+- `--format <text|json>` — output format (default `text`). `json` emits structured recommendations for scripting (`shell` is included so the consumer knows which interpreter was profiled).
+- `--shell <zsh|bash>` — profile a specific shell. Default: detect from `$SHELL` basename (falls back to `zsh` if unset / unknown).
 
 **Examples**
 
-    tuck optimize                         # profile + recommendations
+    tuck optimize                         # profile + recommendations (auto-detect shell)
     tuck optimize --profile               # timing attribution only
+    tuck optimize --shell bash            # profile bash even if $SHELL is zsh
     tuck optimize --auto                  # preview + confirm auto-fixes
     tuck optimize --format json           # for scripting
 
 **Profiler**
 
-- Runs `zsh -ixc exit` with `PS4='+%D{%s.%6.}|%N|%i> '` — epoch seconds with 6-digit fractional precision + source file + line, pipe-delimited.
+- Runs `<shell> -ixc exit` with a shell-specific PS4: zsh uses `+%D{%s.%6.}|%N|%i> ` (epoch seconds + microseconds + source + line); bash 5+ uses `+${EPOCHREALTIME}|${BASH_SOURCE}|${LINENO}> `. Both emit the same `+<timestamp>|<source>|<line>> <command>` event shape so the parser stays shell-agnostic.
+- Source files read for rule evidence: zsh — `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`. bash — `.bashrc`, `.bash_profile`, `.profile`, `.bash_login`.
 - Attributes each line's wall-clock delta to the previous event's source file.
 - Output is a descending list of hot source files with aggregate time.
 
 **Rules**
 
-- **multiple-compinit** — `compinit` called more than once during startup. Recommends `skip_global_compinit=1` in `~/.zshenv`. Suppressed when that line is already present in any startup file.
-- **duplicate-path** — the same directory appears more than once across `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`. Reads source files directly, not xtrace events (so repeated PATH entries inside functions don't false-positive).
-- **sync-version-managers** — synchronous load of nvm / rbenv / pyenv at startup. Recommends a lazy-load pattern. Internal events from inside the manager's scripts don't count toward the trigger.
+- **multiple-compinit** — `compinit` called more than once during startup. Zsh-specific (compinit is a zsh feature; never fires under bash). Recommends `skip_global_compinit=1` in `~/.zshenv`. Suppressed when that line is already present in any startup file.
+- **duplicate-path** — the same directory appears more than once across the shell's startup files. Reads source files directly, not xtrace events (so repeated PATH entries inside functions don't false-positive).
+- **sync-version-managers** — synchronous load of nvm / rbenv / pyenv at startup. Recommends a lazy-load pattern and embeds a paste-ready shim in the evidence — first invocation pays the init cost, every later shell stays fast. Internal events from inside the manager's scripts don't count toward the trigger.
 - **blocking-startup** — network / auth calls at shell start (`curl`, `wget`, `ssh`, `gpg`, `git pull`, `gh auth`, `op signin`). Uses first-token + multi-word phrase matching so mentions in comments or strings don't false-positive.
+- **guarded-source** (info) — flags `if [[ -f X ]]; then source X; fi` blocks (single-line and multi-line forms). Suggests collapsing to `[[ -f X ]] && source X`, or dropping the existence check entirely if the file is part of your dotfiles repo and always present. Cosmetic; severity is `info`.
 
 **Behavior notes**
 
-- Bash profiling is a follow-up — `tuck optimize` currently requires zsh.
 - `--auto` applies PATH dedup **only** as a suggestion today, not a rewrite — rewriting PATH across variable expansions, conditionals, and substitutions is easy to get wrong. Manual edit suggested in the report.
 - Before any write, `--auto` creates a Time Machine snapshot (`SnapshotKind: optimize-auto`) so `tuck undo` can roll it back.
 - Non-TTY invocation without `--yes` refuses to write.

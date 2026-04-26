@@ -412,15 +412,28 @@ tuck validate ~/.zshrc
 tuck validate && tuck sync
 ```
 
-`tuck validate` dispatches by filename: `.zshrc` → `zsh -n`, `config.json` → `JSON.parse`, `bootstrap.toml` → `smol-toml.parse`, `*.lua` → `luac -p`. Files whose validator isn't installed warn-skip rather than fail.
+`tuck validate` dispatches by filename: `.zshrc` → `zsh -n` (+ `shellcheck` for bash files when installed), `config.json` → `JSON.parse`, `*.toml` → `smol-toml.parse`, `*.yaml` / `*.yml` → `yaml.parse`, `*.lua` → `luac -p`. Files whose validator isn't installed warn-skip rather than fail.
 
-If the failure is a trivial hygiene issue — trailing whitespace or missing EOF newline — `--fix` previews the unified diff and applies on confirmation:
+If the failure is a trivial hygiene issue — trailing whitespace, missing EOF newline, or compact JSON that should be pretty-printed — `--fix` previews the unified diff and applies on confirmation:
 
 ```bash
 tuck validate --fix
 ```
 
-Before writing, `--fix` takes a Time Machine snapshot. If the rewrite breaks something, `tuck undo` rolls it back.
+For `.json` files, `--fix` round-trips through `JSON.stringify(JSON.parse(raw), null, 2)` to produce canonical 2-space-indented output. Broken JSON falls through to the line-level fixer so the parse error stays visible. Before writing, `--fix` takes a Time Machine snapshot. If the rewrite breaks something, `tuck undo` rolls it back.
+
+**Run validation automatically before every sync:**
+
+```json
+// .tuckrc.json
+{
+  "validation": {
+    "preSync": true
+  }
+}
+```
+
+When set, `tuck sync` runs the validation sweep right after the secret-scan step and surfaces failing files inline. Warn-only — the sync continues regardless. Use a `hooks.preSync` hook calling `tuck validate --format json` if you want hard-blocking instead.
 
 **CI mode:**
 
@@ -435,7 +448,7 @@ Before writing, `--fix` takes a Time Machine snapshot. If the rewrite breaks som
 
 ---
 
-## Profile and trim a slow zsh startup
+## Profile and trim a slow shell startup
 
 **Scenario:** your new shell takes 800ms to open. You want to know where the time goes and what to cut.
 
@@ -445,16 +458,20 @@ tuck optimize --profile
 
 # 2. Full run — profile + rule-based recommendations.
 tuck optimize
+
+# 3. Profile a different shell than $SHELL points at.
+tuck optimize --shell bash
 ```
 
-`tuck optimize` runs `zsh -ixc exit` with a custom `PS4` tracer and attributes each line's time to its source file. Output is a descending-by-time list; the biggest contributors are at the top.
+`tuck optimize` runs `<shell> -ixc exit` with a custom `PS4` tracer and attributes each line's time to its source file. Output is a descending-by-time list; the biggest contributors are at the top. Default shell is detected from `$SHELL`; override with `--shell zsh` or `--shell bash`.
 
 **Common findings:**
 
-- **`compinit` called more than once** → the rule suggests `skip_global_compinit=1` in `~/.zshenv`, which disables the distro's global compinit call so yours is the only one.
-- **nvm / rbenv / pyenv loaded synchronously** → the rule suggests lazy-loading (`nvm` only when you actually run `nvm`, `node`, `npm`, etc.).
+- **`compinit` called more than once** (zsh) → the rule suggests `skip_global_compinit=1` in `~/.zshenv`, which disables the distro's global compinit call so yours is the only one.
+- **nvm / rbenv / pyenv loaded synchronously** → the rule suggests lazy-loading and embeds a paste-ready shim in the evidence — copy the block straight from the report into your shell config to defer the init cost to first invocation.
 - **Blocking network / auth call** at startup (`curl`, `ssh-add`, `gpg --list-keys`, `gh auth status`) → move to an on-demand function or background it.
-- **Duplicated `PATH` entries** across `~/.zshenv` / `~/.zprofile` / `~/.zshrc` → consolidate into one file.
+- **Duplicated `PATH` entries** across startup files → consolidate into one file.
+- **`if [[ -f X ]]; then source X; fi` blocks** → collapse to `[[ -f X ]] && source X`, or drop the existence check entirely if the file is part of your dotfiles repo and always present.
 
 **Apply the safe auto-fix:**
 
@@ -464,7 +481,7 @@ tuck optimize --auto
 
 Today `--auto` only applies one fix: append `skip_global_compinit=1` to `~/.zshenv` when `multiple-compinit` fires and the line isn't already there. It previews the change, prompts before writing, and snapshots to Time Machine — `tuck undo` rolls it back.
 
-PATH dedup and lazy-load rewrites are suggestions only (too easy to get wrong across variable expansions, conditionals, and substitutions). Apply them manually and re-profile to verify.
+PATH dedup and lazy-load rewrites are suggestions only (too easy to get wrong across variable expansions, conditionals, and substitutions). Apply them manually — for version managers, the lazy-load shim in the evidence is paste-ready — and re-profile to verify.
 
 **After every fix:** `tuck optimize --profile` again and compare. A change should visibly move or disappear from the top of the list.
 
