@@ -86,7 +86,7 @@ describe('validate command', () => {
       }
     });
 
-    it('writes + snapshots when --yes is passed', async () => {
+    it('writes + snapshots when --yes is passed (JSON pretty-print path)', async () => {
       writeManifestAndFile(
         '~/.myrc.json',
         'files/myrc.json',
@@ -96,7 +96,10 @@ describe('validate command', () => {
       await runValidate([], { fix: true, yes: true, format: 'text' });
 
       const after = vol.readFileSync(`${TEST_HOME}/.myrc.json`, 'utf-8');
-      expect(after).toBe('{"ok": true}\n');
+      // JSON files round-trip through JSON.stringify(..., null, 2) — the
+      // trailing-whitespace and EOF-newline fixes are subsumed by the
+      // canonical pretty-print form.
+      expect(after).toBe('{\n  "ok": true\n}\n');
 
       // Snapshot should have been created under the backup dir.
       const snapshotRoot = `${TEST_HOME}/.tuck-backups`;
@@ -106,12 +109,19 @@ describe('validate command', () => {
     });
 
     it('leaves the file alone when there are no fixable issues (--yes no-op)', async () => {
-      writeManifestAndFile('~/.myrc.json', 'files/myrc.json', '{"ok": true}\n');
+      // Already-pretty JSON with EOF newline — round-tripping through
+      // JSON.stringify produces identical bytes, so the fixer has nothing
+      // to propose.
+      writeManifestAndFile(
+        '~/.myrc.json',
+        'files/myrc.json',
+        '{\n  "ok": true\n}\n',
+      );
       const { runValidate } = await import('../../src/commands/validate.js');
       await runValidate([], { fix: true, yes: true, format: 'text' });
 
       const after = vol.readFileSync(`${TEST_HOME}/.myrc.json`, 'utf-8');
-      expect(after).toBe('{"ok": true}\n');
+      expect(after).toBe('{\n  "ok": true\n}\n');
     });
   });
 

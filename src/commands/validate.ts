@@ -1,16 +1,10 @@
 import { Command } from 'commander';
 import { readFile } from 'fs/promises';
 import { prompts, logger, colors as c } from '../ui/index.js';
-import { getTuckDir, expandPath, collapsePath, pathExists } from '../lib/paths.js';
-import {
-  loadManifest,
-  getAllTrackedFiles,
-  assertMigrated,
-} from '../lib/manifest.js';
-import { isIgnored } from '../lib/tuckignore.js';
+import { getTuckDir } from '../lib/paths.js';
+import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { isBinaryExecutable } from '../lib/binary.js';
 import {
-  validateFile,
   hasErrors,
   computeFixes,
   applyFixes,
@@ -18,8 +12,13 @@ import {
   type ValidationResult,
   type FixProposal,
 } from '../lib/validators/index.js';
+import {
+  collectValidationTargets,
+  runValidationSweep,
+  type ValidationTarget,
+} from '../lib/validators/sweep.js';
 import { createSnapshot } from '../lib/timemachine.js';
-import { NotInitializedError, FileNotFoundError } from '../errors.js';
+import { NotInitializedError } from '../errors.js';
 
 interface ValidateOptions {
   format?: 'text' | 'json';
@@ -28,55 +27,6 @@ interface ValidateOptions {
 }
 
 const isInteractive = (): boolean => Boolean(process.stdout.isTTY);
-
-// Collect every tracked file (or the explicit paths the user named) into a
-// flat list of {absolute, display}. Expanding directories mirrors what
-// `tuck diff` does so tracked `~/.config/nvim` validates every file inside.
-const collectTargets = async (
-  tuckDir: string,
-  paths: string[],
-): Promise<Array<{ absolutePath: string; displayPath: string }>> => {
-  const allFiles = await getAllTrackedFiles(tuckDir);
-
-  const trackedEntries =
-    paths.length === 0
-      ? Object.values(allFiles)
-      : paths.map((p) => {
-          const expanded = expandPath(p);
-          const collapsed = collapsePath(expanded);
-          const found = Object.values(allFiles).find((f) => f.source === collapsed);
-          if (!found) throw new FileNotFoundError(`Not tracked: ${p}`);
-          return found;
-        });
-
-  const targets: Array<{ absolutePath: string; displayPath: string }> = [];
-  const { getDirectoryFiles } = await import('../lib/files.js');
-  const { isDirectory } = await import('../lib/paths.js');
-
-  for (const entry of trackedEntries) {
-    if (await isIgnored(tuckDir, entry.source)) continue;
-    const absolute = expandPath(entry.source);
-    if (!(await pathExists(absolute))) continue;
-
-    if (await isDirectory(absolute)) {
-      const files = await getDirectoryFiles(absolute);
-      for (const f of files) {
-        targets.push({ absolutePath: f, displayPath: collapsePath(f) });
-      }
-    } else {
-      targets.push({ absolutePath: absolute, displayPath: entry.source });
-    }
-  }
-
-  // De-dupe by absolute path — nested tracked entries (e.g. `~/.config` and
-  // `~/.config/nvim`) would otherwise visit overlapping files twice.
-  const seen = new Set<string>();
-  return targets.filter((t) => {
-    if (seen.has(t.absolutePath)) return false;
-    seen.add(t.absolutePath);
-    return true;
-  });
-};
 
 const formatResultText = (result: ValidationResult): string => {
   if (result.skipped) {
@@ -122,7 +72,7 @@ const printJsonReport = (results: ValidationResult[]): void => {
 // data is gated behind the confirm prompt; if the user says no, nothing
 // touches disk. Non-TTY invocations without --yes refuse to write.
 const runFixPass = async (
-  targets: Array<{ absolutePath: string; displayPath: string }>,
+  targets: ValidationTarget[],
   options: ValidateOptions,
 ): Promise<void> => {
   const proposals: FixProposal[] = [];
@@ -204,19 +154,8 @@ export const runValidate = async (
   }
   assertMigrated(manifest);
 
-  const targets = await collectTargets(tuckDir, paths);
-  const results: ValidationResult[] = [];
-
-  for (const t of targets) {
-    if (await isBinaryExecutable(t.absolutePath)) continue;
-    let content: string;
-    try {
-      content = await readFile(t.absolutePath, 'utf-8');
-    } catch {
-      continue;
-    }
-    results.push(await validateFile(t.absolutePath, t.displayPath, content));
-  }
+  const targets = await collectValidationTargets(tuckDir, paths);
+  const results: ValidationResult[] = await runValidationSweep(targets);
 
   if (options.format === 'json') {
     printJsonReport(results);
@@ -244,10 +183,10 @@ export const runValidate = async (
 };
 
 export const validateCommand = new Command('validate')
-  .description('Validate syntax of tracked files (JSON, TOML, shell, Lua)')
+  .description('Validate syntax of tracked files (JSON, TOML, YAML, shell, Lua)')
   .argument('[paths...]', 'Specific files to validate')
   .option('--format <type>', 'Output format: text | json', 'text')
-  .option('--fix', 'Preview + apply fixes for trailing whitespace + missing EOF newline')
+  .option('--fix', 'Preview + apply fixes (trailing whitespace, EOF newline, JSON pretty-print)')
   .option('-y, --yes', 'Skip the confirmation prompt (still previews, still snapshots)')
   .action(async (paths: string[], options: ValidateOptions) => {
     await runValidate(paths, options);

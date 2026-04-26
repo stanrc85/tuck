@@ -3,6 +3,7 @@ import { validateJson } from './json.js';
 import { validateToml } from './toml.js';
 import { validateShell } from './shell.js';
 import { validateLua } from './lua.js';
+import { validateYaml } from './yaml.js';
 
 export interface ValidationIssue {
   severity: 'error' | 'warning';
@@ -60,13 +61,7 @@ export const validateFile = async (
         ...(await validateLua(absolutePath)),
       };
     case 'yaml':
-      return {
-        file: displayPath,
-        language,
-        skipped: true,
-        skipReason: 'YAML validator not implemented in v1',
-        issues: [],
-      };
+      return { file: displayPath, language, issues: validateYaml(content) };
     default:
       return {
         file: displayPath,

@@ -86,6 +86,20 @@ export const tuckConfigSchema = z.object({
     .partial()
     .default({}),
 
+  /**
+   * Validation policy. `preSync: true` runs `tuck validate` on every tracked
+   * file before a sync, surfacing parse errors and lint findings inline.
+   * Warn-only: validation errors are reported but do not block the sync.
+   * Users who want hard-blocking can wire `tuck validate` into a `preSync`
+   * hook instead.
+   */
+  validation: z
+    .object({
+      preSync: z.boolean().default(false),
+    })
+    .partial()
+    .default({}),
+
   encryption: z
     .object({
       /** Master switch for encryption features */
@@ -188,6 +202,9 @@ export const defaultConfig: TuckConfigOutput = {
   defaultGroups: [],
   readOnlyGroups: [],
   hooks: {},
+  validation: {
+    preSync: false,
+  },
   encryption: {
     enabled: false,
     backupsEnabled: false,

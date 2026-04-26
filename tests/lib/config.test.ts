@@ -85,6 +85,10 @@ describe('config', () => {
     it('should have encryption disabled by default', () => {
       expect(defaultConfig.encryption.enabled).toBe(false);
     });
+
+    it('has validation.preSync disabled by default (opt-in only)', () => {
+      expect(defaultConfig.validation.preSync).toBe(false);
+    });
   });
 
   // ============================================================================

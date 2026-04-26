@@ -60,6 +60,63 @@ const parseShellErrors = (stderr: string, path: string): ValidationIssue[] => {
   return issues;
 };
 
+// shellcheck output (--format=gcc) is `<path>:<line>:<col>: <severity>: <msg>
+// [SC####]`. We promote `error`-level findings and demote `warning`/`note` to
+// our `warning` severity. shellcheck doesn't understand zsh, so we only run
+// it for non-zsh files — feeding it `.zshrc` is noisy false-positives.
+const SHELLCHECK_LINE_RE = /^[^:]+:(\d+):(\d+):\s*(error|warning|note):\s*(.+)$/;
+
+// Exported for unit tests — kept as a pure transformation so tests don't
+// need shellcheck on the path.
+export const parseShellcheckOutput = (stdout: string): ValidationIssue[] => {
+  const issues: ValidationIssue[] = [];
+  for (const raw of stdout.split('\n')) {
+    const match = SHELLCHECK_LINE_RE.exec(raw.trim());
+    if (!match) continue;
+    const sev: ValidationIssue['severity'] = match[3] === 'error' ? 'error' : 'warning';
+    issues.push({
+      severity: sev,
+      line: parseInt(match[1], 10),
+      column: parseInt(match[2], 10),
+      message: match[4],
+    });
+  }
+  return issues;
+};
+
+const runShellcheck = async (
+  path: string,
+): Promise<{ issues: ValidationIssue[]; available: boolean }> => {
+  return await new Promise((resolve) => {
+    // stderr discarded: shellcheck reserves it for tool-itself failures
+    // (broken install, parse crash). We don't surface those — findings
+    // live on stdout in `--format=gcc`.
+    const child = spawn('shellcheck', ['--format=gcc', path], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.on('error', (err) => {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        resolve({ issues: [], available: false });
+        return;
+      }
+      // Spawned but failed before producing parseable output — surface the
+      // stderr as a single warning so the user knows something went sideways
+      // without conflating it with an actual lint finding.
+      resolve({
+        issues: [{ severity: 'warning', message: `shellcheck: ${err.message}` }],
+        available: true,
+      });
+    });
+    child.on('close', () => {
+      resolve({ issues: parseShellcheckOutput(stdout), available: true });
+    });
+  });
+};
+
 export const validateShell = async (
   absolutePath: string,
   _content: string,
@@ -75,9 +132,19 @@ export const validateShell = async (
     };
   }
 
-  if (result.exitCode === 0) {
-    return { issues: [] };
+  const issues = result.exitCode === 0 ? [] : parseShellErrors(result.stderr, absolutePath);
+
+  // shellcheck only handles bash/POSIX — running it on zsh files yields
+  // false positives on zsh-only constructs. Skip it for zsh files. Also
+  // skip when the interpreter parse already failed: shellcheck on a file
+  // with a syntax error tends to spew confused diagnostics that just
+  // duplicate the real problem.
+  if (interpreter === 'bash' && issues.length === 0) {
+    const sc = await runShellcheck(absolutePath);
+    if (sc.available) {
+      issues.push(...sc.issues);
+    }
   }
 
-  return { issues: parseShellErrors(result.stderr, absolutePath) };
+  return { issues };
 };

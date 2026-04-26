@@ -33,6 +33,8 @@ import {
 import { addToTuckignore, loadTuckignore, isIgnored } from '../lib/tuckignore.js';
 import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { runPreSyncHook, runPostSyncHook, type HookOptions } from '../lib/hooks.js';
+import { loadConfig } from '../lib/config.js';
+import { validateTrackedFilesForGate } from '../lib/validators/sweep.js';
 import { NotInitializedError, SecretsDetectedError } from '../errors.js';
 import type { SyncOptions, FileChange } from '../types.js';
 import { detectDotfiles, DETECTION_CATEGORIES, type DetectedFile } from '../lib/detect.js';
@@ -518,6 +520,39 @@ const runSyncList = async (tuckDir: string, options: SyncOptions): Promise<void>
   );
 };
 
+// Read `validation.preSync` from merged config, run a sweep across tracked
+// files, and surface failing files inline as warnings. Never throws — sync
+// continues regardless. Bails silently when the opt-in isn't enabled so the
+// default sync path pays no validation cost.
+const runPreSyncValidation = async (tuckDir: string): Promise<void> => {
+  let config;
+  try {
+    config = await loadConfig(tuckDir);
+  } catch {
+    return;
+  }
+  if (config.validation?.preSync !== true) return;
+
+  const failures = await validateTrackedFilesForGate(tuckDir);
+  if (failures.length === 0) return;
+
+  prompts.log.warning(
+    `Pre-sync validation: ${failures.length} file${failures.length === 1 ? '' : 's'} with errors (warn-only — sync continues)`,
+  );
+  const preview = failures.slice(0, 5);
+  for (const f of preview) {
+    const errCount = f.issues.filter((i) => i.severity === 'error').length;
+    prompts.log.message(c.dim(`  ${f.file} (${errCount} error${errCount === 1 ? '' : 's'})`));
+  }
+  if (failures.length > preview.length) {
+    prompts.log.message(
+      c.dim(`  ... ${failures.length - preview.length} more — run \`tuck validate\` for the full report`),
+    );
+  } else {
+    prompts.log.message(c.dim('Run `tuck validate` for the full report.'));
+  }
+};
+
 const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): Promise<void> => {
   prompts.intro('tuck sync');
 
@@ -556,6 +591,15 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
     if (!shouldContinue) {
       return;
     }
+  }
+
+  // ========== STEP 2.6: Optional pre-sync validation ==========
+  // Opt-in via `validation.preSync: true` in `.tuckrc.json`. Warn-only:
+  // surfaces parse errors / lint findings inline but does not block the
+  // sync. Users who want hard-blocking can wire `tuck validate` into a
+  // `preSync` hook instead.
+  if (changes.length > 0) {
+    await runPreSyncValidation(tuckDir);
   }
 
   // ========== STEP 3: Scan for new dotfiles (if enabled) ==========
@@ -953,6 +997,9 @@ export const runSyncCommand = async (
       }
     }
   }
+
+  // Optional pre-sync validation (opt-in; warn-only).
+  await runPreSyncValidation(tuckDir);
 
   // Show changes
   logger.heading('Changes detected:');

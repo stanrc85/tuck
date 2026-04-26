@@ -1,4 +1,5 @@
 import { colors as c } from '../../ui/theme.js';
+import { detectLanguage } from '../syntaxHighlight.js';
 
 export interface FixProposal {
   file: string;              // display path (e.g. ~/.zshrc)
@@ -10,7 +11,26 @@ export interface FixProposal {
 
 const TRAILING_WS_RE = /[ \t]+$/;
 
-// Build a proposal if either fixable pattern matches. Returns null when the
+// Re-emit JSON as canonical 2-space-indented form. Returns the new text and
+// whether anything changed. Skips silently when the input doesn't parse so
+// validate's --fix doesn't try to "fix" something with a real syntax error
+// that the user needs to see first via the regular validate output.
+const tryPrettyPrintJson = (
+  content: string,
+): { after: string; changed: boolean } => {
+  try {
+    const parsed = JSON.parse(content);
+    // 2-space indent matches the project conventions for tracked configs
+    // (eslint, prettier, vscode all default here). JSON.stringify omits the
+    // trailing newline; we add one for POSIX compliance.
+    const reformatted = JSON.stringify(parsed, null, 2) + '\n';
+    return { after: reformatted, changed: reformatted !== content };
+  } catch {
+    return { after: content, changed: false };
+  }
+};
+
+// Build a proposal if any fixable pattern matches. Returns null when the
 // content is already clean so the caller can filter before prompting — no
 // point asking the user to confirm a no-op.
 export const computeFixes = (
@@ -18,6 +38,29 @@ export const computeFixes = (
   absolutePath: string,
   content: string,
 ): FixProposal | null => {
+  const language = detectLanguage(file);
+
+  // JSON pretty-print supersedes line-level whitespace fixes: the round-trip
+  // through JSON.stringify normalises whitespace, indentation, and EOF
+  // newline in one shot. If the file isn't valid JSON, fall through to the
+  // generic line-level fixer below — leave the parse error for `validate`
+  // proper to surface.
+  if (language === 'json') {
+    const { after, changed } = tryPrettyPrintJson(content);
+    if (changed) {
+      return {
+        file,
+        absolutePath,
+        before: content,
+        after,
+        fixes: ['pretty-print JSON (2-space indent)'],
+      };
+    }
+    // Already pretty OR doesn't parse. In either case, let the line-level
+    // fixer run — already-pretty content will produce null, broken-JSON
+    // content can still benefit from trailing-whitespace cleanup.
+  }
+
   const fixes: string[] = [];
   const lines = content.split('\n');
   let changedLines = 0;

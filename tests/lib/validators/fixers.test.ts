@@ -41,6 +41,36 @@ describe('computeFixes', () => {
   });
 });
 
+describe('computeFixes - JSON pretty-print', () => {
+  it('returns null when JSON is already pretty-printed', () => {
+    const pretty = '{\n  "foo": 1,\n  "bar": [\n    2,\n    3\n  ]\n}\n';
+    expect(computeFixes('~/.config/x.json', '/abs/x.json', pretty)).toBeNull();
+  });
+
+  it('reformats compact JSON with 2-space indent + EOF newline', () => {
+    const result = computeFixes('~/.config/x.json', '/abs/x.json', '{"foo":1,"bar":[2,3]}');
+    expect(result).not.toBeNull();
+    expect(result!.after).toBe('{\n  "foo": 1,\n  "bar": [\n    2,\n    3\n  ]\n}\n');
+    expect(result!.fixes.some((f) => f.toLowerCase().includes('json'))).toBe(true);
+  });
+
+  it('falls through to whitespace fixer on JSON files that do not parse', () => {
+    // Invalid JSON — pretty-print can't run. The line-level fixer should still
+    // catch the trailing whitespace so the user gets some auto-fix value while
+    // they manually resolve the syntax error (which `validate` reports).
+    const result = computeFixes('~/.config/x.json', '/abs/x.json', '{"foo": }   \n');
+    expect(result).not.toBeNull();
+    expect(result!.fixes.some((f) => f.includes('trailing whitespace'))).toBe(true);
+  });
+
+  it('does not pretty-print non-JSON files even if they happen to parse as JSON', () => {
+    // A `.zshrc` containing `{}` as a literal — pretty-print would treat it as
+    // valid JSON and rewrite the whole file. Detect-by-extension prevents that.
+    const result = computeFixes('~/.zshrc', '/abs/.zshrc', '{}\n');
+    expect(result).toBeNull();
+  });
+});
+
 describe('renderFixDiff', () => {
   const stripAnsi = (s: string): string =>
     // eslint-disable-next-line no-control-regex
