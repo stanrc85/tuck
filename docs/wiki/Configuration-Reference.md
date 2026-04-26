@@ -258,6 +258,10 @@ The strict schema exists to stop "I thought I was editing the local file but rea
 
 Use `tuck config set --local <key> <value>` to write any local-schema-allowed key (e.g. `hooks.preSync`) without hand-editing the file. `--local` validates against the strict schema above, so the same shared-only keys that would be rejected on hand-edit are also rejected on the CLI.
 
+To remove a key, use `tuck config unset --local <key>` — it goes through the same schema gate as `set --local`, drops the key, and prunes empty parent objects so the file doesn't accrete `{ hooks: {} }` shells over time. Unsetting a missing key is a no-op success (matches `git config --unset`).
+
+To edit the file directly, `tuck config edit --local` opens `.tuckrc.local.json` in `$EDITOR` (creating an empty `{}` shell first if the file doesn't exist yet). `tuck config edit` without `--local` still opens the shared `.tuckrc.json` as before.
+
 ### Why `trustHooks` is local-only
 
 Hooks run arbitrary shell commands on every sync/restore. The default per-execution prompt is the safety net: it forces you to look at the command before it runs, so a malicious commit landing in a shared hook can't silently execute on every clone.

@@ -573,8 +573,11 @@ View and edit configuration. Without arguments, drops into an interactive menu.
 
     tuck config
     tuck config get <key>
-    tuck config set <key> <value>
-    tuck config unset <key>
+    tuck config set [--local] <key> <value>
+    tuck config unset [--local] <key>
+    tuck config edit [--local]
+    tuck config list
+    tuck config reset
     tuck config remote
     tuck config wizard
 
@@ -584,12 +587,19 @@ View and edit configuration. Without arguments, drops into an interactive menu.
     tuck config get repository.autoPush
     tuck config set repository.autoPush true
     tuck config set defaultGroups '["kali"]'
+    tuck config set --local hooks.preSync 'tuck cheatsheet'
+    tuck config set --local trustHooks true  # this host trusts every hook
+    tuck config unset --local hooks.preSync  # remove a per-host hook
+    tuck config edit --local                 # open .tuckrc.local.json in $EDITOR
     tuck config remote                       # configure provider
     tuck config wizard                       # full re-run of init's prompts
 
 **Behavior notes**
 
 - `tuck config set` writes to the **shared** `.tuckrc.json` by default. Fields that must be per-host (`defaultGroups`, per-host `hooks`) write to `.tuckrc.local.json` automatically — no flag needed.
+- `--local` on `set`/`unset`/`edit` routes the operation to `.tuckrc.local.json` for any local-schema-allowed key. Shared-only keys (e.g. `repository.autoCommit`) are rejected with a clear error when `--local` is set.
+- `trustHooks` is local-only by design and **must** be set with `--local` — see [Configuration Reference → trustHooks](./Configuration-Reference#why-trusthooks-is-local-only) for the security rationale.
+- `unset` is a no-op success (not an error) when the key isn't present — same as `git config --unset`. Empty parent objects are pruned automatically.
 - Keys are dotted paths: `repository.autoPush`, `snapshots.maxCount`, `remote.mode`.
 - `tuck config` refuses reserved key names (`__proto__`, `constructor`, `prototype`) at every dotted-path segment.
 

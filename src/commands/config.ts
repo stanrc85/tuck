@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import { spawn } from 'child_process';
+import { writeFile } from 'fs/promises';
 import { z } from 'zod';
 import { prompts, logger, banner, colors as c } from '../ui/index.js';
-import { getTuckDir, getConfigPath, collapsePath } from '../lib/paths.js';
+import { getTuckDir, getConfigPath, getLocalConfigPath, collapsePath, pathExists } from '../lib/paths.js';
 import { loadConfig, loadLocalConfig, saveConfig, saveLocalConfig, resetConfig } from '../lib/config.js';
 import { loadManifest } from '../lib/manifest.js';
 import { addRemote, removeRemote, hasRemote } from '../lib/git.js';
@@ -361,6 +362,112 @@ export const runConfigSet = async (
   logger.success(`Set ${key} = ${JSON.stringify(parsedValue)}`);
 };
 
+/**
+ * Walk a dotted path and delete the leaf key from `obj`. Returns true if
+ * a key was deleted, false if any segment along the path didn't exist
+ * (no-op for `tuck config unset key-that-was-never-set`).
+ *
+ * Also prunes empty parent objects on the way back up, so unsetting
+ * `hooks.preSync` from `{ hooks: { preSync: '...' } }` leaves `{}` rather
+ * than `{ hooks: {} }`. Pruning stops at the first non-empty ancestor —
+ * sibling keys are preserved.
+ */
+export const deleteNestedValue = (
+  obj: Record<string, unknown>,
+  path: string
+): boolean => {
+  assertSafeConfigPath(path);
+  const keys = path.split('.');
+  const trail: Array<{ parent: Record<string, unknown>; key: string }> = [];
+  let current: Record<string, unknown> = obj;
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i];
+    if (!Object.prototype.hasOwnProperty.call(current, key)) {
+      return false;
+    }
+    const next = current[key];
+    if (next === null || typeof next !== 'object' || Array.isArray(next)) {
+      return false;
+    }
+    trail.push({ parent: current, key });
+    current = next as Record<string, unknown>;
+  }
+
+  const finalKey = keys[keys.length - 1];
+  if (!Object.prototype.hasOwnProperty.call(current, finalKey)) {
+    return false;
+  }
+  delete current[finalKey];
+
+  // Walk back up pruning empty intermediate objects we just emptied. Stop
+  // at the first ancestor that still has siblings — that one stays intact.
+  for (let i = trail.length - 1; i >= 0; i--) {
+    const { parent, key } = trail[i];
+    const child = parent[key] as Record<string, unknown>;
+    if (Object.keys(child).length === 0) {
+      delete parent[key];
+    } else {
+      break;
+    }
+  }
+
+  return true;
+};
+
+export interface ConfigUnsetOptions {
+  /** Remove from `.tuckrc.local.json`. Validates against the strict local
+   *  schema — same gate as `tuck config set --local`. */
+  local?: boolean;
+}
+
+export const runConfigUnset = async (
+  key: string,
+  options: ConfigUnsetOptions = {}
+): Promise<void> => {
+  const tuckDir = getTuckDir();
+
+  if (options.local) {
+    const localFieldSchema = resolveSchemaAtPath(tuckLocalConfigSchema, key);
+    if (!localFieldSchema) {
+      throw new ConfigError(
+        `Key '${key}' is not allowed in .tuckrc.local.json. ` +
+        `The local schema accepts only host-specific fields ` +
+        `(defaultGroups, hooks.{preSync,postSync,preRestore,postRestore}, trustHooks). ` +
+        `Drop --local to unset from the shared .tuckrc.json.`
+      );
+    }
+
+    const existing = await loadLocalConfig(tuckDir);
+    const next: Record<string, unknown> = JSON.parse(JSON.stringify(existing));
+    const removed = deleteNestedValue(next, key);
+
+    if (!removed) {
+      logger.info(`Key ${key} is not set in .tuckrc.local.json — nothing to do`);
+      return;
+    }
+
+    // Replace mode: shallow merge would re-introduce the key we just deleted
+    // (since `existing` still has it). saveLocalConfig's `replace: true`
+    // skips the merge so the on-disk file matches `next` exactly.
+    await saveLocalConfig(next as TuckLocalConfigInput, tuckDir, { replace: true });
+    logger.success(`Unset ${key} (.tuckrc.local.json)`);
+    return;
+  }
+
+  const config = await loadConfig(tuckDir);
+  const configObj = config as unknown as Record<string, unknown>;
+  const removed = deleteNestedValue(configObj, key);
+
+  if (!removed) {
+    logger.info(`Key ${key} is not set — nothing to do`);
+    return;
+  }
+
+  await saveConfig(config, tuckDir);
+  logger.success(`Unset ${key}`);
+};
+
 const runConfigList = async (): Promise<void> => {
   const tuckDir = getTuckDir();
   const config = await loadConfig(tuckDir);
@@ -373,16 +480,36 @@ const runConfigList = async (): Promise<void> => {
   printConfig(config);
 };
 
-const runConfigEdit = async (): Promise<void> => {
+export interface ConfigEditOptions {
+  /** Open `.tuckrc.local.json` instead of the shared `.tuckrc.json`. */
+  local?: boolean;
+}
+
+const runConfigEdit = async (options: ConfigEditOptions = {}): Promise<void> => {
   const tuckDir = getTuckDir();
-  const configPath = getConfigPath(tuckDir);
+
+  let targetPath: string;
+  if (options.local) {
+    targetPath = getLocalConfigPath(tuckDir);
+
+    // Bootstrap an empty file when the user opens --local for the first
+    // time. Otherwise the editor opens a non-existent path, which on most
+    // editors is fine but produces a "new file" indicator rather than an
+    // editable starting state — confusing for users who expect the host's
+    // current local config to appear.
+    if (!(await pathExists(targetPath))) {
+      await writeFile(targetPath, '{}\n', 'utf-8');
+    }
+  } else {
+    targetPath = getConfigPath(tuckDir);
+  }
 
   const editor = process.env.EDITOR || process.env.VISUAL || 'vim';
 
-  logger.info(`Opening ${collapsePath(configPath)} in ${editor}...`);
+  logger.info(`Opening ${collapsePath(targetPath)} in ${editor}...`);
 
   return new Promise((resolve, reject) => {
-    const child = spawn(editor, [configPath], {
+    const child = spawn(editor, [targetPath], {
       stdio: 'inherit',
     });
 
@@ -817,6 +944,24 @@ export const configCommand = new Command('config')
       })
   )
   .addCommand(
+    new Command('unset')
+      .description('Remove a config value')
+      .argument('<key>', 'Config key')
+      .option(
+        '--local',
+        'Remove from .tuckrc.local.json (host-specific) instead of the shared .tuckrc.json'
+      )
+      .action(async (key: string, opts: { local?: boolean }) => {
+        const tuckDir = getTuckDir();
+        try {
+          await loadManifest(tuckDir);
+        } catch {
+          throw new NotInitializedError();
+        }
+        await runConfigUnset(key, { local: opts.local });
+      })
+  )
+  .addCommand(
     new Command('list').description('List all config').action(async () => {
       const tuckDir = getTuckDir();
       try {
@@ -828,15 +973,21 @@ export const configCommand = new Command('config')
     })
   )
   .addCommand(
-    new Command('edit').description('Open config in editor').action(async () => {
-      const tuckDir = getTuckDir();
-      try {
-        await loadManifest(tuckDir);
-      } catch {
-        throw new NotInitializedError();
-      }
-      await runConfigEdit();
-    })
+    new Command('edit')
+      .description('Open config in editor')
+      .option(
+        '--local',
+        'Open .tuckrc.local.json (host-specific) instead of the shared .tuckrc.json'
+      )
+      .action(async (opts: { local?: boolean }) => {
+        const tuckDir = getTuckDir();
+        try {
+          await loadManifest(tuckDir);
+        } catch {
+          throw new NotInitializedError();
+        }
+        await runConfigEdit({ local: opts.local });
+      })
   )
   .addCommand(
     new Command('reset').description('Reset to defaults').action(async () => {

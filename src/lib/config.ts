@@ -160,6 +160,17 @@ const ensureLocalConfigGitignored = async (tuckDir: string): Promise<void> => {
   }
 };
 
+export interface SaveLocalConfigOptions {
+  /**
+   * Replace the file contents entirely instead of shallow-merging the patch
+   * onto the existing file. Required for unsets — a shallow merge would
+   * silently re-introduce keys the caller intended to remove. Default
+   * (additive merge) is correct for `set` because the caller passes a full
+   * reconstructed object that's a superset of existing.
+   */
+  replace?: boolean;
+}
+
 /**
  * Write the host-local config override. Only fields allowed by
  * `tuckLocalConfigSchema` are accepted. Ensures the sibling `.gitignore`
@@ -168,12 +179,13 @@ const ensureLocalConfigGitignored = async (tuckDir: string): Promise<void> => {
  */
 export const saveLocalConfig = async (
   patch: TuckLocalConfigInput,
-  tuckDir?: string
+  tuckDir?: string,
+  options: SaveLocalConfigOptions = {}
 ): Promise<void> => {
   const dir = tuckDir || getTuckDir();
   const localPath = getLocalConfigPath(dir);
 
-  const existing = await loadLocalConfig(dir);
+  const existing = options.replace ? {} : await loadLocalConfig(dir);
   const merged = { ...existing, ...patch };
 
   const result = tuckLocalConfigSchema.safeParse(merged);

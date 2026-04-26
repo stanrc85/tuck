@@ -258,6 +258,99 @@ describe('config command', () => {
     });
   });
 
+  describe('config unset', () => {
+    // The basic round-trip: set a hook via --local, then unset it via --local.
+    // After unset, loadConfig must no longer surface the hook.
+    it('--local removes a key from .tuckrc.local.json', async () => {
+      await initTestTuck();
+
+      const { runConfigSet, runConfigUnset } = await import('../../src/commands/config.js');
+      await runConfigSet('hooks.preSync', 'echo go', { local: true });
+      await runConfigUnset('hooks.preSync', { local: true });
+
+      const { loadConfig } = await import('../../src/lib/config.js');
+      const merged = await loadConfig(TEST_TUCK_DIR);
+      expect(merged.hooks.preSync).toBeUndefined();
+    });
+
+    // Missing-key unset is a no-op success rather than an error. This matches
+    // `git config --unset`'s behavior on missing keys when the file exists.
+    it('--local on a missing key is a no-op success (not an error)', async () => {
+      await initTestTuck();
+
+      const { runConfigUnset } = await import('../../src/commands/config.js');
+      await expect(runConfigUnset('hooks.preSync', { local: true })).resolves.toBeUndefined();
+    });
+
+    // Same schema gate as `set --local` — shared-only keys are rejected
+    // upfront so users can't try to unset something that wouldn't have been
+    // accepted by `set` either.
+    it('--local rejects keys not in the strict local schema', async () => {
+      await initTestTuck();
+
+      const { runConfigUnset } = await import('../../src/commands/config.js');
+      await expect(
+        runConfigUnset('repository.autoCommit', { local: true })
+      ).rejects.toThrow(ConfigError);
+      await expect(
+        runConfigUnset('repository.autoCommit', { local: true })
+      ).rejects.toThrow(/not allowed in \.tuckrc\.local\.json/);
+    });
+
+    // Sibling preservation: removing one nested hook must leave the other
+    // intact. Same risk surface as set --local — saveLocalConfig shallow
+    // merges, so the unset path needs to reconstruct the full local object.
+    it('--local preserves sibling nested keys when removing one', async () => {
+      await initTestTuck();
+
+      const { runConfigSet, runConfigUnset } = await import('../../src/commands/config.js');
+      await runConfigSet('hooks.preSync', 'echo go', { local: true });
+      await runConfigSet('hooks.postSync', 'echo done', { local: true });
+      await runConfigUnset('hooks.preSync', { local: true });
+
+      const localRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(localRaw)).toEqual({
+        hooks: { postSync: 'echo done' },
+      });
+    });
+
+    // Empty-parent pruning: when removing the last child of a nested object,
+    // drop the now-empty parent so the file doesn't accrete `{ hooks: {} }`
+    // over time.
+    it('--local prunes empty parent objects after removing the last child', async () => {
+      await initTestTuck();
+
+      const { runConfigSet, runConfigUnset } = await import('../../src/commands/config.js');
+      await runConfigSet('hooks.preSync', 'echo go', { local: true });
+      await runConfigUnset('hooks.preSync', { local: true });
+
+      const localRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        'utf-8'
+      ) as string;
+      // hooks should be pruned entirely — not left as `{ hooks: {} }`.
+      expect(JSON.parse(localRaw)).toEqual({});
+    });
+  });
+
+  describe('deleteNestedValue helper', () => {
+    it('returns false when the path does not exist (no mutation)', async () => {
+      const { deleteNestedValue } = await import('../../src/commands/config.js');
+      const target: Record<string, unknown> = { hooks: { preSync: 'go' } };
+      expect(deleteNestedValue(target, 'hooks.postSync')).toBe(false);
+      expect(target).toEqual({ hooks: { preSync: 'go' } });
+    });
+
+    it('rejects reserved key segments (prototype-pollution guard)', async () => {
+      const { deleteNestedValue } = await import('../../src/commands/config.js');
+      const target: Record<string, unknown> = {};
+      expect(() => deleteNestedValue(target, '__proto__.polluted')).toThrow(ConfigError);
+    });
+  });
+
   describe('config list', () => {
     it('should load full config with all sections', async () => {
       const config = createMockConfig({
