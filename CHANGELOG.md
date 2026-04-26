@@ -1,3 +1,12 @@
+# [2.26.0](https://github.com/stanrc85/tuck/compare/v2.25.0...v2.26.0) (2026-04-26)
+
+
+### Features
+
+* **cheatsheet:** --no-timestamp flag to avoid noisy auto-regen diffs ([a653be3](https://github.com/stanrc85/tuck/commit/a653be379470e0cb17a0067ad5210043ec3d19cd))
+* **config:** persistent trustHooks opt-in via .tuckrc.local.json ([409a41b](https://github.com/stanrc85/tuck/commit/409a41bbe6f9f8e48b01da473d7acbf161655a5e))
+* **config:** tuck config unset [--local] and edit --local ([191f5ea](https://github.com/stanrc85/tuck/commit/191f5ea47bf9d1853f6dd839f93ac6ea34930d90))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.25.0](https://github.com/stanrc85/tuck/compare/v2.24.0...v2.25.0) (2026-04-26)
