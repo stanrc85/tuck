@@ -86,6 +86,11 @@ Thumbs.db
 # Per-host bootstrap install state (never commit — varies per machine)
 .bootstrap-state.json
 
+# Default \`tuck cheatsheet --format json\` output at the tuck repo root.
+# The machine-readable form is regenerated on demand; the .md form (also
+# at the repo root by default) is human-readable and committed for GitHub.
+/cheatsheet.json
+
 # Secret files (add patterns for files you want to exclude)
 # *.secret
 # .env.local
