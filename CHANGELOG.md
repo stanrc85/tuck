@@ -1,3 +1,15 @@
+# [2.25.0](https://github.com/stanrc85/tuck/compare/v2.24.0...v2.25.0) (2026-04-26)
+
+
+### Bug Fixes
+
+* **sync:** run preSync hook before change detection ([2f4c3f4](https://github.com/stanrc85/tuck/commit/2f4c3f4ebf1f1f03961b47eef26c48e13f570f2e))
+
+
+### Features
+
+* **config:** --local flag on tuck config set ([6ec3018](https://github.com/stanrc85/tuck/commit/6ec3018ba062c836b214157904d64947d826bffd))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.24.0](https://github.com/stanrc85/tuck/compare/v2.23.0...v2.24.0) (2026-04-26)
