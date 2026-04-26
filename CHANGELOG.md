@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.23.0](https://github.com/stanrc85/tuck/compare/v2.22.3...v2.23.0) (2026-04-26)
 
 
 ### Features
 
 * **cheatsheet:** capture zsh function definitions with doc-comments ([6004874](https://github.com/stanrc85/tuck/commit/60048746f98dcb28325eccaa1e0d095e476f87a7))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.22.3](https://github.com/stanrc85/tuck/compare/v2.22.2...v2.22.3) (2026-04-24)
 
