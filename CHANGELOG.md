@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [2.24.0](https://github.com/stanrc85/tuck/compare/v2.23.0...v2.24.0) (2026-04-26)
 
 
@@ -5,8 +7,6 @@
 
 * **optimize:** bash profiling + guarded-source rule + lazy-load shim evidence ([bc87bd2](https://github.com/stanrc85/tuck/commit/bc87bd2d6badecb8e50b8cb43d5c08f163945a37))
 * **validate:** YAML + shellcheck + JSON pretty-print + preSync opt-in ([0fbb1ec](https://github.com/stanrc85/tuck/commit/0fbb1ec1ce204334e20cd9009b75a47324f8450d))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.23.0](https://github.com/stanrc85/tuck/compare/v2.22.3...v2.23.0) (2026-04-26)
 
