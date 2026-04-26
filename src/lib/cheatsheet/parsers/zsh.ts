@@ -30,7 +30,7 @@ import type { Entry, Parser, ParserContext } from '../types.js';
  *   alias ll='ls -la'  # long listing
  *       -> keybind 'll', action 'long listing'
  *   function c(  ## Smart CD
- *       -> keybind 'c', action 'Smart CD', category 'function'
+ *       -> keybind 'c', action 'Smart CD', category 'alias'
  *
  * Skipped:
  *   - comment-only lines and empty lines
@@ -38,10 +38,14 @@ import type { Entry, Parser, ParserContext } from '../types.js';
  *   - `unalias` (removes, not adds)
  *   - functions without a trailing doc-comment
  *
- * Entries from aliases carry `category: 'alias'` and from functions
- * `category: 'function'` to distinguish them from keybinds when
- * `--group-by category` ships. The v1 renderer ignores the category and
- * groups everything under the `zsh` section.
+ * Entries from aliases AND functions both carry `category: 'alias'` —
+ * functions are documented commands the user invokes by name, just like
+ * aliases, and grouping them together (rather than in a separate
+ * `function` bucket) matches how users mentally model their shortcuts.
+ * Keybinds remain uncategorized. The v1 renderer ignores the category
+ * and groups everything under the `zsh` section; a future
+ * `--group-by category` flag will surface aliases+functions as one
+ * group, keybinds as another.
  */
 
 const LINE_COMMENT_RE = /^\s*#/;
@@ -189,7 +193,7 @@ const parseFunction = (
     action: comment,
     sourceFile: ctx.sourceFile,
     sourceLine: index + 1,
-    category: 'function',
+    category: 'alias',
     ...(section ? { section } : {}),
   };
 };

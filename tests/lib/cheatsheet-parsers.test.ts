@@ -220,19 +220,19 @@ describe('zsh parser', () => {
     expect(entries[0]).toMatchObject({
       keybind: 'c',
       action: 'Smart CD',
-      category: 'function',
+      category: 'alias',
       sourceLine: 1,
     });
     expect(entries[1]).toMatchObject({
       keybind: 'mkcd',
       action: 'make and cd',
-      category: 'function',
+      category: 'alias',
       sourceLine: 6,
     });
     expect(entries[2]).toMatchObject({
       keybind: 'gco',
       action: 'checkout helper',
-      category: 'function',
+      category: 'alias',
       sourceLine: 10,
     });
   });
@@ -264,7 +264,7 @@ describe('zsh parser', () => {
     expect(entries[0]).toMatchObject({
       keybind: 'c',
       action: 'Smart CD',
-      category: 'function',
+      category: 'alias',
       section: 'NAVIGATION',
     });
   });
