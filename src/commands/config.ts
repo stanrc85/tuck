@@ -3,11 +3,16 @@ import { spawn } from 'child_process';
 import { z } from 'zod';
 import { prompts, logger, banner, colors as c } from '../ui/index.js';
 import { getTuckDir, getConfigPath, collapsePath } from '../lib/paths.js';
-import { loadConfig, saveConfig, saveLocalConfig, resetConfig } from '../lib/config.js';
+import { loadConfig, loadLocalConfig, saveConfig, saveLocalConfig, resetConfig } from '../lib/config.js';
 import { loadManifest } from '../lib/manifest.js';
 import { addRemote, removeRemote, hasRemote } from '../lib/git.js';
 import { NotInitializedError, ConfigError } from '../errors.js';
-import { tuckConfigSchema, type TuckConfigOutput } from '../schemas/config.schema.js';
+import {
+  tuckConfigSchema,
+  tuckLocalConfigSchema,
+  type TuckConfigOutput,
+  type TuckLocalConfigInput,
+} from '../schemas/config.schema.js';
 import { setupProvider } from '../lib/providerSetup.js';
 import { describeProviderConfig, getProvider } from '../lib/providers/index.js';
 
@@ -267,7 +272,17 @@ const runConfigGet = async (key: string): Promise<void> => {
 // silently become the default for every consumer host that clones the repo.
 const LOCAL_ONLY_KEYS = new Set(['defaultGroups']);
 
-export const runConfigSet = async (key: string, value: string): Promise<void> => {
+export interface ConfigSetOptions {
+  /** Route the write to `.tuckrc.local.json`. Validates against the strict
+   *  local schema; rejects shared-only keys like `repository.autoCommit`. */
+  local?: boolean;
+}
+
+export const runConfigSet = async (
+  key: string,
+  value: string,
+  options: ConfigSetOptions = {}
+): Promise<void> => {
   const unsupportedPrefix = UNSUPPORTED_CONFIG_KEY_PREFIXES.find(
     (prefix) => key === prefix || key.startsWith(`${prefix}.`)
   );
@@ -280,6 +295,33 @@ export const runConfigSet = async (key: string, value: string): Promise<void> =>
 
   const tuckDir = getTuckDir();
   const parsedValue = parseValue(value, key);
+
+  if (options.local) {
+    // Reject shared-only keys with a clear, actionable message before we hand
+    // off to saveLocalConfig (which would also reject them, but with a less
+    // useful Zod-internals string).
+    const localFieldSchema = resolveSchemaAtPath(tuckLocalConfigSchema, key);
+    if (!localFieldSchema) {
+      throw new ConfigError(
+        `Key '${key}' is not allowed in .tuckrc.local.json. ` +
+        `The local schema accepts only host-specific fields ` +
+        `(defaultGroups, hooks.{preSync,postSync,preRestore,postRestore}). ` +
+        `Drop --local to write to the shared .tuckrc.json.`
+      );
+    }
+
+    // Reconstruct the full local config and pass it through saveLocalConfig.
+    // Going through setNestedValue on a deep-clone of existing values lets us
+    // set a nested key (e.g. `hooks.preSync`) without dropping sibling nested
+    // keys — saveLocalConfig only shallow-merges, so passing a partial
+    // `{ hooks: { preSync } }` patch would clobber an existing `hooks.postSync`.
+    const existing = await loadLocalConfig(tuckDir);
+    const next: Record<string, unknown> = JSON.parse(JSON.stringify(existing));
+    setNestedValue(next, key, parsedValue);
+    await saveLocalConfig(next as TuckLocalConfigInput, tuckDir);
+    logger.success(`Set ${key} = ${JSON.stringify(parsedValue)} (.tuckrc.local.json)`);
+    return;
+  }
 
   if (LOCAL_ONLY_KEYS.has(key)) {
     await saveLocalConfig({ [key]: parsedValue } as never, tuckDir);
@@ -737,14 +779,18 @@ export const configCommand = new Command('config')
       .description('Set a config value')
       .argument('<key>', 'Config key')
       .argument('<value>', 'Value to set (JSON or string)')
-      .action(async (key: string, value: string) => {
+      .option(
+        '--local',
+        'Write to .tuckrc.local.json (host-specific) instead of the shared .tuckrc.json'
+      )
+      .action(async (key: string, value: string, opts: { local?: boolean }) => {
         const tuckDir = getTuckDir();
         try {
           await loadManifest(tuckDir);
         } catch {
           throw new NotInitializedError();
         }
-        await runConfigSet(key, value);
+        await runConfigSet(key, value, { local: opts.local });
       })
   )
   .addCommand(

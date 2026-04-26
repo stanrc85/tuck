@@ -137,6 +137,87 @@ describe('config command', () => {
       ) as string;
       expect(JSON.parse(sharedRaw).defaultGroups ?? []).toEqual([]);
     });
+
+    // `--local` lets users route any local-schema-allowed key (notably hooks)
+    // to .tuckrc.local.json without hand-editing the file. Closes the gap
+    // between the local schema (which already accepts per-host hooks) and the
+    // writer side (which previously only routed `defaultGroups` to local).
+    it('--local routes hooks.preSync to .tuckrc.local.json, leaving shared untouched', async () => {
+      await initTestTuck();
+
+      const { runConfigSet } = await import('../../src/commands/config.js');
+      await runConfigSet(
+        'hooks.preSync',
+        'tuck cheatsheet --format json --output ~/.config/tuck/cheatsheet.json',
+        { local: true }
+      );
+
+      const localRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(localRaw)).toEqual({
+        hooks: {
+          preSync: 'tuck cheatsheet --format json --output ~/.config/tuck/cheatsheet.json',
+        },
+      });
+
+      const sharedRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(sharedRaw).hooks ?? {}).toEqual({});
+
+      // Merged config (shared + local layered) reflects the local value.
+      const { loadConfig } = await import('../../src/lib/config.js');
+      const merged = await loadConfig(TEST_TUCK_DIR);
+      expect(merged.hooks.preSync).toBe(
+        'tuck cheatsheet --format json --output ~/.config/tuck/cheatsheet.json'
+      );
+    });
+
+    it('--local rejects a key that is not in the strict local schema', async () => {
+      await initTestTuck();
+
+      const { runConfigSet } = await import('../../src/commands/config.js');
+      await expect(
+        runConfigSet('repository.autoCommit', 'false', { local: true })
+      ).rejects.toThrow(ConfigError);
+      await expect(
+        runConfigSet('repository.autoCommit', 'false', { local: true })
+      ).rejects.toThrow(/not allowed in \.tuckrc\.local\.json/);
+
+      // Shared should be untouched — no half-write.
+      const sharedRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(sharedRaw).repository?.autoCommit ?? true).toBe(true);
+    });
+
+    // Regression guard: setting a nested local key must not drop sibling
+    // keys in the same nested object. saveLocalConfig only shallow-merges,
+    // so naive `{ hooks: { preSync } }` patches would clobber an existing
+    // `hooks.postSync`. The --local code path reconstructs the full local
+    // object before writing.
+    it('--local preserves sibling nested keys when overwriting one', async () => {
+      await initTestTuck();
+
+      const { runConfigSet } = await import('../../src/commands/config.js');
+      await runConfigSet('hooks.postSync', 'echo done', { local: true });
+      await runConfigSet('hooks.preSync', 'echo go', { local: true });
+
+      const localRaw = vol.readFileSync(
+        join(TEST_TUCK_DIR, '.tuckrc.local.json'),
+        'utf-8'
+      ) as string;
+      expect(JSON.parse(localRaw)).toEqual({
+        hooks: {
+          postSync: 'echo done',
+          preSync: 'echo go',
+        },
+      });
+    });
   });
 
   describe('config list', () => {

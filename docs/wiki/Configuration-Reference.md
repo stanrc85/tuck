@@ -16,7 +16,7 @@ Each layer's values win over the layer before. The local file has a strict schem
 
 Two ways:
 
-- **`tuck config`** — interactive menu (no arg) or dotted-path get/set (`tuck config set repository.autoPush true`). Automatically writes host-specific fields to `.tuckrc.local.json` and everything else to `.tuckrc.json`. Refuses reserved key names (`__proto__`, `constructor`, `prototype`) at every dotted-path segment.
+- **`tuck config`** — interactive menu (no arg) or dotted-path get/set (`tuck config set repository.autoPush true`). Automatically writes host-specific fields to `.tuckrc.local.json` and everything else to `.tuckrc.json`. Pass `--local` to force-route to `.tuckrc.local.json` for any local-schema-allowed key (e.g. `tuck config set --local hooks.preSync 'echo go'`); shared-only keys like `repository.autoCommit` are rejected with a clear error when `--local` is set. Refuses reserved key names (`__proto__`, `constructor`, `prototype`) at every dotted-path segment.
 - **Hand-edit the JSON** — direct edit either file. Run `tuck doctor --category manifest` after to catch schema violations before they bite.
 
 See [Command Reference — tuck config](./Command-Reference#tuck-config).
@@ -253,6 +253,8 @@ Strict — only these fields allowed. Anything else is a schema error.
 | `hooks`         | { preSync?, postSync?, preRestore?, postRestore? } | Per-host hook overrides. Each hook type merged independently with the shared hook of the same name. |
 
 The strict schema exists to stop "I thought I was editing the local file but really wrote to the shared one" leaks. If you try to add `repository.autoPush` to `.tuckrc.local.json`, it's rejected with a clear error — because auto-push behavior is a repo-wide policy, not per-host.
+
+Use `tuck config set --local <key> <value>` to write any local-schema-allowed key (e.g. `hooks.preSync`) without hand-editing the file. `--local` validates against the strict schema above, so the same shared-only keys that would be rejected on hand-edit are also rejected on the CLI.
 
 See [Host Groups — Defaults](./Host-Groups#defaults--per-host-vs-shared-config) for the load-order + merge rules.
 
