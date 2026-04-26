@@ -1,27 +1,44 @@
 import { spawn } from 'child_process';
 
-// PS4 format used for profile output. `%D{%s.%6.}` gives epoch seconds with
-// 6-digit microsecond fractional; `%N` is the current source file/function
-// name; `%i` is the line number. `|` delimits so paths with spaces parse.
-const PROFILE_PS4 = '+%D{%s.%6.}|%N|%i> ';
+// PS4 format used for profile output. Both shells emit identical event
+// shape — `+<timestamp>|<source>|<line>> <command>` — so the parser stays
+// shell-agnostic. The expansion mechanism differs:
+//
+// zsh — `%D{%s.%6.}` (epoch seconds + 6-digit microsecond fraction), `%N`
+// (current source / function name), `%i` (line number).
+//
+// bash 5+ — `${EPOCHREALTIME}` is a built-in providing the same epoch
+// fractional. `${BASH_SOURCE}` and `${LINENO}` give the source / line.
+// Pre-bash-5 (macOS default) lacks EPOCHREALTIME — we accept the loss of
+// resolution rather than ship two parser shapes.
+const PROFILE_PS4_ZSH = '+%D{%s.%6.}|%N|%i> ';
+const PROFILE_PS4_BASH = '+${EPOCHREALTIME}|${BASH_SOURCE}|${LINENO}> ';
+
+export type ProfileShell = 'zsh' | 'bash';
 
 export interface ProfileRunResult {
   stdout: string;
   stderr: string;
   exitCode: number;
-  available: boolean; // false if zsh isn't installed
+  available: boolean; // false if the requested shell isn't installed
 }
 
-export const runZshProfile = async (): Promise<ProfileRunResult> => {
+const ps4For = (shell: ProfileShell): string =>
+  shell === 'zsh' ? PROFILE_PS4_ZSH : PROFILE_PS4_BASH;
+
+// `-i` reads interactive startup files (.zshrc / .bashrc); `-c exit`
+// terminates the shell once startup finishes. `-x` enables xtrace; `-v`
+// echoes each line as read (helpful for correlating events to source
+// lines). Combined output lands on stderr.
+export const runShellProfile = async (
+  shell: ProfileShell,
+): Promise<ProfileRunResult> => {
   return await new Promise((resolve) => {
-    // `-i` loads the interactive shell config (.zshrc etc.); `-c exit`
-    // terminates right after startup finishes. `-x` enables xtrace; `-v`
-    // echoes each line as read. Combined output lands on stderr.
     const child = spawn(
-      'zsh',
+      shell,
       ['-ixc', 'exit'],
       {
-        env: { ...process.env, PS4: PROFILE_PS4 },
+        env: { ...process.env, PS4: ps4For(shell) },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -46,3 +63,8 @@ export const runZshProfile = async (): Promise<ProfileRunResult> => {
     });
   });
 };
+
+// Backwards-compatible alias kept so the historical `runZshProfile` import
+// path continues to work for any caller that hard-coded it.
+export const runZshProfile = (): Promise<ProfileRunResult> => runShellProfile('zsh');
+export const runBashProfile = (): Promise<ProfileRunResult> => runShellProfile('bash');

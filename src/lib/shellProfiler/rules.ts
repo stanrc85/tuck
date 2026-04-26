@@ -102,42 +102,161 @@ const VERSION_MANAGER_MARKERS: Array<{
   // Filter out events inside the script itself — those show up with
   // sourceFile matching this regex.
   internalSourceRe: RegExp;
+  // Ready-to-paste lazy-load shim. Each shim defers the real init until
+  // the user first runs the version-manager command, then re-execs the
+  // real binary so the user's invocation succeeds without a retry.
+  lazyLoadSnippet: string;
 }> = [
   {
     name: 'nvm',
     commandRe: /\bnvm\.sh\b|\bnvm\s+use\b/,
     internalSourceRe: /nvm\.sh$|\/nvm\//,
+    lazyLoadSnippet: [
+      'export NVM_DIR="$HOME/.nvm"',
+      'nvm() {',
+      '  unset -f nvm node npm npx',
+      '  [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"',
+      '  nvm "$@"',
+      '}',
+      'node() { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"; node "$@"; }',
+      'npm()  { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"; npm "$@"; }',
+      'npx()  { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"; npx "$@"; }',
+    ].join('\n'),
   },
   {
     name: 'rbenv',
     commandRe: /\brbenv\s+init\b/,
     internalSourceRe: /rbenv\/rbenv\.d|\/rbenv$/,
+    lazyLoadSnippet: [
+      'rbenv() {',
+      '  unset -f rbenv',
+      '  eval "$(command rbenv init - "$(basename "$SHELL")")"',
+      '  rbenv "$@"',
+      '}',
+    ].join('\n'),
   },
   {
     name: 'pyenv',
     commandRe: /\bpyenv\s+init\b/,
     internalSourceRe: /pyenv\.d|\/pyenv$/,
+    lazyLoadSnippet: [
+      'pyenv() {',
+      '  unset -f pyenv',
+      '  eval "$(command pyenv init - "$(basename "$SHELL")")"',
+      '  pyenv "$@"',
+      '}',
+    ].join('\n'),
   },
 ];
 
 const detectSyncVersionManagers = (report: ProfileReport): Recommendation | null => {
-  const found: Array<{ name: string; evidence: string }> = [];
-  for (const { name, commandRe, internalSourceRe } of VERSION_MANAGER_MARKERS) {
+  const found: Array<{ name: string; evidence: string; snippet: string }> = [];
+  for (const { name, commandRe, internalSourceRe, lazyLoadSnippet } of VERSION_MANAGER_MARKERS) {
     const hit = report.events.find(
       (e) => commandRe.test(e.command) && !internalSourceRe.test(e.sourceFile),
     );
     if (hit) {
-      found.push({ name, evidence: `${hit.sourceFile}:${hit.line}> ${hit.command}` });
+      found.push({
+        name,
+        evidence: `${hit.sourceFile}:${hit.line}> ${hit.command}`,
+        snippet: lazyLoadSnippet,
+      });
     }
   }
   if (found.length === 0) return null;
+  // Inline the per-tool shim block(s) into evidence so users can copy-paste
+  // straight from `tuck optimize` output. We tag each snippet with the tool
+  // name + a fenced delimiter so it's obvious which shell block belongs to
+  // which manager.
+  const snippetEvidence = found.flatMap((f) => [
+    `${f.name} →`,
+    ...f.snippet.split('\n').map((line) => `    ${line}`),
+  ]);
   return {
     rule: 'sync-version-managers',
     severity: 'warn',
     message: `${found.length} version manager${found.length === 1 ? '' : 's'} initialised synchronously at startup: ${found.map((f) => f.name).join(', ')}`,
     suggestion:
-      'Wrap each in a lazy-load function that defers the real init to first invocation. See github.com/lukechilds/zsh-nvm for a maintained nvm example.',
-    evidence: found.map((f) => f.evidence),
+      'Replace each synchronous init with the lazy-load shim below — first invocation pays the cost, every later shell stays fast.',
+    evidence: [...found.map((f) => f.evidence), '', ...snippetEvidence],
+  };
+};
+
+// Pattern: `if [[ -f X ]]; then source X; fi` — wrapping a `source` in its
+// own existence check is a common-but-clumsy idiom. `[[ -f X ]] && source X`
+// is the same semantics in one line; if the file is part of the user's
+// dotfiles repo (and thus always present on every host), the conditional can
+// be dropped entirely. Cosmetic suggestion; severity stays at info.
+//
+// We match across consecutive lines so multi-line `if/then/fi` blocks are
+// caught — each lone `if [[ -f X ]]` with a matching `source X` inside the
+// same block fires the rule. Single-line forms (`if [[ -f X ]]; then source
+// X; fi`) are matched by the same regex applied per-line.
+// Capture a path token that stops at whitespace OR a `;` separator. The
+// `[^\s;]+` shape avoids the `\S+`-eats-trailing-semicolon trap inside
+// single-line `if ... then source X; fi` forms.
+const PATH_TOKEN = '("[^"]+"|\'[^\']+\'|[^\\s;]+)';
+const IF_FILE_TEST_RE = new RegExp(`\\bif\\s*\\[\\[?\\s*-[fr]\\s+${PATH_TOKEN}\\s*\\]\\]?`);
+// Anchored variant for the multi-line form — `source X` must be the first
+// non-whitespace token on its own line.
+const SOURCE_AT_LINE_START_RE = new RegExp(`^\\s*(?:source|\\.)\\s+${PATH_TOKEN}`);
+// Inline variant for the single-line form `if ... then source X; fi` —
+// `source` appears mid-line so we anchor on the keyword instead of `^`.
+const SOURCE_INLINE_RE = new RegExp(`(?:;|\\bthen)\\s+(?:source|\\.)\\s+${PATH_TOKEN}`);
+const FI_RE = /^\s*fi\b/;
+
+const stripQuotes = (s: string): string => s.replace(/^["']|["']$/g, '');
+
+const detectGuardedSourceBlocks = (sources: SourceMap): Recommendation | null => {
+  const hits: string[] = [];
+  // Track sources we've already attributed to avoid duplicate evidence when
+  // both `path` and `basename` aliases of the same source are present.
+  const seenBlocks = new Set<string>();
+
+  for (const [file, content] of Object.entries(sources)) {
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const ifMatch = IF_FILE_TEST_RE.exec(lines[i]);
+      if (!ifMatch) continue;
+      const guardedFile = stripQuotes(ifMatch[1]);
+
+      // Single-line form: `if [[ -f X ]]; then source X; fi` — the same line
+      // contains both the test and the source.
+      const sourceInline = SOURCE_INLINE_RE.exec(lines[i]);
+      if (sourceInline && stripQuotes(sourceInline[1]) === guardedFile) {
+        const key = `${file}:${i + 1}`;
+        if (!seenBlocks.has(key)) {
+          seenBlocks.add(key);
+          hits.push(`${file}:${i + 1}> ${lines[i].trim()}`);
+        }
+        continue;
+      }
+
+      // Multi-line form: scan forward up to 8 lines for a `source X` of the
+      // same path before hitting `fi`. Bail early on `fi` to avoid wandering
+      // into unrelated blocks below.
+      for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+        if (FI_RE.test(lines[j])) break;
+        const sourceMatch = SOURCE_AT_LINE_START_RE.exec(lines[j]);
+        if (!sourceMatch) continue;
+        if (stripQuotes(sourceMatch[1]) !== guardedFile) continue;
+        const key = `${file}:${i + 1}`;
+        if (seenBlocks.has(key)) break;
+        seenBlocks.add(key);
+        hits.push(`${file}:${i + 1}> if [[ -f ${guardedFile} ]] ... source ${guardedFile}`);
+        break;
+      }
+    }
+  }
+
+  if (hits.length === 0) return null;
+  return {
+    rule: 'guarded-source',
+    severity: 'info',
+    message: `${hits.length} \`if [[ -f X ]]; then source X; fi\` block${hits.length === 1 ? '' : 's'} — verbose form of \`[[ -f X ]] && source X\``,
+    suggestion:
+      'Collapse to `[[ -f X ]] && source X` (same semantics, one line). If the file is part of your dotfiles repo and always present, drop the existence check entirely.',
+    evidence: hits.slice(0, 5),
   };
 };
 
@@ -185,5 +304,6 @@ export const applyRules = (
     detectDuplicatePath(sources),
     detectSyncVersionManagers(report),
     detectBlockingStartup(report),
+    detectGuardedSourceBlocks(sources),
   ].filter((r): r is Recommendation => r !== null);
 };

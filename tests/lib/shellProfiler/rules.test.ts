@@ -128,4 +128,74 @@ describe('applyRules', () => {
     expect(rule).toBeDefined();
     expect(rule!.severity).toBe('warn');
   });
+
+  describe('sync-version-managers — lazy-load snippet evidence', () => {
+    it('embeds a paste-ready nvm shim in evidence when nvm fires', () => {
+      const report = buildReport([
+        { file: '.zshrc', line: 10, command: 'source ~/.nvm/nvm.sh' },
+      ]);
+      const rec = applyRules(report, {}).find((r) => r.rule === 'sync-version-managers');
+      expect(rec).toBeDefined();
+      const evidence = rec!.evidence.join('\n');
+      expect(evidence).toContain('nvm →');
+      expect(evidence).toContain('NVM_DIR');
+      expect(evidence).toContain('nvm() {');
+    });
+
+    it('embeds the rbenv shim when rbenv fires', () => {
+      const report = buildReport([
+        { file: '.zshrc', line: 11, command: 'eval "$(rbenv init -)"' },
+      ]);
+      const rec = applyRules(report, {}).find((r) => r.rule === 'sync-version-managers');
+      expect(rec).toBeDefined();
+      const evidence = rec!.evidence.join('\n');
+      expect(evidence).toContain('rbenv →');
+      expect(evidence).toContain('rbenv() {');
+    });
+  });
+
+  describe('guarded-source rule', () => {
+    it('flags single-line `if [[ -f X ]]; then source X; fi`', () => {
+      const sources = {
+        '.zshrc': 'if [[ -f ~/.aliases ]]; then source ~/.aliases; fi\n',
+      };
+      const rec = applyRules(buildReport([]), sources).find((r) => r.rule === 'guarded-source');
+      expect(rec).toBeDefined();
+      expect(rec!.severity).toBe('info');
+      expect(rec!.evidence[0]).toContain('~/.aliases');
+    });
+
+    it('flags multi-line `if/then/source/fi` blocks', () => {
+      const sources = {
+        '.bashrc': [
+          'if [[ -f ~/.bash_local ]]; then',
+          '  source ~/.bash_local',
+          'fi',
+          '',
+        ].join('\n'),
+      };
+      const rec = applyRules(buildReport([]), sources).find((r) => r.rule === 'guarded-source');
+      expect(rec).toBeDefined();
+      expect(rec!.evidence[0]).toContain('~/.bash_local');
+    });
+
+    it('does not fire when the guarded path differs from the sourced path', () => {
+      // `if [[ -f X ]]; then source Y; fi` is not the simplification target
+      // — the test guards a different file than what's loaded.
+      const sources = {
+        '.zshrc': 'if [[ -f ~/.flag ]]; then source ~/.aliases; fi\n',
+      };
+      expect(
+        applyRules(buildReport([]), sources).find((r) => r.rule === 'guarded-source'),
+      ).toBeUndefined();
+    });
+
+    it('handles `.` as an alias for source', () => {
+      const sources = {
+        '.bashrc': 'if [[ -f ~/.local ]]; then . ~/.local; fi\n',
+      };
+      const rec = applyRules(buildReport([]), sources).find((r) => r.rule === 'guarded-source');
+      expect(rec).toBeDefined();
+    });
+  });
 });

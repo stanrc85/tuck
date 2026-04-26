@@ -3,7 +3,7 @@ import { vol } from 'memfs';
 import { TEST_HOME } from '../setup.js';
 
 const promptConfirmMock = vi.fn();
-const runZshProfileMock = vi.fn();
+const runShellProfileMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', async () => {
   const actual = await vi.importActual<typeof import('../../src/ui/index.js')>(
@@ -21,7 +21,11 @@ vi.mock('../../src/ui/index.js', async () => {
 });
 
 vi.mock('../../src/lib/shellProfiler/runner.js', () => ({
-  runZshProfile: runZshProfileMock,
+  runShellProfile: runShellProfileMock,
+  // Aliases kept so any caller that hard-codes the per-shell entry points
+  // still wires through to the same mock.
+  runZshProfile: () => runShellProfileMock('zsh'),
+  runBashProfile: () => runShellProfileMock('bash'),
 }));
 
 // Synthetic xtrace that triggers the multiple-compinit rule — two compinit
@@ -38,7 +42,7 @@ describe('optimize command', () => {
     vol.reset();
     vi.clearAllMocks();
     vol.mkdirSync(`${TEST_HOME}/.tuck`, { recursive: true });
-    runZshProfileMock.mockResolvedValue({
+    runShellProfileMock.mockResolvedValue({
       stdout: '',
       stderr: PROFILE_WITH_DOUBLE_COMPINIT,
       exitCode: 0,
@@ -67,7 +71,50 @@ describe('optimize command', () => {
       expect(parsed).toHaveProperty('totalMs');
       expect(parsed).toHaveProperty('perFile');
       expect(parsed).toHaveProperty('recommendations');
+      expect(parsed).toHaveProperty('shell');
       expect(parsed.recommendations.some((r: { rule: string }) => r.rule === 'multiple-compinit')).toBe(true);
+    });
+  });
+
+  describe('shell dispatch', () => {
+    it('passes --shell bash through to runShellProfile', async () => {
+      const { runOptimize } = await import('../../src/commands/optimize.js');
+      const orig = console.log;
+      // eslint-disable-next-line no-console
+      console.log = () => {};
+      try {
+        await runOptimize({ format: 'json', shell: 'bash' });
+      } finally {
+        // eslint-disable-next-line no-console
+        console.log = orig;
+      }
+      expect(runShellProfileMock).toHaveBeenCalledWith('bash');
+    });
+
+    it('rejects an unknown --shell value with a clear error', async () => {
+      const { runOptimize } = await import('../../src/commands/optimize.js');
+      await expect(
+        runOptimize({ format: 'json', shell: 'fish' }),
+      ).rejects.toThrow(/Unsupported --shell value/);
+    });
+  });
+
+  describe('resolveProfileShell', () => {
+    it('honours an explicit override over $SHELL', async () => {
+      const { resolveProfileShell } = await import('../../src/commands/optimize.js');
+      expect(resolveProfileShell('bash', '/bin/zsh')).toBe('bash');
+      expect(resolveProfileShell('zsh', '/bin/bash')).toBe('zsh');
+    });
+
+    it('detects bash from $SHELL basename when no override is given', async () => {
+      const { resolveProfileShell } = await import('../../src/commands/optimize.js');
+      expect(resolveProfileShell(undefined, '/usr/local/bin/bash')).toBe('bash');
+    });
+
+    it('falls back to zsh when $SHELL is unset or unknown', async () => {
+      const { resolveProfileShell } = await import('../../src/commands/optimize.js');
+      expect(resolveProfileShell(undefined, '')).toBe('zsh');
+      expect(resolveProfileShell(undefined, '/usr/local/bin/fish')).toBe('zsh');
     });
   });
 

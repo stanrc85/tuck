@@ -1,14 +1,15 @@
 import { Command } from 'commander';
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { homedir } from 'os';
 import { prompts, logger, colors as c } from '../ui/index.js';
 import { pathExists } from '../lib/paths.js';
 import {
-  runZshProfile,
+  runShellProfile,
   parseXtrace,
   applyRules,
   type ProfileReport,
+  type ProfileShell,
   type Recommendation,
   type SourceMap,
 } from '../lib/shellProfiler/index.js';
@@ -19,25 +20,50 @@ interface OptimizeOptions {
   auto?: boolean;
   yes?: boolean;
   format?: 'text' | 'json';
+  shell?: string;
 }
+
+// Pick the shell to profile. Explicit `--shell <bash|zsh>` wins. Otherwise
+// inspect $SHELL — every Unix login shell has it set to the user's chosen
+// interactive shell. Falls back to zsh if $SHELL is unset or unrecognised
+// (matches the v1 default and the common case on macOS / modern Linux).
+// Exported for unit tests — the dispatch decision is the part worth pinning.
+export const resolveProfileShell = (
+  override: string | undefined,
+  envShellPath?: string,
+): ProfileShell => {
+  if (override) {
+    if (override === 'zsh' || override === 'bash') return override;
+    throw new Error(`Unsupported --shell value: ${override}. Expected "zsh" or "bash".`);
+  }
+  const source = envShellPath ?? process.env.SHELL ?? '';
+  const envShell = source ? basename(source) : '';
+  if (envShell === 'bash') return 'bash';
+  return 'zsh';
+};
 
 const isInteractive = (): boolean => Boolean(process.stdout.isTTY);
 
-// Read the common zsh startup files so rules can inspect literal lines
+// Read the common shell startup files so rules can inspect literal lines
 // (duplicate PATH detection, for instance, can't be done from xtrace alone).
 // Files that don't exist are just omitted — rules treat absence as "no evidence."
-const readZshSources = async (): Promise<SourceMap> => {
+const SHELL_SOURCE_CANDIDATES: Record<ProfileShell, string[]> = {
+  zsh: ['.zshenv', '.zprofile', '.zshrc', '.zlogin'],
+  bash: ['.bashrc', '.bash_profile', '.profile', '.bash_login'],
+};
+
+const readShellSources = async (shell: ProfileShell): Promise<SourceMap> => {
   const home = homedir();
-  const candidates = ['.zshenv', '.zprofile', '.zshrc', '.zlogin'];
   const sources: SourceMap = {};
-  for (const name of candidates) {
+  for (const name of SHELL_SOURCE_CANDIDATES[shell]) {
     const path = join(home, name);
     if (!(await pathExists(path))) continue;
     try {
       sources[path] = await readFile(path, 'utf-8');
-      // Also key by basename — PS4 `%N` sometimes records the filename without
-      // the full path depending on how the file was sourced. Try both so rules
-      // that correlate events to sources hit either form.
+      // Also key by basename — PS4 `%N` / `${BASH_SOURCE}` sometimes records
+      // the filename without the full path depending on how the file was
+      // sourced. Try both so rules that correlate events to sources hit
+      // either form.
       sources[name] = sources[path];
     } catch {
       // Ignore unreadable files; rules simply get less evidence.
@@ -219,26 +245,28 @@ const runAutoFixes = async (fixes: AutoFix[], options: OptimizeOptions): Promise
 };
 
 export const runOptimize = async (options: OptimizeOptions): Promise<void> => {
-  const run = await runZshProfile();
+  const shell = resolveProfileShell(options.shell, process.env.SHELL);
+  const run = await runShellProfile(shell);
   if (!run.available) {
-    logger.error('zsh is not installed. `tuck optimize` requires zsh for profiling.');
+    logger.error(`${shell} is not installed. \`tuck optimize\` requires ${shell} for profiling.`);
     process.exitCode = 1;
     return;
   }
   if (run.exitCode !== 0) {
     logger.warning(
-      `zsh exited with code ${run.exitCode}. Profile may be incomplete.`,
+      `${shell} exited with code ${run.exitCode}. Profile may be incomplete.`,
     );
   }
 
   const report = parseXtrace(run.stderr);
-  const sources = await readZshSources();
+  const sources = await readShellSources(shell);
   const recs = options.profile ? [] : applyRules(report, sources);
 
   if (options.format === 'json') {
     console.log(
       JSON.stringify(
         {
+          shell,
           totalMs: report.totalMs,
           eventCount: report.events.length,
           perFile: report.perFile.slice(0, 10),
@@ -251,7 +279,7 @@ export const runOptimize = async (options: OptimizeOptions): Promise<void> => {
     return;
   }
 
-  prompts.intro('tuck optimize');
+  prompts.intro(`tuck optimize (${shell})`);
   console.log();
   printProfileReport(report);
   if (!options.profile) {
@@ -271,11 +299,12 @@ export const runOptimize = async (options: OptimizeOptions): Promise<void> => {
 };
 
 export const optimizeCommand = new Command('optimize')
-  .description('Profile zsh startup + surface rule-based recommendations')
+  .description('Profile shell startup + surface rule-based recommendations')
   .option('--profile', 'Profile only — skip the recommendation engine')
   .option('--auto', 'Preview + apply the safe subset of auto-fixes (with confirmation)')
   .option('-y, --yes', 'Skip the confirmation prompt (still previews, still snapshots)')
   .option('--format <type>', 'Output format: text | json', 'text')
+  .option('--shell <name>', 'Shell to profile: zsh | bash (default: detect from $SHELL)')
   .action(async (options: OptimizeOptions) => {
     await runOptimize(options);
   });
