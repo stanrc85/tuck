@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { spawn } from 'child_process';
 import { writeFile } from 'fs/promises';
 import { z } from 'zod';
-import { prompts, logger, banner, colors as c } from '../ui/index.js';
+import { prompts, colors as c } from '../ui/index.js';
 import { getTuckDir, getConfigPath, getLocalConfigPath, collapsePath, pathExists } from '../lib/paths.js';
 import { loadConfig, loadLocalConfig, saveConfig, saveLocalConfig, resetConfig } from '../lib/config.js';
 import { loadManifest } from '../lib/manifest.js';
@@ -256,7 +256,7 @@ const runConfigGet = async (key: string): Promise<void> => {
   const value = getNestedValue(config as unknown as Record<string, unknown>, key);
 
   if (value === undefined) {
-    logger.error(`Key not found: ${key}`);
+    prompts.log.error(`Key not found: ${key}`);
     return;
   }
 
@@ -343,13 +343,13 @@ export const runConfigSet = async (
     const next: Record<string, unknown> = JSON.parse(JSON.stringify(existing));
     setNestedValue(next, key, parsedValue);
     await saveLocalConfig(next as TuckLocalConfigInput, tuckDir);
-    logger.success(`Set ${key} = ${JSON.stringify(parsedValue)} (.tuckrc.local.json)`);
+    prompts.log.success(`Set ${key} = ${JSON.stringify(parsedValue)} (.tuckrc.local.json)`);
     return;
   }
 
   if (LOCAL_ONLY_KEYS.has(key)) {
     await saveLocalConfig({ [key]: parsedValue } as never, tuckDir);
-    logger.success(`Set ${key} = ${JSON.stringify(parsedValue)} (.tuckrc.local.json)`);
+    prompts.log.success(`Set ${key} = ${JSON.stringify(parsedValue)} (.tuckrc.local.json)`);
     return;
   }
 
@@ -359,7 +359,7 @@ export const runConfigSet = async (
   setNestedValue(configObj, key, parsedValue);
 
   await saveConfig(config, tuckDir);
-  logger.success(`Set ${key} = ${JSON.stringify(parsedValue)}`);
+  prompts.log.success(`Set ${key} = ${JSON.stringify(parsedValue)}`);
 };
 
 /**
@@ -443,7 +443,7 @@ export const runConfigUnset = async (
     const removed = deleteNestedValue(next, key);
 
     if (!removed) {
-      logger.info(`Key ${key} is not set in .tuckrc.local.json — nothing to do`);
+      prompts.log.info(`Key ${key} is not set in .tuckrc.local.json — nothing to do`);
       return;
     }
 
@@ -451,7 +451,7 @@ export const runConfigUnset = async (
     // (since `existing` still has it). saveLocalConfig's `replace: true`
     // skips the merge so the on-disk file matches `next` exactly.
     await saveLocalConfig(next as TuckLocalConfigInput, tuckDir, { replace: true });
-    logger.success(`Unset ${key} (.tuckrc.local.json)`);
+    prompts.log.success(`Unset ${key} (.tuckrc.local.json)`);
     return;
   }
 
@@ -460,23 +460,19 @@ export const runConfigUnset = async (
   const removed = deleteNestedValue(configObj, key);
 
   if (!removed) {
-    logger.info(`Key ${key} is not set — nothing to do`);
+    prompts.log.info(`Key ${key} is not set — nothing to do`);
     return;
   }
 
   await saveConfig(config, tuckDir);
-  logger.success(`Unset ${key}`);
+  prompts.log.success(`Unset ${key}`);
 };
 
 const runConfigList = async (): Promise<void> => {
   const tuckDir = getTuckDir();
   const config = await loadConfig(tuckDir);
 
-  prompts.intro('tuck config');
-  console.log();
-  console.log(c.dim('Configuration file:'), collapsePath(getConfigPath(tuckDir)));
-  console.log();
-
+  // Pure JSON output for scriptability — no frame, no decoration.
   printConfig(config);
 };
 
@@ -506,7 +502,7 @@ const runConfigEdit = async (options: ConfigEditOptions = {}): Promise<void> => 
 
   const editor = process.env.EDITOR || process.env.VISUAL || 'vim';
 
-  logger.info(`Opening ${collapsePath(targetPath)} in ${editor}...`);
+  prompts.log.info(`Opening ${collapsePath(targetPath)} in ${editor}...`);
 
   return new Promise((resolve, reject) => {
     const child = spawn(editor, [targetPath], {
@@ -515,7 +511,7 @@ const runConfigEdit = async (options: ConfigEditOptions = {}): Promise<void> => 
 
     child.on('exit', (code) => {
       if (code === 0) {
-        logger.success('Configuration updated');
+        prompts.log.success('Configuration updated');
         resolve();
       } else {
         reject(new ConfigError(`Editor exited with code ${code}`));
@@ -542,21 +538,22 @@ const runConfigReset = async (): Promise<void> => {
   }
 
   await resetConfig(tuckDir);
-  logger.success('Configuration reset to defaults');
+  prompts.log.success('Configuration reset to defaults');
 };
 
 /**
- * Show configuration in a visually organized way
+ * Show configuration in a visually organized way. Caller assumes a frame is open.
  */
 const showConfigView = async (config: TuckConfigOutput): Promise<void> => {
   const configObj = config as unknown as Record<string, unknown>;
 
-  // Show remote configuration first
   if (config.remote) {
-    console.log(c.bold.cyan('~ Remote Provider'));
-    console.log(c.dim('-'.repeat(40)));
-    console.log(`  ${describeProviderConfig(config.remote)}`);
-    console.log();
+    prompts.log.message(
+      [
+        c.bold.cyan('~ Remote Provider'),
+        `  ${describeProviderConfig(config.remote)}`,
+      ].join('\n'),
+    );
   }
 
   const sections = [
@@ -571,9 +568,6 @@ const showConfigView = async (config: TuckConfigOutput): Promise<void> => {
     const sectionConfig = configObj[section.key];
     if (!sectionConfig || typeof sectionConfig !== 'object') continue;
 
-    console.log(c.bold.cyan(`${section.icon} ${section.title}`));
-    console.log(c.dim('-'.repeat(40)));
-
     const sectionEntries = Object.entries(sectionConfig as Record<string, unknown>).filter(
       ([key]) => {
         if (section.key === 'encryption') {
@@ -583,17 +577,18 @@ const showConfigView = async (config: TuckConfigOutput): Promise<void> => {
       }
     );
 
+    const lines: string[] = [c.bold.cyan(`${section.icon} ${section.title}`)];
     for (const [key, value] of sectionEntries) {
       const keyInfo = getKeyInfo(`${section.key}.${key}`);
       const displayValue = formatConfigValue(value);
       const description = keyInfo?.description || '';
 
-      console.log(`  ${c.white(key)}: ${displayValue}`);
+      lines.push(`  ${c.white(key)}: ${displayValue}`);
       if (description) {
-        console.log(c.dim(`    ${description}`));
+        lines.push(c.dim(`    ${description}`));
       }
     }
-    console.log();
+    prompts.log.message(lines.join('\n'));
   }
 };
 
@@ -602,10 +597,8 @@ const showConfigView = async (config: TuckConfigOutput): Promise<void> => {
  */
 const runConfigWizard = async (config: TuckConfigOutput, tuckDir: string): Promise<void> => {
   prompts.log.info("Let's configure tuck for your workflow");
-  console.log();
 
-  // Repository behavior
-  console.log(c.bold.cyan('* Repository Behavior'));
+  prompts.log.message(c.bold.cyan('* Repository Behavior'));
   const autoCommit = await prompts.confirm(
     'Auto-commit changes when running sync?',
     config.repository.autoCommit ?? true
@@ -615,9 +608,7 @@ const runConfigWizard = async (config: TuckConfigOutput, tuckDir: string): Promi
     config.repository.autoPush ?? false
   );
 
-  // File strategy
-  console.log();
-  console.log(c.bold.cyan('> File Strategy'));
+  prompts.log.message(c.bold.cyan('> File Strategy'));
   const rawStrategy = await prompts.select('How should tuck manage files?', [
     { value: 'copy', label: 'Copy files', hint: 'Safe, independent copies' },
     { value: 'symlink', label: 'Symlink files', hint: 'Real-time updates, single source of truth' },
@@ -632,14 +623,11 @@ const runConfigWizard = async (config: TuckConfigOutput, tuckDir: string): Promi
     config.files.backupOnRestore ?? true
   );
 
-  // UI preferences
-  console.log();
-  console.log(c.bold.cyan('# User Interface'));
+  prompts.log.message(c.bold.cyan('# User Interface'));
   const colors = await prompts.confirm('Enable colored output?', config.ui.colors ?? true);
   const emoji = await prompts.confirm('Enable emoji in output?', config.ui.emoji ?? true);
   const verbose = await prompts.confirm('Enable verbose logging?', config.ui.verbose ?? false);
 
-  // Apply changes
   const updatedConfig: TuckConfigOutput = {
     ...config,
     repository: {
@@ -661,9 +649,8 @@ const runConfigWizard = async (config: TuckConfigOutput, tuckDir: string): Promi
 
   await saveConfig(updatedConfig, tuckDir);
 
-  console.log();
   prompts.log.success('Configuration updated!');
-  prompts.note("Run 'tuck config' again to view or edit settings", 'Tip');
+  prompts.log.message(c.dim("Run `tuck config` again to view or edit settings"));
 };
 
 /**
@@ -687,7 +674,7 @@ const editConfigInteractive = async (config: TuckConfigOutput, tuckDir: string):
   const currentValue = getNestedValue(configObj, selectedKey);
 
   if (!keyInfo) {
-    logger.error(`Unknown key: ${selectedKey}`);
+    prompts.log.error(`Unknown key: ${selectedKey}`);
     return;
   }
 
@@ -723,7 +710,6 @@ const editConfigInteractive = async (config: TuckConfigOutput, tuckDir: string):
  * Run interactive config mode
  */
 const runInteractiveConfig = async (): Promise<void> => {
-  banner();
   prompts.intro('tuck config');
 
   const tuckDir = getTuckDir();
@@ -738,48 +724,46 @@ const runInteractiveConfig = async (): Promise<void> => {
     { value: 'open', label: 'Open in editor', hint: `Edit with ${process.env.EDITOR || 'vim'}` },
   ])) as string;
 
-  console.log();
-
   switch (action) {
     case 'view':
       await showConfigView(config);
-      break;
+      prompts.outro('Configuration shown');
+      return;
     case 'edit':
       await editConfigInteractive(config, tuckDir);
-      break;
+      prompts.outro('Setting updated');
+      return;
     case 'remote':
       await runConfigRemote();
       return; // runConfigRemote has its own outro
     case 'wizard':
       await runConfigWizard(config, tuckDir);
-      break;
+      prompts.outro('Configuration saved');
+      return;
     case 'reset':
       await runConfigReset();
-      break;
+      prompts.outro('Done');
+      return;
     case 'open':
       await runConfigEdit();
-      break;
+      prompts.outro('Done');
+      return;
   }
-
-  prompts.outro('Done!');
 };
 
 /**
  * Run the remote provider configuration flow
  */
 const runConfigRemote = async (): Promise<void> => {
-  banner();
   prompts.intro('tuck config remote');
 
   const tuckDir = getTuckDir();
   const config = await loadConfig(tuckDir);
 
-  // Show current configuration
   if (config.remote) {
-    console.log();
-    console.log(c.dim('Current remote configuration:'));
-    console.log(`  ${describeProviderConfig(config.remote)}`);
-    console.log();
+    prompts.log.message(
+      c.dim(`Current remote configuration:\n  ${describeProviderConfig(config.remote)}`),
+    );
   }
 
   // Ask if they want to change
@@ -894,9 +878,8 @@ const runConfigRemote = async (): Promise<void> => {
     }
   }
 
-  console.log();
   prompts.log.success(`Remote configured: ${describeProviderConfig(result.config)}`);
-  prompts.outro('Done!');
+  prompts.outro('Remote configured');
 };
 
 export const configCommand = new Command('config')
