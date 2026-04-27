@@ -14,7 +14,7 @@
  */
 
 import { Command } from 'commander';
-import { prompts, logger, colors as c } from '../ui/index.js';
+import { prompts, colors as c, formatCount } from '../ui/index.js';
 import { getTuckDir, expandPath, pathExists } from '../lib/paths.js';
 import { loadManifest } from '../lib/manifest.js';
 import { loadConfig, saveConfig } from '../lib/config.js';
@@ -38,16 +38,10 @@ import {
 import { NotInitializedError } from '../errors.js';
 import { getLog } from '../lib/git.js';
 
-/**
- * Type guard to check if a string is a valid BackendName
- */
 const isBackendName = (value: string): value is BackendName => {
   return (BACKEND_NAMES as readonly string[]).includes(value);
 };
 
-/**
- * Validate URL format (basic validation)
- */
 const isValidUrl = (value: string): boolean => {
   try {
     new URL(value);
@@ -72,34 +66,38 @@ const runSecretsList = async (): Promise<void> => {
 
   const secrets = await listSecrets(tuckDir);
 
+  prompts.intro('tuck secrets list');
+
   if (secrets.length === 0) {
-    logger.info('No secrets stored');
-    logger.dim(`Secrets file: ${getSecretsPath(tuckDir)}`);
-    console.log();
-    logger.dim('Secrets are stored when you choose to replace detected secrets with placeholders.');
-    logger.dim('You can also manually add secrets with: tuck secrets set <NAME> <value>');
+    prompts.log.message(
+      c.dim(
+        [
+          `Secrets file: ${getSecretsPath(tuckDir)}`,
+          '',
+          'Secrets are stored when you choose to replace detected secrets with placeholders.',
+          'You can also manually add secrets with: tuck secrets set <NAME> <value>',
+        ].join('\n'),
+      ),
+    );
+    prompts.outro('No secrets stored');
     return;
   }
 
-  console.log();
-  console.log(c.bold.cyan(`Stored Secrets (${secrets.length})`));
-  console.log(c.dim('─'.repeat(50)));
-  console.log();
-
   for (const secret of secrets) {
-    console.log(`  ${c.green(secret.name)}`);
-    console.log(`    ${c.dim('Placeholder:')} ${c.cyan(secret.placeholder)}`);
+    const lines = [c.green(secret.name)];
+    lines.push(`  ${c.dim('Placeholder:')} ${c.cyan(secret.placeholder)}`);
     if (secret.description) {
-      console.log(`    ${c.dim('Type:')} ${secret.description}`);
+      lines.push(`  ${c.dim('Type:')} ${secret.description}`);
     }
     if (secret.source) {
-      console.log(`    ${c.dim('Source:')} ${secret.source}`);
+      lines.push(`  ${c.dim('Source:')} ${secret.source}`);
     }
-    console.log(`    ${c.dim('Added:')} ${new Date(secret.addedAt).toLocaleDateString()}`);
-    console.log();
+    lines.push(`  ${c.dim('Added:')} ${new Date(secret.addedAt).toLocaleDateString()}`);
+    prompts.log.message(lines.join('\n'));
   }
 
-  logger.dim(`Secrets file: ${getSecretsPath(tuckDir)}`);
+  prompts.log.message(c.dim(`Secrets file: ${getSecretsPath(tuckDir)}`));
+  prompts.outro(`${formatCount(secrets.length, 'secret')} stored`);
 };
 
 // ============================================================================
@@ -118,8 +116,10 @@ const runSecretsSet = async (name: string): Promise<void> => {
   // Validate or normalize name
   if (!isValidSecretName(name)) {
     const normalized = normalizeSecretName(name);
-    logger.warning(`Secret name normalized to: ${normalized}`);
-    logger.dim('Secret names must be uppercase alphanumeric with underscores (e.g., API_KEY)');
+    prompts.log.warning(`Secret name normalized to: ${normalized}`);
+    prompts.log.message(
+      c.dim('Secret names must be uppercase alphanumeric with underscores (e.g., API_KEY)'),
+    );
     name = normalized;
   }
 
@@ -129,14 +129,13 @@ const runSecretsSet = async (name: string): Promise<void> => {
   const secretValue = await prompts.password(`Enter value for ${name}:`);
 
   if (!secretValue || secretValue.trim().length === 0) {
-    logger.error('Secret value cannot be empty');
+    prompts.log.error('Secret value cannot be empty');
     return;
   }
 
   await setSecret(tuckDir, name, secretValue);
-  logger.success(`Secret '${name}' set`);
-  console.log();
-  logger.dim(`Use {{${name}}} as placeholder in your dotfiles`);
+  prompts.log.success(`Secret '${name}' set`);
+  prompts.log.message(c.dim(`Use {{${name}}} as placeholder in your dotfiles`));
 };
 
 // ============================================================================
@@ -155,10 +154,10 @@ const runSecretsUnset = async (name: string): Promise<void> => {
   const removed = await unsetSecret(tuckDir, name);
 
   if (removed) {
-    logger.success(`Secret '${name}' removed`);
+    prompts.log.success(`Secret '${name}' removed`);
   } else {
-    logger.warning(`Secret '${name}' not found`);
-    logger.dim('Run `tuck secrets list` to see stored secrets');
+    prompts.log.warning(`Secret '${name}' not found`);
+    prompts.log.message(c.dim('Run `tuck secrets list` to see stored secrets'));
   }
 };
 
@@ -175,6 +174,7 @@ const runSecretsPath = async (): Promise<void> => {
     throw new NotInitializedError();
   }
 
+  // Path is data — print raw for piping.
   console.log(getSecretsPath(tuckDir));
 };
 
@@ -212,7 +212,6 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
   spinner.start('Scanning git history for secrets...');
 
   try {
-    // Get commit log using existing function
     const logEntries = await getLog(tuckDir, {
       maxCount: limit,
       since: options.since,
@@ -220,17 +219,18 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
 
     if (logEntries.length === 0) {
       spinner.stop('No commits found');
+      prompts.outro('Nothing to scan');
       return;
     }
 
-    // Import simpleGit directly for diff operations
     let simpleGit;
     try {
       simpleGit = (await import('simple-git')).default;
     } catch (importError) {
       spinner.stop('Git integration is unavailable (simple-git module could not be loaded).');
       const errorMsg = importError instanceof Error ? importError.message : String(importError);
-      logger.error(`Failed to load simple-git for scan-history: ${errorMsg}`);
+      prompts.log.error(`Failed to load simple-git for scan-history: ${errorMsg}`);
+      prompts.outro('Scan aborted');
       return;
     }
     const git = simpleGit(tuckDir);
@@ -242,12 +242,10 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
       scannedCommits++;
       spinner.message(`Scanning commit ${scannedCommits}/${logEntries.length}...`);
 
-      // Get diff for this commit
       try {
         const diff = await git.diff([`${entry.hash}^`, entry.hash]);
 
         if (diff) {
-          // Extract added lines (those starting with +)
           const addedLines = diff
             .split('\n')
             .filter((line: string) => line.startsWith('+') && !line.startsWith('+++'))
@@ -255,7 +253,6 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
             .join('\n');
 
           if (addedLines) {
-            // Scan the added content
             const { scanContent } = await import('../lib/secrets/scanner.js');
             const matches = scanContent(addedLines);
 
@@ -276,13 +273,12 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
           }
         }
       } catch (error) {
-        // Skip commits that can't be diffed (e.g., initial commit), but log for visibility
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.warning(
+        prompts.log.warning(
           `Skipping commit ${entry.hash.slice(
             0,
-            8
-          )}: unable to diff against parent (possibly initial/root commit). ${errorMsg}`
+            8,
+          )}: unable to diff against parent (possibly initial/root commit). ${errorMsg}`,
         );
         continue;
       }
@@ -291,43 +287,39 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
     spinner.stop(`Scanned ${scannedCommits} commits`);
 
     if (results.length === 0) {
-      console.log();
-      logger.success('No secrets found in git history');
-      prompts.outro('Clean history!');
+      prompts.outro('Clean history — no secrets found');
       return;
     }
 
-    // Display results
-    console.log();
-    console.log(c.bold.red(`Found potential secrets in ${results.length} commits`));
-    console.log(c.dim('─'.repeat(60)));
-    console.log();
+    prompts.log.error(`Found potential secrets in ${formatCount(results.length, 'commit')}`);
 
     for (const result of results) {
-      console.log(c.yellow(`Commit: ${result.commit}`));
-      console.log(c.dim(`  Author: ${result.author}`));
-      console.log(c.dim(`  Date: ${result.date}`));
-      console.log(c.dim(`  Message: ${result.message}`));
-      console.log();
+      const lines: string[] = [c.yellow(`Commit: ${result.commit}`)];
+      lines.push(c.dim(`  Author:  ${result.author}`));
+      lines.push(c.dim(`  Date:    ${result.date}`));
+      lines.push(c.dim(`  Message: ${result.message}`));
 
       for (const secret of result.secrets) {
         const severityColor =
           secret.severity === 'critical' ? c.red : secret.severity === 'high' ? c.yellow : c.dim;
-        console.log(`    ${severityColor(`[${secret.severity}]`)} ${secret.pattern}`);
-        console.log(c.dim(`      Value: ${secret.redactedValue}`));
+        lines.push(`  ${severityColor(`[${secret.severity}]`)} ${secret.pattern}`);
+        lines.push(c.dim(`    Value: ${secret.redactedValue}`));
       }
-      console.log();
+      prompts.log.message(lines.join('\n'));
     }
 
-    console.log(c.dim('─'.repeat(60)));
-    console.log();
-    logger.warning('If these secrets are still valid, rotate them immediately!');
-    console.log();
-    logger.dim('To remove secrets from git history, consider using:');
-    logger.dim('  - git filter-branch');
-    logger.dim('  - BFG Repo-Cleaner (https://rtyley.github.io/bfg-repo-cleaner/)');
+    prompts.log.warning('If these secrets are still valid, rotate them immediately!');
+    prompts.log.message(
+      c.dim(
+        [
+          'To remove secrets from git history, consider:',
+          '  - git filter-branch',
+          '  - BFG Repo-Cleaner (https://rtyley.github.io/bfg-repo-cleaner/)',
+        ].join('\n'),
+      ),
+    );
 
-    prompts.outro(c.red(`${results.length} commits with potential secrets`));
+    prompts.outro(`${formatCount(results.length, 'commit')} with potential secrets`);
   } catch (error) {
     spinner.stop('Scan failed');
     throw error;
@@ -347,19 +339,20 @@ const runScanFiles = async (paths: string[]): Promise<void> => {
     throw new NotInitializedError();
   }
 
+  prompts.intro('tuck secrets scan');
+
   if (paths.length === 0) {
-    logger.error('No files specified');
-    logger.dim('Usage: tuck secrets scan <file> [files...]');
+    prompts.log.error('No files specified');
+    prompts.log.message(c.dim('Usage: tuck secrets scan <file> [files...]'));
+    prompts.outro('Scan aborted');
     return;
   }
 
-  // Expand paths
   const expandedPaths = paths.map((p) => expandPath(p));
 
-  // Check files exist
   for (const path of expandedPaths) {
     if (!(await pathExists(path))) {
-      logger.warning(`File not found: ${path}`);
+      prompts.log.warning(`File not found: ${path}`);
     }
   }
 
@@ -371,59 +364,49 @@ const runScanFiles = async (paths: string[]): Promise<void> => {
   }
 
   if (existingPaths.length === 0) {
-    logger.error('No valid files to scan');
+    prompts.outro('No valid files to scan');
     return;
   }
 
   const spinner = prompts.spinner();
-  spinner.start(`Scanning ${existingPaths.length} file(s)...`);
+  spinner.start(`Scanning ${formatCount(existingPaths.length, 'file')}...`);
 
   const summary = await scanForSecrets(existingPaths, tuckDir);
 
   spinner.stop('Scan complete');
 
   if (summary.filesWithSecrets === 0) {
-    console.log();
-    logger.success('No secrets detected');
+    prompts.outro('No secrets detected');
     return;
   }
 
-  // Display results
   displayScanResults(summary);
+  prompts.outro(
+    `${formatCount(summary.totalSecrets, 'potential secret')} in ${formatCount(summary.filesWithSecrets, 'file')}`,
+  );
 };
 
 /**
- * Display scan results in a formatted way
+ * Display scan results. Caller assumes a clack frame is open.
  */
 export const displayScanResults = (summary: ScanSummary): void => {
-  console.log();
-  console.log(
-    c.bold.red(
-      `Found ${summary.totalSecrets} potential secret(s) in ${summary.filesWithSecrets} file(s)`
-    )
+  prompts.log.error(
+    `Found ${summary.totalSecrets} potential secret(s) in ${formatCount(summary.filesWithSecrets, 'file')}`,
   );
-  console.log(c.dim('─'.repeat(60)));
-  console.log();
 
-  // Summary by severity
-  if (summary.bySeverity.critical > 0) {
-    console.log(c.red(`  Critical: ${summary.bySeverity.critical}`));
+  // Summary by severity as one block
+  const severityLines: string[] = [];
+  if (summary.bySeverity.critical > 0) severityLines.push(c.red(`  Critical: ${summary.bySeverity.critical}`));
+  if (summary.bySeverity.high > 0) severityLines.push(c.yellow(`  High: ${summary.bySeverity.high}`));
+  if (summary.bySeverity.medium > 0) severityLines.push(c.blue(`  Medium: ${summary.bySeverity.medium}`));
+  if (summary.bySeverity.low > 0) severityLines.push(c.dim(`  Low: ${summary.bySeverity.low}`));
+  if (severityLines.length > 0) {
+    prompts.log.message(severityLines.join('\n'));
   }
-  if (summary.bySeverity.high > 0) {
-    console.log(c.yellow(`  High: ${summary.bySeverity.high}`));
-  }
-  if (summary.bySeverity.medium > 0) {
-    console.log(c.blue(`  Medium: ${summary.bySeverity.medium}`));
-  }
-  if (summary.bySeverity.low > 0) {
-    console.log(c.dim(`  Low: ${summary.bySeverity.low}`));
-  }
-  console.log();
 
-  // Details by file
+  // Per-file detail blocks
   for (const result of summary.results) {
-    console.log(c.cyan(result.collapsedPath));
-
+    const lines: string[] = [c.cyan(result.collapsedPath)];
     for (const match of result.matches) {
       const severityColor =
         match.severity === 'critical'
@@ -433,13 +416,12 @@ export const displayScanResults = (summary: ScanSummary): void => {
             : match.severity === 'medium'
               ? c.blue
               : c.dim;
-
-      console.log(
-        `  ${c.dim(`Line ${match.line}:`)} ${severityColor(`[${match.severity}]`)} ${match.patternName}`
+      lines.push(
+        `  ${c.dim(`Line ${match.line}:`)} ${severityColor(`[${match.severity}]`)} ${match.patternName}`,
       );
-      console.log(c.dim(`    ${match.context}`));
+      lines.push(c.dim(`    ${match.context}`));
     }
-    console.log();
+    prompts.log.message(lines.join('\n'));
   }
 };
 
@@ -462,26 +444,25 @@ const runBackendSet = async (backend: string, options: BackendSetOptions): Promi
     throw new NotInitializedError();
   }
 
-  // Validate backend name using type guard
   if (!isBackendName(backend)) {
-    logger.error(`Invalid backend: ${backend}`);
-    logger.dim(`Valid backends: ${BACKEND_NAMES.join(', ')}`);
+    prompts.log.error(`Invalid backend: ${backend}`);
+    prompts.log.message(c.dim(`Valid backends: ${BACKEND_NAMES.join(', ')}`));
     return;
   }
 
-  // Validate backend-specific options
   if (backend === 'bitwarden' && options.serverUrl) {
     if (!isValidUrl(options.serverUrl)) {
-      logger.error(`Invalid server URL: ${options.serverUrl}`);
-      logger.dim('URL must be a valid URL (e.g., https://vault.example.com)');
+      prompts.log.error(`Invalid server URL: ${options.serverUrl}`);
+      prompts.log.message(c.dim('URL must be a valid URL (e.g., https://vault.example.com)'));
       return;
     }
-    // Warn if a non-HTTPS URL is provided, as HTTPS is recommended for Bitwarden
     try {
       const parsedUrl = new URL(options.serverUrl);
       if (parsedUrl.protocol !== 'https:') {
-        logger.warning(`Bitwarden server URL is not using HTTPS: ${options.serverUrl}`);
-        logger.dim('Using HTTPS is strongly recommended for Bitwarden to protect your secrets.');
+        prompts.log.warning(`Bitwarden server URL is not using HTTPS: ${options.serverUrl}`);
+        prompts.log.message(
+          c.dim('Using HTTPS is strongly recommended for Bitwarden to protect your secrets.'),
+        );
       }
     } catch {
       // isValidUrl already validated the URL; this is a safety net
@@ -491,18 +472,18 @@ const runBackendSet = async (backend: string, options: BackendSetOptions): Promi
   if (backend === 'pass' && options.storePath) {
     const expandedPath = expandPath(options.storePath);
     if (!(await pathExists(expandedPath))) {
-      logger.warning(`Password store path does not exist: ${options.storePath}`);
-      logger.dim('The path will be used anyway, but make sure it exists before using pass.');
+      prompts.log.warning(`Password store path does not exist: ${options.storePath}`);
+      prompts.log.message(
+        c.dim('The path will be used anyway, but make sure it exists before using pass.'),
+      );
     }
   }
 
   const config = await loadConfig(tuckDir);
 
-  // Build updated security config
   const existingBackends = config.security.backends || {};
   const updatedBackends: Record<string, Record<string, unknown>> = {};
 
-  // Add backend-specific config
   if (backend === '1password' && options.vault) {
     updatedBackends['1password'] = {
       ...(existingBackends['1password'] || {}),
@@ -528,17 +509,14 @@ const runBackendSet = async (backend: string, options: BackendSetOptions): Promi
     ...(Object.keys(updatedBackends).length > 0 ? { backends: { ...existingBackends, ...updatedBackends } } : {}),
   };
 
-  // Save updated security configuration
   await saveConfig({ security: updatedSecurity }, tuckDir);
-  logger.success(`Secret backend set to: ${backend}`);
+  prompts.log.success(`Secret backend set to: ${backend}`);
 
-  // Show setup instructions if not local
   if (backend !== 'local') {
     const resolver = createResolver(tuckDir, { ...config.security, secretBackend: backend });
     const backendImpl = resolver.getBackend(backend);
     if (backendImpl) {
-      console.log();
-      console.log(c.dim(backendImpl.getSetupInstructions()));
+      prompts.log.message(c.dim(backendImpl.getSetupInstructions()));
     }
   }
 };
@@ -556,32 +534,26 @@ const runBackendStatus = async (): Promise<void> => {
   const resolver = createResolver(tuckDir, config.security);
   const statuses = await resolver.getBackendStatuses();
 
-  console.log();
-  console.log(c.bold.cyan('Secret Backend Status'));
-  console.log(c.dim('─'.repeat(50)));
-  console.log();
+  prompts.intro('tuck secrets backend status');
 
   for (const status of statuses) {
     const primaryMark = status.isPrimary ? c.cyan(' (active)') : '';
     const availableIcon = status.available ? c.green('✓') : c.red('✗');
     const authIcon = status.authenticated ? c.green('✓') : c.yellow('○');
 
-    console.log(`  ${status.displayName}${primaryMark}`);
-    console.log(`    ${availableIcon} CLI installed: ${status.available ? 'Yes' : 'No'}`);
+    const lines = [`${status.displayName}${primaryMark}`];
+    lines.push(`  ${availableIcon} CLI installed: ${status.available ? 'Yes' : 'No'}`);
     if (status.available) {
-      console.log(`    ${authIcon} Authenticated: ${status.authenticated ? 'Yes' : 'No'}`);
+      lines.push(`  ${authIcon} Authenticated: ${status.authenticated ? 'Yes' : 'No'}`);
     }
-    console.log();
+    prompts.log.message(lines.join('\n'));
   }
 
-  console.log(c.dim(`Current backend: ${config.security.secretBackend || 'local'}`));
+  prompts.outro(`Current backend: ${config.security.secretBackend || 'local'}`);
 };
 
 const runBackendList = async (): Promise<void> => {
-  console.log();
-  console.log(c.bold.cyan('Available Secret Backends'));
-  console.log(c.dim('─'.repeat(50)));
-  console.log();
+  prompts.intro('tuck secrets backend list');
 
   const backends = [
     { name: 'local', desc: 'Local secrets file (default)' },
@@ -591,12 +563,11 @@ const runBackendList = async (): Promise<void> => {
   ];
 
   for (const b of backends) {
-    console.log(`  ${c.green(b.name)}`);
-    console.log(`    ${c.dim(b.desc)}`);
-    console.log();
+    prompts.log.message([c.green(b.name), `  ${c.dim(b.desc)}`].join('\n'));
   }
 
-  console.log(c.dim('Set backend with: tuck secrets backend set <name>'));
+  prompts.log.message(c.dim('Set backend with: tuck secrets backend set <name>'));
+  prompts.outro(`${backends.length} backends available`);
 };
 
 // ============================================================================
@@ -619,10 +590,9 @@ const runMap = async (name: string, options: MapOptions): Promise<void> => {
     throw new NotInitializedError();
   }
 
-  // Validate name
   if (!isValidSecretName(name)) {
     const normalized = normalizeSecretName(name);
-    logger.warning(`Secret name normalized to: ${normalized}`);
+    prompts.log.warning(`Secret name normalized to: ${normalized}`);
     name = normalized;
   }
 
@@ -630,31 +600,35 @@ const runMap = async (name: string, options: MapOptions): Promise<void> => {
 
   if (options['1password']) {
     await setMapping(tuckDir, name, '1password', options['1password']);
-    logger.success(`Mapped ${name} → 1Password: ${options['1password']}`);
+    prompts.log.success(`Mapped ${name} → 1Password: ${options['1password']}`);
     mappingsAdded++;
   }
 
   if (options.bitwarden) {
     await setMapping(tuckDir, name, 'bitwarden', options.bitwarden);
-    logger.success(`Mapped ${name} → Bitwarden: ${options.bitwarden}`);
+    prompts.log.success(`Mapped ${name} → Bitwarden: ${options.bitwarden}`);
     mappingsAdded++;
   }
 
   if (options.pass) {
     await setMapping(tuckDir, name, 'pass', options.pass);
-    logger.success(`Mapped ${name} → pass: ${options.pass}`);
+    prompts.log.success(`Mapped ${name} → pass: ${options.pass}`);
     mappingsAdded++;
   }
 
   if (options.local) {
     await setMapping(tuckDir, name, 'local', true);
-    logger.success(`Mapped ${name} → local store`);
+    prompts.log.success(`Mapped ${name} → local store`);
     mappingsAdded++;
   }
 
   if (mappingsAdded === 0) {
-    logger.error('No backend specified');
-    logger.dim('Usage: tuck secrets map <name> --1password "op://..." --bitwarden "..." --pass "..."');
+    prompts.log.error('No backend specified');
+    prompts.log.message(
+      c.dim(
+        'Usage: tuck secrets map <name> --1password "op://..." --bitwarden "..." --pass "..."',
+      ),
+    );
   }
 };
 
@@ -670,34 +644,24 @@ const runMappings = async (): Promise<void> => {
   const mappings = await listMappings(tuckDir);
   const entries = Object.entries(mappings);
 
+  prompts.intro('tuck secrets mappings');
+
   if (entries.length === 0) {
-    logger.info('No secret mappings configured');
-    console.log();
-    logger.dim('Add mappings with: tuck secrets map <name> --1password "op://..."');
+    prompts.log.message(c.dim('Add mappings with: tuck secrets map <name> --1password "op://..."'));
+    prompts.outro('No secret mappings configured');
     return;
   }
 
-  console.log();
-  console.log(c.bold.cyan(`Secret Mappings (${entries.length})`));
-  console.log(c.dim('─'.repeat(50)));
-  console.log();
-
   for (const [name, mapping] of entries) {
-    console.log(`  ${c.green(name)}`);
-    if (mapping['1password']) {
-      console.log(`    ${c.dim('1Password:')} ${mapping['1password']}`);
-    }
-    if (mapping.bitwarden) {
-      console.log(`    ${c.dim('Bitwarden:')} ${mapping.bitwarden}`);
-    }
-    if (mapping.pass) {
-      console.log(`    ${c.dim('pass:')} ${mapping.pass}`);
-    }
-    if (mapping.local) {
-      console.log(`    ${c.dim('local:')} yes`);
-    }
-    console.log();
+    const lines: string[] = [c.green(name)];
+    if (mapping['1password']) lines.push(`  ${c.dim('1Password:')} ${mapping['1password']}`);
+    if (mapping.bitwarden) lines.push(`  ${c.dim('Bitwarden:')} ${mapping.bitwarden}`);
+    if (mapping.pass) lines.push(`  ${c.dim('pass:')} ${mapping.pass}`);
+    if (mapping.local) lines.push(`  ${c.dim('local:')} yes`);
+    prompts.log.message(lines.join('\n'));
   }
+
+  prompts.outro(`${formatCount(entries.length, 'mapping')} configured`);
 };
 
 // ============================================================================
@@ -720,11 +684,12 @@ const runTest = async (options: TestOptions): Promise<void> => {
   const config = await loadConfig(tuckDir);
   const resolver = createResolver(tuckDir, config.security);
 
-  // Validate and narrow backend name
   const rawBackendName = options.backend || config.security.secretBackend || 'local';
   if (!isBackendName(rawBackendName)) {
-    logger.error(`Invalid backend: ${rawBackendName}`);
-    logger.dim(`Valid backends: ${BACKEND_NAMES.join(', ')}`);
+    prompts.intro('tuck secrets test');
+    prompts.log.error(`Invalid backend: ${rawBackendName}`);
+    prompts.log.message(c.dim(`Valid backends: ${BACKEND_NAMES.join(', ')}`));
+    prompts.outro('Test aborted');
     return;
   }
   const backendName = rawBackendName;
@@ -737,48 +702,42 @@ const runTest = async (options: TestOptions): Promise<void> => {
   const backend = resolver.getBackend(backendName);
   if (!backend) {
     spinner.stop('Unknown backend');
-    logger.error(`Unknown backend: ${backendName}`);
+    prompts.log.error(`Unknown backend: ${backendName}`);
+    prompts.outro('Test aborted');
     return;
   }
 
-  // Check availability
   const available = await backend.isAvailable();
   if (!available) {
     spinner.stop('Backend not available');
-    console.log();
-    logger.error(`${backend.displayName} CLI is not installed`);
-    console.log();
-    console.log(c.dim(backend.getSetupInstructions()));
+    prompts.log.error(`${backend.displayName} CLI is not installed`);
+    prompts.log.message(c.dim(backend.getSetupInstructions()));
+    prompts.outro('Test failed');
     return;
   }
 
   spinner.message('Checking authentication...');
 
-  // Check authentication
   const authenticated = await backend.isAuthenticated();
   if (!authenticated) {
     spinner.stop('Not authenticated');
-    console.log();
-    logger.warning(`Not authenticated with ${backend.displayName}`);
-    console.log();
-    console.log(c.dim(backend.getSetupInstructions()));
+    prompts.log.warning(`Not authenticated with ${backend.displayName}`);
+    prompts.log.message(c.dim(backend.getSetupInstructions()));
+    prompts.outro('Test failed');
     return;
   }
 
   spinner.stop('Backend ready');
-  console.log();
-  logger.success(`${backend.displayName} is available and authenticated`);
+  prompts.log.success(`${backend.displayName} is available and authenticated`);
 
-  // Try to list secrets if supported
   if (backend.listSecrets) {
     const secrets = await backend.listSecrets();
     if (secrets.length > 0) {
-      console.log();
-      logger.info(`Found ${secrets.length} secret(s) in ${backend.displayName}`);
+      prompts.log.info(`Found ${formatCount(secrets.length, 'secret')} in ${backend.displayName}`);
     }
   }
 
-  prompts.outro('Backend test passed!');
+  prompts.outro('Backend test passed');
 };
 
 // ============================================================================
@@ -788,7 +747,6 @@ const runTest = async (options: TestOptions): Promise<void> => {
 export const secretsCommand = new Command('secrets')
   .description('Manage local secrets for placeholder replacement')
   .action(async () => {
-    // Default action: show list
     await runSecretsList();
   })
   .addCommand(
@@ -822,7 +780,6 @@ export const secretsCommand = new Command('secrets')
       .option('--limit <n>', 'Maximum number of commits to scan', '50')
       .action(runScanHistory)
   )
-  // Backend management commands
   .addCommand(
     new Command('backend')
       .description('Manage secret backends (1Password, Bitwarden, pass)')
@@ -846,7 +803,6 @@ export const secretsCommand = new Command('secrets')
           .action(runBackendList)
       )
   )
-  // Mapping commands
   .addCommand(
     new Command('map')
       .description('Map placeholder to backend path')
@@ -862,7 +818,6 @@ export const secretsCommand = new Command('secrets')
       .description('List all secret mappings')
       .action(runMappings)
   )
-  // Test command
   .addCommand(
     new Command('test')
       .description('Test backend connectivity')
