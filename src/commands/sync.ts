@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { join, basename } from 'path';
 import { realpath } from 'fs/promises';
-import { prompts, logger, withSpinner, colors as c } from '../ui/index.js';
+import { prompts, withSpinner, colors as c, formatCount } from '../ui/index.js';
 import {
   getTuckDir,
   expandPath,
@@ -361,10 +361,10 @@ const scanAndHandleSecrets = async (
       'force'
     );
     if (!confirmed) {
-      logger.info('Sync cancelled');
+      prompts.log.info('Sync cancelled');
       return false;
     }
-    logger.warning('Secret scanning bypassed with --force');
+    prompts.log.warning('Secret scanning bypassed with --force');
     // Audit log for security tracking
     await logForceSecretBypass('tuck sync --force', changes.length);
     return true;
@@ -448,7 +448,7 @@ const scanAndHandleSecrets = async (
       const sourcePath = changes.find((c) => expandPath(c.source) === result.path)?.source;
       if (sourcePath) {
         await addToTuckignore(tuckDir, sourcePath);
-        logger.dim(`Added ${collapsePath(result.path)} to .tuckignore`);
+        prompts.log.message(c.dim(`Added ${collapsePath(result.path)} to .tuckignore`));
       }
     }
     // Filter out ignored files from changes list
@@ -483,20 +483,18 @@ const runSyncList = async (tuckDir: string, options: SyncOptions): Promise<void>
   const allFiles = await getAllTrackedFiles(tuckDir);
   const changes = await detectChanges(tuckDir, groupFilter);
 
-  logger.heading('tuck sync — preview');
-  logger.blank();
+  prompts.intro('tuck sync — preview');
 
   if (groupFilter) {
-    logger.info(
+    prompts.log.info(
       `Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`
     );
   } else {
-    logger.info('No group filter — every tracked file is in scope');
+    prompts.log.info('No group filter — every tracked file is in scope');
   }
-  logger.blank();
 
   if (changes.length === 0) {
-    logger.success('No changes to sync');
+    prompts.outro('No changes to sync');
     return;
   }
 
@@ -505,19 +503,22 @@ const runSyncList = async (tuckDir: string, options: SyncOptions): Promise<void>
     sourceToGroups.set(file.source, file.groups ?? []);
   }
 
-  logger.heading(`${changes.length} file${changes.length === 1 ? '' : 's'} would be synced:`);
+  const lines: string[] = [
+    c.bold(`${formatCount(changes.length, 'file')} would be synced:`),
+  ];
   for (const change of changes) {
     const groups = sourceToGroups.get(change.source) ?? [];
     const groupTag = groups.length > 0 ? ` [${groups.join(', ')}]` : '';
     const statusLabel = change.status === 'deleted' ? ' (source missing — would untrack)' : '';
-    const action = change.status === 'deleted' ? 'delete' : 'modify';
-    logger.file(action, `${change.source}${groupTag}${statusLabel}`);
+    const glyph = change.status === 'deleted' ? c.error('-') : c.warning('~');
+    lines.push(`  ${glyph} ${c.brand(change.source)}${groupTag}${statusLabel}`);
   }
+  prompts.log.message(lines.join('\n'));
 
-  logger.blank();
-  logger.dim(
-    "Run without --list to execute the sync, or pass -g <group> to narrow/widen the scope."
+  prompts.log.message(
+    c.dim("Run without --list to execute the sync, or pass -g <group> to narrow/widen the scope."),
   );
+  prompts.outro(`${formatCount(changes.length, 'file')} would be synced`);
 };
 
 // Read `validation.preSync` from merged config, run a sweep across tracked
@@ -651,15 +652,15 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
 
   // ========== STEP 5: Show changes to tracked files ==========
   if (changes.length > 0) {
-    console.log();
-    console.log(c.bold('Changes to tracked files:'));
+    const changeLines: string[] = [c.bold('Changes to tracked files:')];
     for (const change of changes) {
       if (change.status === 'modified') {
-        console.log(c.yellow(`  ~ ${change.path}`));
+        changeLines.push(c.yellow(`  ~ ${change.path}`));
       } else if (change.status === 'deleted') {
-        console.log(c.red(`  - ${change.path}`));
+        changeLines.push(c.red(`  - ${change.path}`));
       }
     }
+    prompts.log.message(changeLines.join('\n'));
   }
 
   // ========== STEP 6: Interactive selection for new files ==========
@@ -667,9 +668,6 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
   let filesToTrack: FileToTrack[] = [];
 
   if (newFiles.length > 0) {
-    console.log();
-    console.log(c.bold(`New dotfiles found (${newFiles.length}):`));
-
     // Group by category for display
     const grouped: Record<string, DetectedFile[]> = {};
     for (const file of newFiles) {
@@ -677,16 +675,17 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
       grouped[file.category].push(file);
     }
 
+    const newFileLines: string[] = [c.bold(`New dotfiles found (${newFiles.length}):`)];
     for (const [category, files] of Object.entries(grouped)) {
       const categoryInfo = DETECTION_CATEGORIES[category] || { icon: '-', name: category };
-      console.log(
+      newFileLines.push(
         c.cyan(
           `  ${categoryInfo.icon} ${categoryInfo.name}: ${files.length} file${files.length > 1 ? 's' : ''}`
         )
       );
     }
+    prompts.log.message(newFileLines.join('\n'));
 
-    console.log();
     const trackNewFiles = await prompts.confirm(
       'Would you like to track some of these new files?',
       true
@@ -736,14 +735,12 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
   }
 
   if (largeFiles.length > 0) {
-    console.log();
-    console.log(c.yellow('Large files detected:'));
+    const largeFileLines: string[] = [c.yellow('Large files detected:')];
     for (const file of largeFiles) {
-      console.log(c.yellow(`  ${file.path} (${file.size})`));
+      largeFileLines.push(c.yellow(`  ${file.path} (${file.size})`));
     }
-    console.log();
-    console.log(c.dim('GitHub has a 50MB warning and 100MB hard limit.'));
-    console.log();
+    largeFileLines.push(c.dim('GitHub has a 50MB warning and 100MB hard limit.'));
+    prompts.log.warning(largeFileLines.join('\n'));
 
     const hasBlockers = largeFiles.some((f) => f.sizeBytes >= SIZE_BLOCK_THRESHOLD);
 
@@ -819,7 +816,6 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
   }
 
   if (filesToTrack.length > 0) {
-    console.log();
     await trackFilesWithProgress(filesToTrack, tuckDir, {
       showCategory: true,
       actionVerb: 'Tracking',
@@ -838,17 +834,17 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
         deleted: changes.filter((c) => c.status === 'deleted').map((c) => c.path),
       });
 
-    console.log();
-    console.log(c.dim('Commit message:'));
-    console.log(
-      c.cyan(
-        message
-          .split('\n')
-          .map((line) => `  ${line}`)
-          .join('\n')
-      )
+    prompts.log.message(
+      [
+        c.dim('Commit message:'),
+        c.cyan(
+          message
+            .split('\n')
+            .map((line) => `  ${line}`)
+            .join('\n'),
+        ),
+      ].join('\n'),
     );
-    console.log();
 
     result = await syncFiles(tuckDir, changes, { ...options, message });
   } else if (filesToTrack.length > 0) {
@@ -863,7 +859,6 @@ const runInteractiveSync = async (tuckDir: string, options: SyncOptions = {}): P
   }
 
   // ========== STEP 10: Push to remote ==========
-  console.log();
   let pushFailed = false;
 
   if (result.commitHash) {
@@ -966,9 +961,11 @@ export const runSyncCommand = async (
     return;
   }
 
+  prompts.intro('tuck sync');
+
   const groupFilter = await resolveGroupFilter(tuckDir, options);
   if (groupFilter) {
-    logger.info(`Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`);
+    prompts.log.info(`Scoped to host-group${groupFilter.length > 1 ? 's' : ''}: ${groupFilter.join(', ')}`);
   }
 
   // Run preSync hook BEFORE change detection so hook output is picked up
@@ -984,7 +981,7 @@ export const runSyncCommand = async (
   const changes = await detectChanges(tuckDir, groupFilter);
 
   if (changes.length === 0) {
-    logger.info('No changes detected');
+    prompts.outro('No changes detected');
     return;
   }
 
@@ -1010,8 +1007,8 @@ export const runSyncCommand = async (
             );
           } else {
             // Warn but continue
-            logger.warning('Secrets detected but blockOnSecrets is disabled - proceeding with sync');
-            logger.warning('Make sure your repository is private!');
+            prompts.log.warning('Secrets detected but blockOnSecrets is disabled — proceeding with sync');
+            prompts.log.warning('Make sure your repository is private!');
           }
         }
       }
@@ -1022,21 +1019,19 @@ export const runSyncCommand = async (
   await runPreSyncValidation(tuckDir);
 
   // Show changes
-  logger.heading('Changes detected:');
+  const changeLines: string[] = [c.bold('Changes detected:')];
   for (const change of changes) {
-    logger.file(change.status === 'modified' ? 'modify' : 'delete', change.path);
+    const glyph = change.status === 'modified' ? c.warning('~') : c.error('-');
+    changeLines.push(`  ${glyph} ${c.brand(change.path)}`);
   }
-  logger.blank();
+  prompts.log.message(changeLines.join('\n'));
 
   // Sync
   const message = messageArg || options.message;
   const result = await syncFiles(tuckDir, changes, { ...options, message });
 
-  logger.blank();
-  logger.success(`Synced ${changes.length} file${changes.length > 1 ? 's' : ''}`);
-
   if (result.commitHash) {
-    logger.info(`Commit: ${result.commitHash.slice(0, 7)}`);
+    prompts.log.success(`Committed: ${result.commitHash.slice(0, 7)}`);
 
     // Push by default unless --no-push
     // Commander converts --no-push to push: false, default is push: true
@@ -1044,11 +1039,14 @@ export const runSyncCommand = async (
       await withSpinner('Pushing to remote...', async () => {
         await push(tuckDir);
       });
-      logger.success('Pushed to remote');
+      prompts.outro(`Synced ${formatCount(changes.length, 'file')} — pushed`);
+      return;
     } else if (options.push === false) {
-      logger.info("Run 'tuck push' when ready to upload");
+      prompts.log.message(c.dim("Run `tuck push` when ready to upload"));
     }
   }
+
+  prompts.outro(`Synced ${formatCount(changes.length, 'file')}`);
 };
 
 const collectGroup = (value: string, previous: string[] = []): string[] => [

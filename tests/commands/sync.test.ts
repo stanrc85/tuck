@@ -23,13 +23,13 @@ const stageAllMock = vi.fn();
 const commitMock = vi.fn();
 const hasRemoteMock = vi.fn();
 const pushMock = vi.fn();
-const loggerInfoMock = vi.fn();
+const promptsOutroMock = vi.fn();
 const getStatusMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: promptsOutroMock,
     confirm: vi.fn().mockResolvedValue(false),
     confirmDangerous: vi.fn().mockResolvedValue(true),
     select: vi.fn().mockResolvedValue('abort'),
@@ -46,20 +46,20 @@ vi.mock('../../src/ui/index.js', () => ({
       message: vi.fn(),
     },
   },
-  logger: {
-    info: loggerInfoMock,
-    warning: vi.fn(),
-    warn: vi.fn(),
-    success: vi.fn(),
-    file: vi.fn(),
-    heading: vi.fn(),
-    blank: vi.fn(),
-    dim: vi.fn(),
-  },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   colors: {
     dim: (x: string) => x,
+    bold: (x: string) => x,
+    yellow: (x: string) => x,
+    red: (x: string) => x,
+    cyan: (x: string) => x,
+    brand: (x: string) => x,
+    error: (x: string) => x,
+    warning: (x: string) => x,
+    success: (x: string) => x,
   },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({
@@ -214,7 +214,7 @@ describe('sync command behavior', () => {
 
     await runSyncCommand('sync: noop', { noCommit: true, noHooks: true, scan: false, pull: false });
 
-    expect(loggerInfoMock).toHaveBeenCalledWith('No changes detected');
+    expect(promptsOutroMock).toHaveBeenCalledWith('No changes detected');
     expect(copyFileOrDirMock).not.toHaveBeenCalled();
   });
 
@@ -263,7 +263,7 @@ describe('sync command behavior', () => {
     await runSyncCommand('sync: noop', { noCommit: true, scan: false, pull: false });
 
     expect(runPreSyncHookMock).toHaveBeenCalledTimes(1);
-    expect(loggerInfoMock).toHaveBeenCalledWith('No changes detected');
+    expect(promptsOutroMock).toHaveBeenCalledWith('No changes detected');
     expect(copyFileOrDirMock).not.toHaveBeenCalled();
   });
 
