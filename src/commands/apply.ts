@@ -3,7 +3,7 @@ import { join, dirname } from 'path';
 import { readFile, writeFile, rm, chmod, stat } from 'fs/promises';
 import { ensureDir, pathExists as fsPathExists } from 'fs-extra';
 import { tmpdir } from 'os';
-import { banner, prompts, logger, colors as c } from '../ui/index.js';
+import { prompts, colors as c, formatCount } from '../ui/index.js';
 import {
   expandPath,
   pathExists,
@@ -46,7 +46,7 @@ const fixSecurePermissions = async (path: string): Promise<void> => {
   // On Windows, chmod is limited and Unix-style permissions don't apply
   if (IS_WINDOWS) {
     if (!windowsPermissionWarningShown) {
-      logger.warning(
+      prompts.log.warning(
         'Note: On Windows, file permissions cannot be restricted like on Unix systems. ' +
         'Ensure your SSH/GPG files are stored in a secure location.'
       );
@@ -108,12 +108,12 @@ const resolveSource = async (source: string): Promise<{ repoId: string; isUrl: b
   }
 
   // Assume it's a username, try to find their dotfiles repo
-  logger.info(`Looking for dotfiles repository for ${source}...`);
+  prompts.log.info(`Looking for dotfiles repository for ${source}...`);
 
   if (await isGhInstalled()) {
     const dotfilesRepo = await findDotfilesRepo(source);
     if (dotfilesRepo) {
-      logger.success(`Found repository: ${dotfilesRepo}`);
+      prompts.log.success(`Found repository: ${dotfilesRepo}`);
       return { repoId: dotfilesRepo, isUrl: false };
     }
   }
@@ -123,7 +123,7 @@ const resolveSource = async (source: string): Promise<{ repoId: string; isUrl: b
   for (const name of commonNames) {
     const repoId = `${source}/${name}`;
     if (await repoExists(repoId)) {
-      logger.success(`Found repository: ${repoId}`);
+      prompts.log.success(`Found repository: ${repoId}`);
       return { repoId, isUrl: false };
     }
   }
@@ -189,7 +189,7 @@ const prepareFilesToApply = async (
       validateSafeSourcePath(file.source);
       validateSafeManifestDestination(file.destination);
     } catch {
-      logger.warning(`Skipping unsafe manifest entry: ${file.source}`);
+      prompts.log.warning(`Skipping unsafe manifest entry: ${file.source}`);
       continue;
     }
 
@@ -198,7 +198,7 @@ const prepareFilesToApply = async (
     try {
       validatePathWithinRoot(repoFilePath, repoDir, 'repository file');
     } catch {
-      logger.warning(`Skipping unsafe repository path from manifest: ${file.destination}`);
+      prompts.log.warning(`Skipping unsafe repository path from manifest: ${file.destination}`);
       continue;
     }
 
@@ -247,8 +247,7 @@ const resolveFileSecrets = async (
   } catch (error) {
     // If resolver fails, log the error and return original content with all placeholders as unresolved
     const errorMsg = error instanceof Error ? error.message : String(error);
-    logger.debug?.(`Secret resolution failed: ${errorMsg}`);
-    logger.warning?.(
+    prompts.log.warning(
       `Failed to resolve secrets for file content. ${placeholders.length} placeholder(s) will remain unresolved. ` +
         `Reason: ${errorMsg}`
     );
@@ -288,22 +287,21 @@ const applyWithMerge = async (files: ApplyFile[], dryRun: boolean): Promise<Appl
       const mergeResult = await smartMerge(file.destination, fileContent);
 
       if (dryRun) {
-        logger.file(
-          'merge',
-          `${collapsePath(file.destination)} (${mergeResult.preservedBlocks} blocks preserved)`
+        prompts.log.info(
+          `merge ${c.brand(collapsePath(file.destination))} (${mergeResult.preservedBlocks} blocks preserved)`
         );
       } else {
         await ensureDir(dirname(file.destination));
         await writeFile(file.destination, mergeResult.content, 'utf-8');
-        logger.file('merge', collapsePath(file.destination));
+        prompts.log.info(`merge ${c.brand(collapsePath(file.destination))}`);
       }
     } else {
       // Copy non-shell files directly
       if (dryRun) {
         if (await pathExists(file.destination)) {
-          logger.file('modify', collapsePath(file.destination));
+          prompts.log.warning(`modify ${c.brand(collapsePath(file.destination))}`);
         } else {
-          logger.file('add', collapsePath(file.destination));
+          prompts.log.success(`add    ${c.brand(collapsePath(file.destination))}`);
         }
       } else {
         const fileExists = await pathExists(file.destination);
@@ -311,7 +309,11 @@ const applyWithMerge = async (files: ApplyFile[], dryRun: boolean): Promise<Appl
         await ensureDir(dirname(file.destination));
         await writeFile(file.destination, fileContent, 'utf-8');
         await fixSecurePermissions(file.destination);
-        logger.file(fileExists ? 'modify' : 'add', collapsePath(file.destination));
+        if (fileExists) {
+          prompts.log.warning(`modify ${c.brand(collapsePath(file.destination))}`);
+        } else {
+          prompts.log.success(`add    ${c.brand(collapsePath(file.destination))}`);
+        }
       }
     }
 
@@ -350,9 +352,9 @@ const applyWithReplace = async (files: ApplyFile[], dryRun: boolean): Promise<Ap
 
     if (dryRun) {
       if (await pathExists(file.destination)) {
-        logger.file('modify', `${collapsePath(file.destination)} (replace)`);
+        prompts.log.warning(`modify ${c.brand(collapsePath(file.destination))} (replace)`);
       } else {
-        logger.file('add', collapsePath(file.destination));
+        prompts.log.success(`add    ${c.brand(collapsePath(file.destination))}`);
       }
     } else {
       const fileExists = await pathExists(file.destination);
@@ -360,7 +362,11 @@ const applyWithReplace = async (files: ApplyFile[], dryRun: boolean): Promise<Ap
       await ensureDir(dirname(file.destination));
       await writeFile(file.destination, fileContent, 'utf-8');
       await fixSecurePermissions(file.destination);
-      logger.file(fileExists ? 'modify' : 'add', collapsePath(file.destination));
+      if (fileExists) {
+        prompts.log.warning(`modify ${c.brand(collapsePath(file.destination))}`);
+      } else {
+        prompts.log.success(`add    ${c.brand(collapsePath(file.destination))}`);
+      }
     }
 
     result.appliedCount++;
@@ -370,56 +376,56 @@ const applyWithReplace = async (files: ApplyFile[], dryRun: boolean): Promise<Ap
 };
 
 /**
- * Display warnings for files with unresolved placeholders
+ * Display warnings for files with unresolved placeholders. Caller assumes a frame is open.
  */
 const displayPlaceholderWarnings = (
   filesWithPlaceholders: ApplyResult['filesWithPlaceholders']
 ): void => {
   if (filesWithPlaceholders.length === 0) return;
 
-  console.log();
-  console.log(c.yellow('⚠ Warning: Some files contain unresolved placeholders:'));
-  console.log();
+  prompts.log.warning('Some files contain unresolved placeholders:');
 
   for (const { path, placeholders } of filesWithPlaceholders) {
-    console.log(c.dim(`  ${path}:`));
+    const lines: string[] = [c.dim(`${path}:`)];
 
     const maxToShow = 5;
     if (placeholders.length <= maxToShow) {
-      // For small numbers, show all placeholders
       for (const placeholder of placeholders) {
-        console.log(c.yellow(`    {{${placeholder}}}`));
+        lines.push(c.yellow(`  {{${placeholder}}}`));
       }
     } else {
-      // For larger numbers, show a sampling: first 3 and last 2
       const firstCount = 3;
       const lastCount = 2;
       const firstPlaceholders = placeholders.slice(0, firstCount);
       const lastPlaceholders = placeholders.slice(-lastCount);
 
       for (const placeholder of firstPlaceholders) {
-        console.log(c.yellow(`    {{${placeholder}}}`));
+        lines.push(c.yellow(`  {{${placeholder}}}`));
       }
-
-      // Indicate that some placeholders are omitted in the middle
-      console.log(c.dim('    ...'));
-
+      lines.push(c.dim('  ...'));
       for (const placeholder of lastPlaceholders) {
-        console.log(c.yellow(`    {{${placeholder}}}`));
+        lines.push(c.yellow(`  {{${placeholder}}}`));
       }
 
       const shownCount = firstPlaceholders.length + lastPlaceholders.length;
       const hiddenCount = placeholders.length - shownCount;
       if (hiddenCount > 0) {
-        console.log(c.dim(`    ... and ${hiddenCount} more not shown`));
+        lines.push(c.dim(`  ... and ${hiddenCount} more not shown`));
       }
     }
+
+    prompts.log.message(lines.join('\n'));
   }
 
-  console.log();
-  console.log(c.dim('  These placeholders need to be replaced with actual values.'));
-  console.log(c.dim('  Use `tuck secrets set <NAME> <value>` to configure secrets,'));
-  console.log(c.dim('  then re-apply to populate them.'));
+  prompts.log.message(
+    c.dim(
+      [
+        'These placeholders need to be replaced with actual values.',
+        'Use `tuck secrets set <NAME> <value>` to configure secrets,',
+        'then re-apply to populate them.',
+      ].join('\n'),
+    ),
+  );
 };
 
 /**
@@ -466,8 +472,9 @@ const tryRestoreSecretsFromLocalStore = async (
 
     // In interactive mode, ask if user wants to restore
     if (interactive) {
-      console.log();
-      prompts.log.info(`Found ${resolvable.length} placeholder${resolvable.length !== 1 ? 's' : ''} that can be restored from local secrets store.`);
+      prompts.log.info(
+        `Found ${formatCount(resolvable.length, 'placeholder')} that can be restored from local secrets store.`,
+      );
 
       const shouldRestore = await prompts.confirm(
         'Would you like to restore secrets from your local store?',
@@ -484,20 +491,16 @@ const tryRestoreSecretsFromLocalStore = async (
     const result = await restoreSecrets(pathsToRestore, tuckDir);
 
     if (interactive && result.totalRestored > 0) {
-      prompts.log.success(`Restored ${result.totalRestored} secret${result.totalRestored !== 1 ? 's' : ''} from local store`);
+      prompts.log.success(`Restored ${formatCount(result.totalRestored, 'secret')} from local store`);
     }
 
     return {
       restored: result.totalRestored,
       unresolved: result.allUnresolved,
     };
-  } catch (error) {
+  } catch {
     // Secret restoration failed - log warning but don't fail the apply
-    if (interactive) {
-      prompts.log.warning('Failed to restore secrets from local store');
-    } else {
-      logger.warning('Failed to restore secrets from local store');
-    }
+    prompts.log.warning('Failed to restore secrets from local store');
     return { restored: 0, unresolved: allPlaceholders };
   }
 };
@@ -506,7 +509,6 @@ const tryRestoreSecretsFromLocalStore = async (
  * Run interactive apply flow
  */
 const runInteractiveApply = async (source: string, options: ApplyOptions): Promise<void> => {
-  banner();
   prompts.intro('tuck apply');
 
   // Resolve the source
@@ -519,6 +521,7 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     isUrl = resolved.isUrl;
   } catch (error) {
     prompts.log.error(error instanceof Error ? error.message : String(error));
+    prompts.outro('Apply aborted');
     return;
   }
 
@@ -531,6 +534,7 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     spinner.stop('Repository cloned');
   } catch (error) {
     prompts.log.error(`Failed to clone: ${error instanceof Error ? error.message : String(error)}`);
+    prompts.outro('Apply aborted');
     return;
   }
 
@@ -540,10 +544,10 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
 
     if (!manifest) {
       prompts.log.error('No tuck manifest found in repository');
-      prompts.note(
-        'This repository may not be managed by tuck.\nLook for a .tuckmanifest.json file.',
-        'Tip'
+      prompts.log.message(
+        c.dim('This repository may not be managed by tuck.\nLook for a .tuckmanifest.json file.'),
       );
+      prompts.outro('Apply aborted');
       return;
     }
 
@@ -555,15 +559,14 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     const files = await prepareFilesToApply(repoDir, manifest, filterGroups);
 
     if (files.length === 0) {
-      prompts.log.warning('No files to apply');
+      prompts.outro('No files to apply');
       return;
     }
 
     // Show what will be applied
-    prompts.log.info(`Found ${files.length} file(s) to apply:`);
-    console.log();
+    prompts.log.info(`Found ${formatCount(files.length, 'file')} to apply:`);
 
-    // Group by category
+    // Group by category — emit one prompts.log.message block per category
     const byCategory: Record<string, ApplyFile[]> = {};
     for (const file of files) {
       if (!byCategory[file.category]) {
@@ -574,14 +577,14 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
 
     for (const [category, categoryFiles] of Object.entries(byCategory)) {
       const categoryConfig = CATEGORIES[category] || { icon: '📄' };
-      console.log(c.bold(`  ${categoryConfig.icon} ${category}`));
+      const lines: string[] = [c.bold(`${categoryConfig.icon} ${category}`)];
       for (const file of categoryFiles) {
         const exists = await pathExists(file.destination);
         const status = exists ? c.yellow('(will update)') : c.green('(new)');
-        console.log(c.dim(`    ${collapsePath(file.destination)} ${status}`));
+        lines.push(c.dim(`  ${collapsePath(file.destination)} ${status}`));
       }
+      prompts.log.message(lines.join('\n'));
     }
-    console.log();
 
     // Ask for merge strategy
     let strategy: 'merge' | 'replace';
@@ -609,7 +612,6 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     if (strategy === 'merge') {
       const shellFiles = files.filter((f) => isShellFile(f.source));
       if (shellFiles.length > 0) {
-        console.log();
         for (const file of shellFiles.slice(0, 3)) {
           if (await pathExists(file.destination)) {
             const fileContent = await readFile(file.repoPath, 'utf-8');
@@ -625,9 +627,8 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
 
     // Confirm
     if (!options.yes && !options.force) {
-      console.log();
       const confirmed = await prompts.confirm(
-        `Apply ${files.length} files using ${strategy} strategy?`,
+        `Apply ${formatCount(files.length, 'file')} using ${strategy} strategy?`,
         true
       );
 
@@ -656,30 +657,20 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
       } catch {
         // Apply can be run without a local tuck init; skip prune silently.
       }
-      console.log();
     }
 
     // Apply files
     if (options.dryRun) {
-      prompts.log.info('Dry run - no changes will be made:');
+      prompts.log.info('Dry run — no changes will be made:');
     } else {
       prompts.log.info('Applying files...');
     }
-    console.log();
 
     let applyResult: ApplyResult;
     if (strategy === 'merge') {
       applyResult = await applyWithMerge(files, options.dryRun || false);
     } else {
       applyResult = await applyWithReplace(files, options.dryRun || false);
-    }
-
-    console.log();
-
-    if (options.dryRun) {
-      prompts.log.info(`Would apply ${applyResult.appliedCount} files`);
-    } else {
-      prompts.log.success(`Applied ${applyResult.appliedCount} files`);
     }
 
     // Show placeholder warnings
@@ -691,14 +682,16 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     }
 
     if (!options.dryRun) {
-      console.log();
-      prompts.note(
-        'To undo this apply, run:\n  tuck restore --latest\n\nTo see all backups:\n  tuck restore --list',
-        'Undo'
+      prompts.log.message(
+        c.dim('To undo: tuck restore --latest   ·   List backups: tuck restore --list'),
       );
     }
 
-    prompts.outro('Done!');
+    prompts.outro(
+      options.dryRun
+        ? `Would apply ${formatCount(applyResult.appliedCount, 'file')}`
+        : `Applied ${formatCount(applyResult.appliedCount, 'file')}`,
+    );
   } finally {
     // Clean up temp directory
     try {
@@ -713,12 +706,16 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
  * Run non-interactive apply
  */
 export const runApply = async (source: string, options: ApplyOptions): Promise<void> => {
+  prompts.intro('tuck apply');
+
   // Resolve the source
   const { repoId, isUrl } = await resolveSource(source);
 
   // Clone the repository
-  logger.info('Cloning repository...');
+  const spinner = prompts.spinner();
+  spinner.start('Cloning repository...');
   const repoDir = await cloneSource(repoId, isUrl);
+  spinner.stop('Repository cloned');
 
   try {
     // Read the manifest
@@ -736,7 +733,7 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
     const files = await prepareFilesToApply(repoDir, manifest, filterGroups);
 
     if (files.length === 0) {
-      logger.warning('No files to apply');
+      prompts.outro('No files to apply');
       return;
     }
 
@@ -753,9 +750,10 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
       }
 
       if (existingPaths.length > 0) {
-        logger.info('Creating backup snapshot...');
+        const snapSpinner = prompts.spinner();
+        snapSpinner.start('Creating backup snapshot...');
         const snapshot = await createPreApplySnapshot(existingPaths, repoId);
-        logger.success(`Backup created: ${snapshot.id}`);
+        snapSpinner.stop(`Backup created: ${snapshot.id}`);
         try {
           await pruneSnapshotsFromConfig(getTuckDir());
         } catch {
@@ -764,26 +762,13 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
       }
     }
 
-    // Apply files
-    if (options.dryRun) {
-      logger.heading('Dry run - would apply:');
-    } else {
-      logger.heading('Applying:');
-    }
+    prompts.log.info(options.dryRun ? 'Dry run — would apply:' : 'Applying files...');
 
     let applyResult: ApplyResult;
     if (strategy === 'merge') {
       applyResult = await applyWithMerge(files, options.dryRun || false);
     } else {
       applyResult = await applyWithReplace(files, options.dryRun || false);
-    }
-
-    logger.blank();
-
-    if (options.dryRun) {
-      logger.info(`Would apply ${applyResult.appliedCount} files`);
-    } else {
-      logger.success(`Applied ${applyResult.appliedCount} files`);
     }
 
     // Show placeholder warnings
@@ -793,16 +778,24 @@ export const runApply = async (source: string, options: ApplyOptions): Promise<v
     if (!options.dryRun && applyResult.filesWithPlaceholders.length > 0) {
       const secretResult = await tryRestoreSecretsFromLocalStore(applyResult.filesWithPlaceholders, false);
       if (secretResult.restored > 0) {
-        logger.success(`Restored ${secretResult.restored} secret${secretResult.restored !== 1 ? 's' : ''} from local store`);
+        prompts.log.success(`Restored ${formatCount(secretResult.restored, 'secret')} from local store`);
       }
       if (secretResult.unresolved.length > 0) {
-        logger.warning(`${secretResult.unresolved.length} placeholder${secretResult.unresolved.length !== 1 ? 's remain' : ' remains'} unresolved`);
+        prompts.log.warning(
+          `${formatCount(secretResult.unresolved.length, 'placeholder')} ${secretResult.unresolved.length === 1 ? 'remains' : 'remain'} unresolved`,
+        );
       }
     }
 
     if (!options.dryRun) {
-      logger.info('To undo: tuck restore --latest');
+      prompts.log.message(c.dim('To undo: tuck restore --latest'));
     }
+
+    prompts.outro(
+      options.dryRun
+        ? `Would apply ${formatCount(applyResult.appliedCount, 'file')}`
+        : `Applied ${formatCount(applyResult.appliedCount, 'file')}`,
+    );
   } finally {
     // Clean up temp directory
     try {

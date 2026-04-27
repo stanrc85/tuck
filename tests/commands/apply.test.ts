@@ -12,28 +12,27 @@ const restoreSecretsMock = vi.fn();
 const getAllSecretsMock = vi.fn();
 const getSecretCountMock = vi.fn();
 
-const loggerInfoMock = vi.fn();
-const loggerSuccessMock = vi.fn();
-const loggerWarningMock = vi.fn();
-const loggerHeadingMock = vi.fn();
-const loggerBlankMock = vi.fn();
-const loggerFileMock = vi.fn();
-const loggerDimMock = vi.fn();
+const promptsOutroMock = vi.fn();
+const promptsLogInfoMock = vi.fn();
+const promptsLogSuccessMock = vi.fn();
+const promptsLogWarningMock = vi.fn();
+const promptsLogMessageMock = vi.fn();
 
 let cloneSetup: ((dir: string) => void) | null = null;
 let clonedDir: string | null = null;
 
 vi.mock('../../src/ui/index.js', () => ({
-  banner: vi.fn(),
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: promptsOutroMock,
     spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), message: '' })),
     log: {
-      info: vi.fn(),
-      success: vi.fn(),
-      warning: vi.fn(),
+      info: promptsLogInfoMock,
+      success: promptsLogSuccessMock,
+      warning: promptsLogWarningMock,
       error: vi.fn(),
+      message: promptsLogMessageMock,
+      step: vi.fn(),
     },
     note: vi.fn(),
     confirm: vi.fn().mockResolvedValue(true),
@@ -41,23 +40,16 @@ vi.mock('../../src/ui/index.js', () => ({
     multiselect: vi.fn().mockResolvedValue([]),
     cancel: vi.fn(),
   },
-  logger: {
-    info: loggerInfoMock,
-    success: loggerSuccessMock,
-    warning: loggerWarningMock,
-    heading: loggerHeadingMock,
-    blank: loggerBlankMock,
-    file: loggerFileMock,
-    dim: loggerDimMock,
-    debug: vi.fn(),
-  },
   colors: {
     yellow: (x: string) => x,
     dim: (x: string) => x,
     bold: (x: string) => x,
     green: (x: string) => x,
     cyan: (x: string) => x,
+    brand: (x: string) => x,
   },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
 }));
 
 vi.mock('../../src/lib/git.js', () => ({
@@ -174,9 +166,9 @@ describe('apply command behavior', () => {
       expect.any(String)
     );
     expect(createPreApplySnapshotMock).not.toHaveBeenCalled();
-    expect(loggerWarningMock).toHaveBeenCalledWith('Skipping unsafe manifest entry: ~/../etc/passwd');
-    expect(loggerWarningMock).toHaveBeenCalledWith('Skipping unsafe manifest entry: ~/.gitconfig');
-    expect(loggerInfoMock).toHaveBeenCalledWith('Would apply 1 files');
+    expect(promptsLogWarningMock).toHaveBeenCalledWith('Skipping unsafe manifest entry: ~/../etc/passwd');
+    expect(promptsLogWarningMock).toHaveBeenCalledWith('Skipping unsafe manifest entry: ~/.gitconfig');
+    expect(promptsOutroMock).toHaveBeenCalledWith('Would apply 1 file');
 
     if (clonedDir) {
       expect(vol.existsSync(clonedDir)).toBe(false);
@@ -210,7 +202,7 @@ describe('apply command behavior', () => {
       'user/repo'
     );
     expect(vol.readFileSync(join(TEST_HOME, '.zshrc'), 'utf-8')).toBe('export NEW=1');
-    expect(loggerSuccessMock).toHaveBeenCalledWith('Applied 1 files');
+    expect(promptsOutroMock).toHaveBeenCalledWith('Applied 1 file');
 
     if (clonedDir) {
       expect(vol.existsSync(clonedDir)).toBe(false);
