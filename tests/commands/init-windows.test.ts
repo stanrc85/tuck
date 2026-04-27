@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const cloneRepoMock = vi.fn();
 const createManifestMock = vi.fn();
 const saveConfigMock = vi.fn();
-const loggerSuccessMock = vi.fn();
-const loggerInfoMock = vi.fn();
+const promptsLogSuccessMock = vi.fn();
+const promptsLogInfoMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', () => ({
   banner: vi.fn(),
@@ -21,8 +21,8 @@ vi.mock('../../src/ui/index.js', () => ({
     cancel: vi.fn(),
     spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), message: '' })),
     log: {
-      info: vi.fn(),
-      success: vi.fn(),
+      info: promptsLogInfoMock,
+      success: promptsLogSuccessMock,
       warning: vi.fn(),
       error: vi.fn(),
       step: vi.fn(),
@@ -30,8 +30,8 @@ vi.mock('../../src/ui/index.js', () => ({
     },
   },
   logger: {
-    success: loggerSuccessMock,
-    info: loggerInfoMock,
+    success: vi.fn(),
+    info: vi.fn(),
     warning: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
@@ -43,6 +43,8 @@ vi.mock('../../src/ui/index.js', () => ({
     dim: (x: string) => x,
     bold: (x: string) => x,
   },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || singular + 's'}`,
 }));
 
 vi.mock('../../src/lib/config.js', () => ({
@@ -148,8 +150,8 @@ describe('init command Windows path handling', () => {
       expect(cloneDest.replace(/\\/g, '/')).toBe('C:/Users/windows-user/.tuck');
       expect(createManifestMock).toHaveBeenCalledTimes(1);
       expect(saveConfigMock).toHaveBeenCalledTimes(1);
-      expect(loggerSuccessMock).toHaveBeenCalled();
-      expect(loggerInfoMock).toHaveBeenCalledWith('Run `tuck restore --all` to restore dotfiles');
+      expect(promptsLogSuccessMock).toHaveBeenCalled();
+      expect(promptsLogInfoMock).toHaveBeenCalledWith('Run `tuck restore --all` to restore dotfiles');
     } finally {
       homedirSpy.mockRestore();
     }

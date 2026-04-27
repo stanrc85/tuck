@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { join } from 'path';
 import { writeFile } from 'fs/promises';
 import { ensureDir } from 'fs-extra';
-import { banner, nextSteps, prompts, withSpinner, logger, colors as c } from '../ui/index.js';
+import { prompts, withSpinner, logger, colors as c, formatCount } from '../ui/index.js';
 import {
   getTuckDir,
   getManifestPath,
@@ -315,9 +315,7 @@ interface GitHubSetupResult {
  * Set up alternative authentication (SSH or tokens)
  */
 const setupAlternativeAuth = async (tuckDir: string): Promise<GitHubSetupResult> => {
-  console.log();
   prompts.log.info("GitHub CLI not available. Let's set up authentication another way.");
-  console.log();
 
   // Check for existing credentials and test them
   const credTest = await testStoredCredentials();
@@ -332,10 +330,9 @@ const setupAlternativeAuth = async (tuckDir: string): Promise<GitHubSetupResult>
     // Had credentials but they failed
     const diagnosis = await diagnoseAuthIssue();
     prompts.log.warning(diagnosis.issue);
-    for (const suggestion of diagnosis.suggestions) {
-      console.log(c.muted(`  ${suggestion}`));
+    if (diagnosis.suggestions.length > 0) {
+      prompts.log.message(c.dim(diagnosis.suggestions.map((s) => `  ${s}`).join('\n')));
     }
-    console.log();
   }
 
   // Check for existing SSH keys
@@ -389,9 +386,7 @@ const setupAlternativeAuth = async (tuckDir: string): Promise<GitHubSetupResult>
 
   if (authMethod === 'gh-cli') {
     // Show GitHub CLI install instructions
-    console.log();
     prompts.note(getGitHubCLIInstallInstructions(), 'GitHub CLI Installation');
-    console.log();
     prompts.log.info('After installing and authenticating, run `tuck init` again');
     prompts.log.info('Or continue with token-based authentication below');
 
@@ -411,17 +406,14 @@ const setupAlternativeAuth = async (tuckDir: string): Promise<GitHubSetupResult>
 
   if (authMethod === 'ssh-new') {
     // Show SSH setup instructions
-    console.log();
     prompts.note(getSSHKeyInstructions(), 'SSH Key Setup');
-    console.log();
 
     if (sshInfo.exists) {
       prompts.log.info(`Found existing SSH key at ${sshInfo.path}`);
       if (sshInfo.publicKey) {
-        console.log();
-        prompts.log.info('Your public key (copy this to GitHub):');
-        console.log(c.brand(sshInfo.publicKey));
-        console.log();
+        prompts.log.message(
+          `Your public key (copy this to GitHub):\n${c.brand(sshInfo.publicKey)}`
+        );
       }
     }
 
@@ -481,13 +473,11 @@ const setupTokenAuth = async (
     ]));
 
   // Show instructions for the selected token type
-  console.log();
   if (tokenType === 'fine-grained') {
     prompts.note(getFineGrainedTokenInstructions(), 'Fine-grained Token Setup');
   } else {
     prompts.note(getClassicTokenInstructions(), 'Classic Token Setup');
   }
-  console.log();
 
   // Ask for username
   const username = await prompts.text('Enter your GitHub username:', {
@@ -606,7 +596,6 @@ const promptForManualRepoUrl = async (
       ? `git@github.com:${username || 'username'}/${suggestedName}.git`
       : `https://github.com/${username || 'username'}/${suggestedName}.git`;
 
-  console.log();
   prompts.note(
     `Create a repository on GitHub:\n\n` +
       `1. Go to: https://github.com/new\n` +
@@ -617,7 +606,6 @@ const promptForManualRepoUrl = async (
       `6. Copy the ${preferredProtocol.toUpperCase()} URL`,
     'Manual Repository Setup'
   );
-  console.log();
 
   const hasRepo = await prompts.confirm('Have you created the repository?');
   if (!hasRepo) {
@@ -959,22 +947,20 @@ const importExistingRepo = async (
     }
 
     // Display what's available
-    console.log();
-    prompts.log.success(`Imported ${fileCount} dotfiles to ~/.tuck`);
-    console.log();
+    prompts.log.success(`Imported ${formatCount(fileCount, 'dotfile')} to ~/.tuck`);
 
     // Show files by category with icons
     const { DETECTION_CATEGORIES } = await import('../lib/detect.js');
-    for (const [category, files] of Object.entries(grouped)) {
+    const categoryLines = Object.entries(grouped).map(([category, files]) => {
       const categoryInfo = DETECTION_CATEGORIES[category] || { icon: '-', name: category };
-      console.log(
-        c.brand(
-          `  ${categoryInfo.icon} ${categoryInfo.name}: ${files.length} file${files.length > 1 ? 's' : ''}`
-        )
+      return c.brand(
+        `  ${categoryInfo.icon} ${categoryInfo.name}: ${formatCount(files.length, 'file')}`
       );
+    });
+    if (categoryLines.length > 0) {
+      prompts.log.message(categoryLines.join('\n'));
     }
 
-    console.log();
     prompts.note(
       'Your dotfiles are now in ~/.tuck but NOT applied to your system.\n\n' +
         'To apply them to your system, run:\n' +
@@ -982,7 +968,7 @@ const importExistingRepo = async (
         '  tuck restore  # Simple restore from backup\n\n' +
         'To see what files are available:\n' +
         '  tuck list',
-      'Next Steps'
+      'Next steps'
     );
 
     // filesApplied is always 0 - user must explicitly apply via tuck apply/restore
@@ -1036,13 +1022,13 @@ const importExistingRepo = async (
     // Detect dotfiles on system that could be tracked
     const detected = analysis.files.filter((f) => !f.sensitive);
 
-    console.log();
     prompts.log.success('Repository imported to ~/.tuck');
     prompts.log.info("The repository's files are now in your tuck directory.");
 
     if (detected.length > 0) {
-      console.log();
-      prompts.log.info(`Found ${detected.length} dotfiles on your system that could be tracked`);
+      prompts.log.info(
+        `Found ${formatCount(detected.length, 'dotfile')} on your system that could be tracked`
+      );
 
       const trackNow = await prompts.confirm('Would you like to add some of these to tuck?', true);
 
@@ -1054,14 +1040,14 @@ const importExistingRepo = async (
           grouped[file.category].push(file);
         }
 
-        // Show categories
-        console.log();
-        for (const [category, files] of Object.entries(grouped)) {
+        const categoryLines = Object.entries(grouped).map(([category, files]) => {
           const config = DETECTION_CATEGORIES[category] || { icon: '-', name: category };
-          console.log(`  ${config.icon} ${config.name}: ${files.length} files`);
+          return `  ${config.icon} ${config.name}: ${formatCount(files.length, 'file')}`;
+        });
+        if (categoryLines.length > 0) {
+          prompts.log.message(categoryLines.join('\n'));
         }
 
-        console.log();
         prompts.log.info("Run 'tuck scan' to interactively select files to track");
         prompts.log.info("Or run 'tuck add <path>' to add specific files");
       }
@@ -1102,7 +1088,6 @@ const importExistingRepo = async (
 
   // Scenario C: Messed up repository
   prompts.log.warning(`Repository issue: ${analysis.reason}`);
-  console.log();
 
   const action = await prompts.select('How would you like to proceed?', [
     {
@@ -1167,14 +1152,14 @@ const initFromRemote = async (tuckDir: string, remoteUrl: string): Promise<void>
 
   // Verify manifest exists
   if (!(await pathExists(getManifestPath(tuckDir)))) {
-    logger.warning('No manifest found in cloned repository. Creating new manifest...');
+    prompts.log.warning('No manifest found in cloned repository. Creating new manifest...');
     const hostname = (await import('os')).hostname();
     await createManifest(tuckDir, hostname);
   }
 
   // Verify config exists
   if (!(await pathExists(getConfigPath(tuckDir)))) {
-    logger.warning('No config found in cloned repository. Creating default config...');
+    prompts.log.warning('No config found in cloned repository. Creating default config...');
     await saveConfig(
       {
         ...defaultConfig,
@@ -1186,7 +1171,6 @@ const initFromRemote = async (tuckDir: string, remoteUrl: string): Promise<void>
 };
 
 const runInteractiveInit = async (): Promise<void> => {
-  banner();
   prompts.intro('tuck init');
 
   // Ask for tuck directory
@@ -1203,7 +1187,6 @@ const runInteractiveInit = async (): Promise<void> => {
   }
 
   // ========== STEP 0: Provider Selection ==========
-  console.log();
   let providerResult: ProviderSetupResult | null = null;
 
   // Run provider selection and setup
@@ -1220,7 +1203,6 @@ const runInteractiveInit = async (): Promise<void> => {
   }
 
   // Display the chosen provider
-  console.log();
   prompts.log.info(`Provider: ${describeProviderConfig(providerResult.config)}`);
 
   // Flow control flags
@@ -1281,12 +1263,15 @@ const runInteractiveInit = async (): Promise<void> => {
             const result = await importExistingRepo(tuckDir, existingRepoName, analysis, tempDir);
 
             if (result.success) {
-              console.log();
               // Always show that repository was imported to ~/.tuck
               if (result.filesInRepo > 0) {
-                prompts.log.success(`Repository imported to ~/.tuck (${result.filesInRepo} files)`);
+                prompts.log.success(
+                  `Repository imported to ~/.tuck (${formatCount(result.filesInRepo, 'file')})`
+                );
                 if (result.filesApplied > 0) {
-                  prompts.log.info(`Applied ${result.filesApplied} files to your system`);
+                  prompts.log.info(
+                    `Applied ${formatCount(result.filesApplied, 'file')} to your system`
+                  );
                 } else if (result.filesInRepo > 0) {
                   prompts.log.info(
                     'Files are ready in ~/.tuck. Run "tuck restore" to apply them to your system'
@@ -1296,18 +1281,15 @@ const runInteractiveInit = async (): Promise<void> => {
                 prompts.log.success(`Tuck initialized with ${existingRepoName} as remote`);
               }
 
-              prompts.outro('Ready to manage your dotfiles!');
-
-              nextSteps([
-                `View status: tuck status`,
-                `Add files:   tuck add ~/.zshrc`,
-                `Sync:        tuck sync`,
-              ]);
+              prompts.note(
+                ['View status: tuck status', 'Add files:   tuck add ~/.zshrc', 'Sync:        tuck sync'].join('\n'),
+                'Next steps'
+              );
+              prompts.outro(`→ ${collapsePath(tuckDir)}`);
               return;
             }
 
             // User cancelled - continue with normal flow
-            console.log();
           } catch (error) {
             // Only stop clone spinner if we're still in cloning phase
             if (phase === 'cloning') {
@@ -1323,7 +1305,6 @@ const runInteractiveInit = async (): Promise<void> => {
             } else {
               prompts.log.warning(`Could not clone repository: ${errorMessage}`);
             }
-            console.log();
 
             // Offer to use the failed repo as remote and continue with fresh init
             const useAsRemoteAnyway = await prompts.confirm(
@@ -1350,7 +1331,6 @@ const runInteractiveInit = async (): Promise<void> => {
           }
         } else {
           // User declined to import - offer to use as remote only
-          console.log();
           const useAsRemote = await prompts.confirm(
             `Use ${existingRepoName} as your remote (without importing its contents)?`,
             true
@@ -1389,18 +1369,16 @@ const runInteractiveInit = async (): Promise<void> => {
       const shouldRestore = await prompts.confirm('Would you like to restore dotfiles now?', true);
 
       if (shouldRestore) {
-        console.log();
         // Dynamically import and run restore
         const { runRestore } = await import('./restore.js');
         await runRestore({ all: true });
       }
 
-      prompts.outro('Tuck initialized successfully!');
-      nextSteps([
-        `View status: tuck status`,
-        `Add files:   tuck add ~/.zshrc`,
-        `Sync:        tuck sync`,
-      ]);
+      prompts.note(
+        ['View status: tuck status', 'Add files:   tuck add ~/.zshrc', 'Sync:        tuck sync'].join('\n'),
+        'Next steps'
+      );
+      prompts.outro(`→ ${collapsePath(tuckDir)}`);
       return;
     }
   }
@@ -1419,7 +1397,6 @@ const runInteractiveInit = async (): Promise<void> => {
     await addRemote(tuckDir, 'origin', remoteUrl);
     prompts.log.success(`Remote set to ${existingRepoToUseAsRemote}`);
     prompts.log.info('Your next push will update the remote repository');
-    console.log();
   }
 
   // ========== STEP 1: Remote Setup (if not already configured and not local mode) ==========
@@ -1444,7 +1421,6 @@ const runInteractiveInit = async (): Promise<void> => {
         });
         const suggestedName = 'dotfiles';
 
-        console.log();
         prompts.note(
           `To create a GitHub repository manually:\n\n` +
             `1. Go to: https://github.com/new\n` +
@@ -1462,7 +1438,6 @@ const runInteractiveInit = async (): Promise<void> => {
             `  HTTPS: https://github.com/${user?.login || 'username'}/${suggestedName}.git`,
           'Manual Repository Setup'
         );
-        console.log();
 
         const useManual = await prompts.confirm('Did you create a GitHub repository?', true);
 
@@ -1501,7 +1476,6 @@ const runInteractiveInit = async (): Promise<void> => {
       grouped[file.category].push(file);
     }
 
-    console.log();
     const categoryOrder = ['shell', 'git', 'editors', 'terminal', 'ssh', 'misc'];
     const sortedCategories = Object.keys(grouped).sort((a, b) => {
       const aIdx = categoryOrder.indexOf(a);
@@ -1512,12 +1486,14 @@ const runInteractiveInit = async (): Promise<void> => {
       return aIdx - bIdx;
     });
 
-    for (const category of sortedCategories) {
+    const categoryLines = sortedCategories.map((category) => {
       const files = grouped[category];
       const config = DETECTION_CATEGORIES[category] || { icon: '-', name: category };
-      console.log(`  ${config.icon} ${config.name}: ${files.length} files`);
+      return `  ${config.icon} ${config.name}: ${formatCount(files.length, 'file')}`;
+    });
+    if (categoryLines.length > 0) {
+      prompts.log.message(categoryLines.join('\n'));
     }
-    console.log();
 
     const trackNow = await prompts.confirm('Would you like to track some of these now?', true);
 
@@ -1542,14 +1518,16 @@ const runInteractiveInit = async (): Promise<void> => {
       const filesToTrack = [...selectedFiles];
 
       if (sensitiveFiles.length > 0) {
-        console.log();
-        prompts.log.warning(`Found ${sensitiveFiles.length} sensitive file(s):`);
+        prompts.log.warning(`Found ${formatCount(sensitiveFiles.length, 'sensitive file')}:`);
+        prompts.log.message(
+          sensitiveFiles
+            .map(
+              (sf) =>
+                `  ${c.warning('!')} ${collapsePath(sf.path)} ${c.dim(`- ${sf.description || sf.category}`)}`
+            )
+            .join('\n')
+        );
 
-        for (const sf of sensitiveFiles) {
-          console.log(c.warning(`  ! ${collapsePath(sf.path)} - ${sf.description || sf.category}`));
-        }
-
-        console.log();
         const trackSensitive = await prompts.confirm(
           'Would you like to review sensitive files? (Ensure your repo is PRIVATE)',
           false
@@ -1576,14 +1554,16 @@ const runInteractiveInit = async (): Promise<void> => {
 
   // Handle case where only sensitive files were found
   if (nonSensitiveFiles.length === 0 && sensitiveFiles.length > 0) {
-    console.log();
-    prompts.log.warning(`Found ${sensitiveFiles.length} sensitive file(s):`);
+    prompts.log.warning(`Found ${formatCount(sensitiveFiles.length, 'sensitive file')}:`);
+    prompts.log.message(
+      sensitiveFiles
+        .map(
+          (sf) =>
+            `  ${c.warning('!')} ${collapsePath(sf.path)} ${c.dim(`- ${sf.description || sf.category}`)}`
+        )
+        .join('\n')
+    );
 
-    for (const sf of sensitiveFiles) {
-      console.log(c.warning(`  ! ${collapsePath(sf.path)} - ${sf.description || sf.category}`));
-    }
-
-    console.log();
     const trackSensitive = await prompts.confirm(
       'Would you like to review these sensitive files? (Ensure your repo is PRIVATE)',
       false
@@ -1609,15 +1589,12 @@ const runInteractiveInit = async (): Promise<void> => {
 
   // Handle case where no files were found
   if (detectedFiles.length === 0) {
-    console.log();
     prompts.log.info('No dotfiles detected on your system');
     prompts.log.info("Run 'tuck add <path>' to manually track files");
   }
 
   // ========== STEP 3: Commit and Push ==========
   if (trackedCount > 0) {
-    console.log();
-
     if (remoteUrl) {
       // Remote is configured - offer to commit AND push
       const action = await prompts.select('Your files are tracked. What would you like to do?', [
@@ -1665,11 +1642,10 @@ const runInteractiveInit = async (): Promise<void> => {
               viewUrl = viewUrl.replace('.git', '');
             }
 
-            console.log();
             prompts.note(
-              `Your dotfiles are now live at:\n${viewUrl}\n\n` +
+              `Your dotfiles are now live at:\n${c.brand(viewUrl)}\n\n` +
                 `On a new machine, run:\n  tuck init --from ${viewUrl}`,
-              'Success!'
+              'Success'
             );
           } catch (error) {
             pushSpinner.stop('Push failed');
@@ -1700,13 +1676,11 @@ const runInteractiveInit = async (): Promise<void> => {
 
   await maybePromptForOsGroup(tuckDir, {});
 
-  prompts.outro('Tuck initialized successfully!');
-
-  nextSteps([
-    `View status: tuck status`,
-    `Add files:   tuck add ~/.zshrc`,
-    `Sync:        tuck sync`,
-  ]);
+  prompts.note(
+    ['View status: tuck status', 'Add files:   tuck add ~/.zshrc', 'Sync:        tuck sync'].join('\n'),
+    'Next steps'
+  );
+  prompts.outro(`→ ${collapsePath(tuckDir)}`);
 };
 
 /**
@@ -1739,11 +1713,11 @@ const maybePromptForOsGroup = async (
 
   if (!process.stdout.isTTY) {
     if (osGroup) {
-      logger.info(
+      prompts.log.info(
         `Detected OS: ${osGroup}. Run \`tuck config set defaultGroups ${osGroup}\` to route this host to that group.`
       );
     } else if (repoGroups.length > 0) {
-      logger.info(
+      prompts.log.info(
         `Repo groups: ${repoGroups.join(', ')}. Run \`tuck config set defaultGroups <group>\` to route this host.`
       );
     }
@@ -1772,7 +1746,7 @@ const maybePromptForOsGroup = async (
 
   if (choice === SKIP) {
     const hint = osGroup ?? repoGroups[0] ?? '<group>';
-    logger.dim(`Skipped — set later with \`tuck config set defaultGroups ${hint}\``);
+    prompts.log.message(c.dim(`Skipped — set later with \`tuck config set defaultGroups ${hint}\``));
     return;
   }
 
@@ -1795,7 +1769,7 @@ const maybePromptForOsGroup = async (
   }
 
   await saveLocalConfig({ defaultGroups: [groupName] });
-  logger.success(`Host assigned to group: ${groupName} (.tuckrc.local.json)`);
+  prompts.log.success(`Host assigned to group: ${c.brand(groupName)} ${c.dim('(.tuckrc.local.json)')}`);
 };
 
 /**
@@ -1813,12 +1787,12 @@ const maybePromptRestoreBootstrap = async (tuckDir: string): Promise<void> => {
   const existing = await loadConfig(tuckDir).catch(() => null);
   const group = existing?.defaultGroups?.[0];
   if (!group) {
-    logger.info('Run `tuck restore --all` to restore dotfiles');
+    prompts.log.info('Run `tuck restore --all` to restore dotfiles');
     return;
   }
 
   if (!process.stdout.isTTY) {
-    logger.info(
+    prompts.log.info(
       `Run \`tuck restore --bootstrap -g ${group}\` to restore files and install the bundle.`
     );
     return;
@@ -1849,10 +1823,12 @@ const maybePromptRestoreBootstrap = async (tuckDir: string): Promise<void> => {
 export const runInit = async (options: InitOptions): Promise<void> => {
   const tuckDir = getTuckDir(options.dir);
 
+  prompts.intro('tuck init');
+
   // If --from is provided, clone from remote
   if (options.from) {
     await initFromRemote(tuckDir, options.from);
-    logger.success(`Tuck initialized from ${options.from}`);
+    prompts.log.success(`Tuck initialized from ${c.brand(options.from)}`);
     // OS-detect prompt lands here too — users who clone onto a fresh host
     // are the primary beneficiaries (the whole point is skipping the
     // `tuck config set defaultGroups kali` ritual on a new VM).
@@ -1860,6 +1836,7 @@ export const runInit = async (options: InitOptions): Promise<void> => {
     // With a group persisted, offer the unified fresh-host flow inline
     // (TASK-RB-UNIFY-IMPL). No-op if the user picked Skip on os-group.
     await maybePromptRestoreBootstrap(tuckDir);
+    prompts.outro(`→ ${collapsePath(tuckDir)}`);
     return;
   }
 
@@ -1875,14 +1852,18 @@ export const runInit = async (options: InitOptions): Promise<void> => {
     remoteConfig: detectedConfig,
   });
 
-  logger.success(`Tuck initialized at ${collapsePath(tuckDir)}`);
+  prompts.log.success(`Tuck initialized at ${c.brand(collapsePath(tuckDir))}`);
   await maybePromptForOsGroup(tuckDir, options);
 
-  nextSteps([
-    `Add files:    tuck add ~/.zshrc`,
-    `Sync changes: tuck sync`,
-    `Push remote:  tuck push`,
-  ]);
+  prompts.note(
+    [
+      'Add files:    tuck add ~/.zshrc',
+      'Sync changes: tuck sync',
+      'Push remote:  tuck push',
+    ].join('\n'),
+    'Next steps'
+  );
+  prompts.outro(`→ ${collapsePath(tuckDir)}`);
 };
 
 export const initCommand = new Command('init')
