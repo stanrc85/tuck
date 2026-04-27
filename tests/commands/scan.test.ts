@@ -9,34 +9,27 @@ const shouldExcludeFromBinMock = vi.fn();
 const trackFilesWithProgressMock = vi.fn();
 const preparePathsForTrackingMock = vi.fn();
 
-const loggerInfoMock = vi.fn();
-const loggerWarnMock = vi.fn();
-const loggerSuccessMock = vi.fn();
-const loggerDimMock = vi.fn();
-
 const promptsSelectMock = vi.fn();
 const promptsConfirmMock = vi.fn();
+const promptsLogInfoMock = vi.fn();
+const promptsOutroMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', () => ({
   banner: vi.fn(),
   colors: {
     bold: Object.assign((x: string) => x, { cyan: (x: string) => x }),
+    brandBold: (x: string) => x,
     dim: (x: string) => x,
     green: (x: string) => x,
     yellow: (x: string) => x,
     cyan: (x: string) => x,
     white: (x: string) => x,
   },
-  logger: {
-    info: loggerInfoMock,
-    warning: loggerWarnMock,
-    warn: loggerWarnMock,
-    success: loggerSuccessMock,
-    dim: loggerDimMock,
-  },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: promptsOutroMock,
     confirm: promptsConfirmMock,
     select: promptsSelectMock,
     multiselect: vi.fn(),
@@ -45,7 +38,7 @@ vi.mock('../../src/ui/index.js', () => ({
     cancel: vi.fn(),
     spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), message: '' })),
     log: {
-      info: vi.fn(),
+      info: promptsLogInfoMock,
       success: vi.fn(),
       warning: vi.fn(),
       error: vi.fn(),
@@ -155,7 +148,7 @@ describe('scan command behavior', () => {
     await runScan({ quick: true });
 
     expect(trackFilesWithProgressMock).not.toHaveBeenCalled();
-    expect(loggerInfoMock).toHaveBeenCalled();
+    expect(promptsOutroMock).toHaveBeenCalledWith('1 new dotfile found');
   });
 
   it('tracks files in interactive all mode when user confirms', async () => {

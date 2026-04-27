@@ -51,6 +51,7 @@ vi.mock('../../src/ui/index.js', () => ({
     brand: (s: string) => s,
     brandBold: (s: string) => s,
     bold: (s: string) => s,
+    dim: (s: string) => s,
   },
 }));
 

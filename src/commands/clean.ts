@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import {
   prompts,
-  logger,
   withSpinner,
   isInteractive,
   formatCount,
@@ -34,52 +33,54 @@ const printScanPreview = (result: OrphanScanResult): void => {
   const { orphanFiles, orphanDirs, missingFromDisk, totalSize } = result;
 
   if (missingFromDisk.length > 0) {
-    logger.warning(
-      `${formatCount(missingFromDisk.length, 'manifest entry', 'manifest entries')} reference paths that no longer exist in the repository:`
-    );
+    const lines: string[] = [];
     for (const m of missingFromDisk.slice(0, MAX_PREVIEW_ITEMS)) {
-      console.log(c.muted(`  • ${m.source}  → ${m.destination}`));
+      lines.push(c.muted(`  • ${m.source}  → ${m.destination}`));
     }
     if (missingFromDisk.length > MAX_PREVIEW_ITEMS) {
-      console.log(
-        c.muted(`  … and ${missingFromDisk.length - MAX_PREVIEW_ITEMS} more`)
-      );
+      lines.push(c.muted(`  … and ${missingFromDisk.length - MAX_PREVIEW_ITEMS} more`));
     }
-    logger.dim("Run 'tuck doctor' to diagnose and fix these.");
-    logger.blank();
+    lines.push(c.dim("Run `tuck doctor` to diagnose and fix these."));
+    prompts.log.warning(
+      `${formatCount(missingFromDisk.length, 'manifest entry', 'manifest entries')} reference paths that no longer exist in the repository:`
+    );
+    prompts.log.message(lines.join('\n'));
   }
 
   if (orphanFiles.length === 0 && orphanDirs.length === 0) {
-    logger.success('No orphaned files — .tuck/files/ is in sync with the manifest.');
+    prompts.log.success('No orphaned files — .tuck/files/ is in sync with the manifest.');
     return;
   }
 
-  logger.heading(
-    `Orphaned files (${formatCount(orphanFiles.length, 'file')}, ${formatFileSize(totalSize)}):`
-  );
+  const fileLines: string[] = [
+    c.bold(
+      `Orphaned files (${formatCount(orphanFiles.length, 'file')}, ${formatFileSize(totalSize)}):`
+    ),
+  ];
   for (const f of orphanFiles.slice(0, MAX_PREVIEW_ITEMS)) {
-    console.log(
+    fileLines.push(
       `  ${c.muted('•')} ${f.relativePath} ${c.muted(`(${formatFileSize(f.size)})`)}`
     );
   }
   if (orphanFiles.length > MAX_PREVIEW_ITEMS) {
-    console.log(c.muted(`  … and ${orphanFiles.length - MAX_PREVIEW_ITEMS} more`));
+    fileLines.push(c.muted(`  … and ${orphanFiles.length - MAX_PREVIEW_ITEMS} more`));
   }
+  prompts.log.message(fileLines.join('\n'));
 
   if (orphanDirs.length > 0) {
-    logger.blank();
-    logger.heading(
-      `Directories that will be removed (${formatCount(orphanDirs.length, 'directory', 'directories')}):`
-    );
+    const dirLines: string[] = [
+      c.bold(
+        `Directories that will be removed (${formatCount(orphanDirs.length, 'directory', 'directories')}):`
+      ),
+    ];
     for (const d of orphanDirs.slice(0, MAX_PREVIEW_ITEMS)) {
-      console.log(`  ${c.muted('•')} ${collapsePath(d)}`);
+      dirLines.push(`  ${c.muted('•')} ${collapsePath(d)}`);
     }
     if (orphanDirs.length > MAX_PREVIEW_ITEMS) {
-      console.log(c.muted(`  … and ${orphanDirs.length - MAX_PREVIEW_ITEMS} more`));
+      dirLines.push(c.muted(`  … and ${orphanDirs.length - MAX_PREVIEW_ITEMS} more`));
     }
+    prompts.log.message(dirLines.join('\n'));
   }
-
-  logger.blank();
 };
 
 const commitAndPushClean = async (
@@ -98,7 +99,7 @@ const commitAndPushClean = async (
   await withSpinner('Committing cleanup...', async () => {
     await commit(tuckDir, message);
   });
-  logger.success(`Committed: ${message}`);
+  prompts.log.success(`Committed: ${message}`);
 
   if (!options.push) {
     return;
@@ -123,28 +124,28 @@ const commitAndPushClean = async (
           await push(tuckDir);
         }
       );
-      logger.success('Pushed to remote');
+      prompts.log.success('Pushed to remote');
       return;
     } catch (error) {
-      logger.error(
+      prompts.log.error(
         `Push failed: ${error instanceof Error ? error.message : String(error)}`
       );
       if (attempts >= MAX_PUSH_RETRIES) {
-        logger.warning(
-          `Giving up after ${MAX_PUSH_RETRIES} attempts. The commit is preserved locally — run 'tuck push' to retry.`
+        prompts.log.warning(
+          `Giving up after ${MAX_PUSH_RETRIES} attempts. The commit is preserved locally — run \`tuck push\` to retry.`
         );
         return;
       }
       if (!isInteractive()) {
-        logger.info(
-          "Non-interactive mode: not retrying. Run 'tuck push' to retry later."
+        prompts.log.message(
+          c.dim("Non-interactive mode: not retrying. Run `tuck push` to retry later.")
         );
         return;
       }
       const retry = await prompts.confirm('Retry push?', true);
       if (!retry) {
-        logger.info(
-          "Commit preserved locally. Run 'tuck push' to retry when ready."
+        prompts.log.message(
+          c.dim("Commit preserved locally. Run `tuck push` to retry when ready.")
         );
         return;
       }
@@ -165,14 +166,17 @@ export const runClean = async (options: CleanOptions): Promise<void> => {
 
   const result = await scanOrphans(tuckDir);
 
+  prompts.intro('tuck clean');
+
   printScanPreview(result);
 
   if (result.orphanFiles.length === 0 && result.orphanDirs.length === 0) {
+    prompts.outro('Nothing to clean');
     return;
   }
 
   if (options.dryRun) {
-    logger.info('Dry run — nothing deleted. Re-run without --dry-run to clean.');
+    prompts.outro('Dry run — re-run without --dry-run to clean');
     return;
   }
 
@@ -188,7 +192,7 @@ export const runClean = async (options: CleanOptions): Promise<void> => {
       false
     );
     if (!confirmed) {
-      logger.info('Cancelled.');
+      prompts.outro('Cancelled');
       return;
     }
   }
@@ -211,17 +215,21 @@ export const runClean = async (options: CleanOptions): Promise<void> => {
       await deleteOrphans(result);
     }
   );
-  logger.success(`Removed ${formatCount(result.orphanFiles.length, 'orphaned file')}`);
+  prompts.log.success(`Removed ${formatCount(result.orphanFiles.length, 'orphaned file')}`);
   if (result.orphanDirs.length > 0) {
-    logger.dim(
-      `  and ${formatCount(result.orphanDirs.length, 'empty directory', 'empty directories')}`
+    prompts.log.message(
+      c.dim(
+        `  and ${formatCount(result.orphanDirs.length, 'empty directory', 'empty directories')}`
+      )
     );
   }
 
   if (options.commit || options.push) {
     await commitAndPushClean(tuckDir, result.orphanFiles.length, options);
+    prompts.outro(options.push ? 'Cleaned and pushed' : 'Cleaned and committed');
   } else {
-    logger.info("Run 'tuck sync' to commit these changes.");
+    prompts.log.message(c.dim("Run `tuck sync` to commit these changes."));
+    prompts.outro(`Removed ${formatCount(result.orphanFiles.length, 'orphaned file')}`);
   }
 };
 

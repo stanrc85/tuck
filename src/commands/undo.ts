@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { prompts, logger, colors as c } from '../ui/index.js';
+import { prompts, colors as c, formatCount } from '../ui/index.js';
 import { collapsePath } from '../lib/paths.js';
 import {
   listSnapshots,
@@ -25,183 +25,203 @@ export interface UndoOptions {
 }
 
 /**
- * Display a list of available snapshots
+ * Display a list of available snapshots inside a clack frame.
  */
 const showSnapshotList = async (): Promise<void> => {
+  prompts.intro('tuck undo --list');
+
   const snapshots = await listSnapshots();
 
   if (snapshots.length === 0) {
-    logger.warning('No backup snapshots found');
-    logger.dim(
-      'Snapshots are created automatically before apply, restore, sync, remove --delete, and clean.'
+    prompts.log.message(
+      c.dim(
+        'Snapshots are created automatically before apply, restore, sync, remove --delete, and clean.',
+      ),
     );
+    prompts.outro('No backup snapshots found');
     return;
   }
-
-  logger.heading('Backup Snapshots:');
-  logger.blank();
 
   for (const snapshot of snapshots) {
     const date = formatSnapshotDate(snapshot.id);
     const fileCount = snapshot.files.filter((f) => f.existed).length;
     const kindLabel = formatSnapshotKind(snapshot.kind);
 
-    console.log(`  ${c.cyan(snapshot.id)}  ${c.dim(`[${kindLabel}]`)}`);
-    console.log(c.dim(`    Date:    ${date}`));
-    console.log(c.dim(`    Reason:  ${snapshot.reason}`));
-    console.log(c.dim(`    Files:   ${fileCount} file(s) backed up`));
-    console.log(c.dim(`    Machine: ${snapshot.machine}`));
-    console.log();
+    const lines = [
+      `${c.cyan(snapshot.id)}  ${c.dim(`[${kindLabel}]`)}`,
+      c.dim(`  Date:    ${date}`),
+      c.dim(`  Reason:  ${snapshot.reason}`),
+      c.dim(`  Files:   ${formatCount(fileCount, 'file')} backed up`),
+      c.dim(`  Machine: ${snapshot.machine}`),
+    ];
+    prompts.log.message(lines.join('\n'));
   }
 
   const totalSize = await getSnapshotsSize();
-  logger.dim(`Total backup size: ${formatSnapshotSize(totalSize)}`);
-  logger.blank();
-  logger.info('To restore a snapshot: tuck undo <snapshot-id>');
-  logger.info('To restore the latest:  tuck undo --latest');
+  prompts.log.message(
+    c.dim(
+      [
+        `Total backup size: ${formatSnapshotSize(totalSize)}`,
+        '',
+        'Restore a snapshot:  tuck undo <snapshot-id>',
+        'Restore the latest:  tuck undo --latest',
+      ].join('\n'),
+    ),
+  );
+
+  prompts.outro(`${formatCount(snapshots.length, 'snapshot')} available`);
 };
 
 /**
- * Display details of a specific snapshot
+ * Format snapshot details as a single dim block. Caller assumes a frame is open.
  */
-const showSnapshotDetails = (snapshot: Snapshot): void => {
-  console.log();
-  console.log(c.bold('Snapshot Details:'));
-  console.log(c.dim(`  ID:      ${snapshot.id}`));
-  console.log(c.dim(`  Kind:    ${formatSnapshotKind(snapshot.kind)}`));
-  console.log(c.dim(`  Date:    ${formatSnapshotDate(snapshot.id)}`));
-  console.log(c.dim(`  Reason:  ${snapshot.reason}`));
-  console.log(c.dim(`  Machine: ${snapshot.machine}`));
-  console.log();
-  console.log(c.bold('Files in snapshot:'));
+const renderSnapshotDetails = (snapshot: Snapshot): string => {
+  const headerLines = [
+    c.bold('Snapshot Details:'),
+    c.dim(`  ID:      ${snapshot.id}`),
+    c.dim(`  Kind:    ${formatSnapshotKind(snapshot.kind)}`),
+    c.dim(`  Date:    ${formatSnapshotDate(snapshot.id)}`),
+    c.dim(`  Reason:  ${snapshot.reason}`),
+    c.dim(`  Machine: ${snapshot.machine}`),
+    '',
+    c.bold('Files in snapshot:'),
+  ];
 
-  for (const file of snapshot.files) {
-    if (file.existed) {
-      console.log(c.dim(`  ok ${collapsePath(file.originalPath)}`));
-    } else {
-      console.log(c.dim(`  - ${collapsePath(file.originalPath)} (did not exist)`));
-    }
-  }
-  console.log();
+  const fileLines = snapshot.files.map((file) =>
+    file.existed
+      ? c.dim(`  ok ${collapsePath(file.originalPath)}`)
+      : c.dim(`  - ${collapsePath(file.originalPath)} (did not exist)`),
+  );
+
+  return [...headerLines, ...fileLines].join('\n');
 };
 
 /**
- * Restore from a specific snapshot
+ * Restore from a specific snapshot inside a clack frame.
  */
 const restoreFromSnapshot = async (snapshotId: string, options: UndoOptions): Promise<void> => {
+  prompts.intro('tuck undo');
+
   const snapshot = await getSnapshot(snapshotId);
 
   if (!snapshot) {
-    logger.error(`Snapshot not found: ${snapshotId}`);
+    prompts.log.error(`Snapshot not found: ${snapshotId}`);
     const snapshots = await listSnapshots();
     if (snapshots.length > 0) {
-      logger.info('Available snapshots:');
+      const lines = ['Available snapshots:'];
       for (const s of snapshots.slice(0, 5)) {
-        logger.dim(`  ${s.id} - ${formatSnapshotDate(s.id)}`);
+        lines.push(`  ${s.id} - ${formatSnapshotDate(s.id)}`);
       }
       if (snapshots.length > 5) {
-        logger.dim(`  ... and ${snapshots.length - 5} more`);
+        lines.push(`  ... and ${snapshots.length - 5} more`);
       }
+      prompts.log.message(c.dim(lines.join('\n')));
     }
+    prompts.outro('Restore aborted');
     return;
   }
 
-  // Show snapshot details
-  showSnapshotDetails(snapshot);
+  prompts.log.message(renderSnapshotDetails(snapshot));
 
-  // Confirm unless --force or dry-run
   if (!options.force && !options.dryRun) {
     const backedUpCount = snapshot.files.filter((f) => f.existed).length;
     const confirmed = await prompts.confirm(
-      `Restore ${backedUpCount} file(s) from this snapshot?`,
-      true
+      `Restore ${formatCount(backedUpCount, 'file')} from this snapshot?`,
+      true,
     );
 
     if (!confirmed) {
-      logger.info('Restore cancelled');
+      prompts.outro('Restore cancelled');
       return;
     }
   }
 
-  // Dry run
   if (options.dryRun) {
-    logger.heading('Dry run - would restore:');
+    const lines = [c.bold('Dry run — would restore:')];
     for (const file of snapshot.files) {
       if (file.existed) {
-        logger.file('modify', collapsePath(file.originalPath));
+        lines.push(`  ${c.warning('~')} ${collapsePath(file.originalPath)}`);
       } else {
-        logger.file('delete', `${collapsePath(file.originalPath)} (would remove)`);
+        lines.push(`  ${c.error('-')} ${collapsePath(file.originalPath)} (would remove)`);
       }
     }
+    prompts.log.message(lines.join('\n'));
+    prompts.outro('Dry run — re-run without --dry-run to apply');
     return;
   }
 
-  // Restore
-  logger.info('Restoring files...');
+  const spinner = prompts.spinner();
+  spinner.start('Restoring files...');
   const restoredFiles = await restoreSnapshot(snapshotId);
+  spinner.stop(`Restored ${formatCount(restoredFiles.length, 'file')}`);
 
-  logger.blank();
-  logger.success(`Restored ${restoredFiles.length} file(s)`);
-
-  for (const file of restoredFiles) {
-    logger.dim(`  ok ${collapsePath(file)}`);
+  if (restoredFiles.length > 0) {
+    prompts.log.message(
+      c.dim(restoredFiles.map((file) => `  ok ${collapsePath(file)}`).join('\n')),
+    );
   }
+
+  prompts.outro(`Restored ${formatCount(restoredFiles.length, 'file')}`);
 };
 
 /**
- * Restore a single file from a snapshot
+ * Restore a single file from a snapshot inside a clack frame.
  */
 const restoreSingleFile = async (
   snapshotId: string,
   filePath: string,
-  options: UndoOptions
+  options: UndoOptions,
 ): Promise<void> => {
+  prompts.intro('tuck undo');
+
   const snapshot = await getSnapshot(snapshotId);
 
   if (!snapshot) {
-    logger.error(`Snapshot not found: ${snapshotId}`);
+    prompts.log.error(`Snapshot not found: ${snapshotId}`);
+    prompts.outro('Restore aborted');
     return;
   }
 
-  // Dry run
   if (options.dryRun) {
-    logger.info(`Would restore ${filePath} from snapshot ${snapshotId}`);
+    prompts.log.message(c.dim(`Would restore ${filePath} from snapshot ${snapshotId}`));
+    prompts.outro('Dry run — re-run without --dry-run to apply');
     return;
   }
 
-  // Restore the file
   await restoreFileFromSnapshot(snapshotId, filePath);
-  logger.success(`Restored ${filePath}`);
+  prompts.outro(`Restored ${filePath}`);
 };
 
 /**
- * Delete a snapshot
+ * Delete a snapshot inside a clack frame.
  */
 const removeSnapshot = async (snapshotId: string, options: UndoOptions): Promise<void> => {
+  prompts.intro('tuck undo --delete');
+
   const snapshot = await getSnapshot(snapshotId);
 
   if (!snapshot) {
-    logger.error(`Snapshot not found: ${snapshotId}`);
+    prompts.log.error(`Snapshot not found: ${snapshotId}`);
+    prompts.outro('Deletion aborted');
     return;
   }
 
-  // Confirm unless --force
   if (!options.force) {
-    showSnapshotDetails(snapshot);
+    prompts.log.message(renderSnapshotDetails(snapshot));
     const confirmed = await prompts.confirm('Delete this snapshot permanently?', false);
 
     if (!confirmed) {
-      logger.info('Deletion cancelled');
+      prompts.outro('Deletion cancelled');
       return;
     }
   }
 
   await deleteSnapshot(snapshotId);
-  logger.success(`Deleted snapshot: ${snapshotId}`);
+  prompts.outro(`Deleted snapshot ${snapshotId}`);
 };
 
 /**
- * Interactive undo selection
+ * Interactive snapshot picker.
  */
 const runInteractiveUndo = async (): Promise<void> => {
   prompts.intro('tuck undo');
@@ -209,15 +229,15 @@ const runInteractiveUndo = async (): Promise<void> => {
   const snapshots = await listSnapshots();
 
   if (snapshots.length === 0) {
-    prompts.log.warning('No backup snapshots available');
-    prompts.note(
-      'Snapshots are created before apply, restore, sync, remove --delete, and clean.',
-      'Info'
+    prompts.log.message(
+      c.dim(
+        'Snapshots are created before apply, restore, sync, remove --delete, and clean.',
+      ),
     );
+    prompts.outro('No backup snapshots available');
     return;
   }
 
-  // Let user select a snapshot
   const snapshotOptions = snapshots.map((s) => {
     const fileCount = s.files.filter((f) => f.existed).length;
     const date = formatSnapshotDate(s.id);
@@ -236,23 +256,21 @@ const runInteractiveUndo = async (): Promise<void> => {
   const snapshot = await getSnapshot(selectedId);
   if (!snapshot) {
     prompts.log.error('Snapshot not found');
+    prompts.outro('Restore aborted');
     return;
   }
 
-  // Show what will be restored
-  console.log();
-  prompts.log.info('Files in this snapshot:');
+  const previewLines: string[] = ['Files in this snapshot:'];
   for (const file of snapshot.files.slice(0, 10)) {
     if (file.existed) {
-      console.log(c.dim(`  ${collapsePath(file.originalPath)}`));
+      previewLines.push(`  ${collapsePath(file.originalPath)}`);
     }
   }
   if (snapshot.files.length > 10) {
-    console.log(c.dim(`  ... and ${snapshot.files.length - 10} more`));
+    previewLines.push(`  ... and ${snapshot.files.length - 10} more`);
   }
-  console.log();
+  prompts.log.message(c.dim(previewLines.join('\n')));
 
-  // Confirm
   const confirmed = await prompts.confirm('Restore these files?', true);
 
   if (!confirmed) {
@@ -260,47 +278,37 @@ const runInteractiveUndo = async (): Promise<void> => {
     return;
   }
 
-  // Restore
   const spinner = prompts.spinner();
   spinner.start('Restoring files...');
-
   const restoredFiles = await restoreSnapshot(selectedId);
+  spinner.stop(`Restored ${formatCount(restoredFiles.length, 'file')}`);
 
-  spinner.stop(`Restored ${restoredFiles.length} files`);
-
-  prompts.outro('Done!');
+  prompts.outro(`Restored ${formatCount(restoredFiles.length, 'file')}`);
 };
 
-/**
- * Main undo command handler
- */
 const runUndo = async (snapshotId: string | undefined, options: UndoOptions): Promise<void> => {
-  // Handle --list
   if (options.list) {
     await showSnapshotList();
     return;
   }
 
-  // Handle --delete
   if (options.delete) {
     await removeSnapshot(options.delete, options);
     return;
   }
 
-  // Handle --latest
   if (options.latest) {
     const latest = await getLatestSnapshot();
     if (!latest) {
-      logger.warning('No backup snapshots available');
+      prompts.intro('tuck undo --latest');
+      prompts.outro('No backup snapshots available');
       return;
     }
     await restoreFromSnapshot(latest.id, options);
     return;
   }
 
-  // Handle specific snapshot ID
   if (snapshotId) {
-    // Check if we're restoring a single file
     if (options.file) {
       await restoreSingleFile(snapshotId, options.file, options);
     } else {
@@ -309,7 +317,6 @@ const runUndo = async (snapshotId: string | undefined, options: UndoOptions): Pr
     return;
   }
 
-  // No arguments - run interactive mode
   await runInteractiveUndo();
 };
 

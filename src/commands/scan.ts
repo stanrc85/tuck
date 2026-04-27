@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { prompts, logger, banner, colors as c } from '../ui/index.js';
+import { prompts, colors as c, formatCount } from '../ui/index.js';
 import { getTuckDir, collapsePath, expandPath } from '../lib/paths.js';
 import { loadManifest, getTrackedFileBySource, assertMigrated } from '../lib/manifest.js';
 import { detectDotfiles, DETECTION_CATEGORIES, DetectedFile } from '../lib/detect.js';
@@ -21,29 +21,23 @@ interface SelectableFile extends DetectedFile {
   alreadyTracked: boolean;
 }
 
-/**
- * Group selectable files by category
- */
 const groupSelectableByCategory = (files: SelectableFile[]): Record<string, SelectableFile[]> => {
   const grouped: Record<string, SelectableFile[]> = {};
-
   for (const file of files) {
     if (!grouped[file.category]) {
       grouped[file.category] = [];
     }
     grouped[file.category].push(file);
   }
-
   return grouped;
 };
 
 /**
- * Display detected files grouped by category
+ * Display detected files grouped by category. Caller assumes a frame is open.
  */
 const displayGroupedFiles = (files: SelectableFile[], showAll: boolean): void => {
   const grouped = groupSelectableByCategory(files);
   const categories = Object.keys(grouped).sort((a, b) => {
-    // Sort by category order in DETECTION_CATEGORIES
     const order = Object.keys(DETECTION_CATEGORIES);
     return order.indexOf(a) - order.indexOf(b);
   });
@@ -54,30 +48,29 @@ const displayGroupedFiles = (files: SelectableFile[], showAll: boolean): void =>
     const newFiles = categoryFiles.filter((f) => !f.alreadyTracked);
     const trackedFiles = categoryFiles.filter((f) => f.alreadyTracked);
 
-    console.log();
-    console.log(
+    const lines: string[] = [
       c.bold(`${config.icon} ${config.name}`) +
-        c.dim(` (${newFiles.length} new, ${trackedFiles.length} tracked)`)
-    );
-    console.log(c.dim('─'.repeat(50)));
+        c.dim(` (${newFiles.length} new, ${trackedFiles.length} tracked)`),
+    ];
 
     for (const file of categoryFiles) {
       if (!showAll && file.alreadyTracked) continue;
 
       const status = file.selected ? c.green('[x]') : c.dim('[ ]');
-      const name = file.path;
       const tracked = file.alreadyTracked ? c.dim(' (tracked)') : '';
       const sensitive = file.sensitive ? c.yellow(' [!]') : '';
       const dir = file.isDirectory ? c.cyan(' [dir]') : '';
 
-      console.log(`  ${status} ${name}${dir}${sensitive}${tracked}`);
-      console.log(c.dim(`      ${file.description}`));
+      lines.push(`  ${status} ${file.path}${dir}${sensitive}${tracked}`);
+      lines.push(c.dim(`      ${file.description}`));
     }
+
+    prompts.log.message(lines.join('\n'));
   }
 };
 
 /**
- * Interactive file selection
+ * Interactive file selection. Caller assumes a frame is open.
  */
 const runInteractiveSelection = async (files: SelectableFile[]): Promise<SelectableFile[]> => {
   const newFiles = files.filter((f) => !f.alreadyTracked);
@@ -87,28 +80,20 @@ const runInteractiveSelection = async (files: SelectableFile[]): Promise<Selecta
     return [];
   }
 
-  // Group files for selection
   const grouped = groupSelectableByCategory(newFiles);
   const selectedFiles: SelectableFile[] = [];
 
-  // Ask for each category
   for (const [category, categoryFiles] of Object.entries(grouped)) {
     const config = DETECTION_CATEGORIES[category] || { icon: '-', name: category };
 
-    console.log();
-    console.log(c.bold(`${config.icon} ${config.name}`));
-    console.log(c.dim(config.description || ''));
-    console.log();
+    prompts.log.message(
+      [c.bold(`${config.icon} ${config.name}`), c.dim(config.description || '')].join('\n'),
+    );
 
-    // Create options for multiselect
     const options = categoryFiles.map((file: SelectableFile) => {
       let label = file.path;
-      if (file.sensitive) {
-        label += c.yellow(' [!]');
-      }
-      if (file.isDirectory) {
-        label += c.cyan(' [dir]');
-      }
+      if (file.sensitive) label += c.yellow(' [!]');
+      if (file.isDirectory) label += c.cyan(' [dir]');
 
       return {
         value: file.path,
@@ -117,17 +102,15 @@ const runInteractiveSelection = async (files: SelectableFile[]): Promise<Selecta
       };
     });
 
-    // Pre-select all non-sensitive files by default
     const nonSensitiveFiles = categoryFiles.filter((f) => !f.sensitive);
     const initialValues = nonSensitiveFiles.map((f) => f.path);
 
     const selected = await prompts.multiselect(
       `Select files to track from ${config.name}:`,
       options,
-      { initialValues }
+      { initialValues },
     );
 
-    // Mark selected files
     for (const file of categoryFiles) {
       if (selected.includes(file.path)) {
         file.selected = true;
@@ -140,75 +123,68 @@ const runInteractiveSelection = async (files: SelectableFile[]): Promise<Selecta
 };
 
 /**
- * Quick display mode - just show what's detected
+ * Quick display mode — show what was detected, no tracking. Self-frames.
  */
 const runQuickScan = async (files: SelectableFile[]): Promise<void> => {
   const newFiles = files.filter((f) => !f.alreadyTracked);
   const trackedFiles = files.filter((f) => f.alreadyTracked);
 
-  console.log();
-  console.log(
-    c.bold.cyan('Detected Dotfiles: ') +
-      c.white(`${newFiles.length} new, ${trackedFiles.length} already tracked`)
+  prompts.intro('tuck scan');
+
+  prompts.log.message(
+    `${c.brandBold('Detected dotfiles:')} ${formatCount(newFiles.length, 'new file')}, ${trackedFiles.length} already tracked`,
   );
 
   displayGroupedFiles(files, false);
 
-  console.log();
-  console.log(c.dim('─'.repeat(60)));
-  console.log();
-
   if (newFiles.length > 0) {
-    logger.info(`Found ${newFiles.length} new dotfiles to track`);
-    logger.dim('Run `tuck scan` (without --quick) to interactively select files');
-    logger.dim('Or run `tuck add <path>` to add specific files');
+    prompts.log.message(
+      c.dim(
+        [
+          'Run `tuck scan` (without --quick) to interactively select files',
+          'Or run `tuck add <path>` to add specific files',
+        ].join('\n'),
+      ),
+    );
+    prompts.outro(`${formatCount(newFiles.length, 'new dotfile')} found`);
   } else {
-    logger.success('All detected dotfiles are already being tracked!');
+    prompts.outro('All detected dotfiles are already being tracked');
   }
 };
 
 /**
- * Summary display after selection
+ * Summary display after selection. Caller assumes a frame is open.
  */
 const showSummary = (selected: SelectableFile[]): void => {
   if (selected.length === 0) {
-    logger.info('No files selected');
+    prompts.log.info('No files selected');
     return;
   }
 
-  console.log();
-  console.log(c.bold.cyan(`Selected ${selected.length} files to track:`));
-  console.log(c.dim('─'.repeat(50)));
-  console.log();
-
   const grouped = groupSelectableByCategory(selected);
+
+  prompts.log.info(`Selected ${formatCount(selected.length, 'file')} to track:`);
 
   for (const [category, files] of Object.entries(grouped)) {
     const config = DETECTION_CATEGORIES[category] || { icon: '-', name: category };
-    console.log(c.bold(`${config.icon} ${config.name}`));
-
+    const lines: string[] = [c.bold(`${config.icon} ${config.name}`)];
     for (const file of files) {
       const sensitive = file.sensitive ? c.yellow(' ⚠') : '';
-      console.log(c.dim(`  • ${collapsePath(file.path)}${sensitive}`));
+      lines.push(c.dim(`  • ${collapsePath(file.path)}${sensitive}`));
     }
-    console.log();
+    prompts.log.message(lines.join('\n'));
   }
 
-  // Show warnings for sensitive files
   const sensitiveFiles = selected.filter((f) => f.sensitive);
   if (sensitiveFiles.length > 0) {
-    console.log(c.yellow('⚠ Warning: Some files may contain sensitive data'));
-    console.log(c.dim('  Make sure your repository is private!'));
-    console.log();
+    prompts.log.warning('Some files may contain sensitive data');
+    prompts.log.message(c.dim('  Make sure your repository is private!'));
   }
 };
 
-/**
- * Add selected files with beautiful progress display
- */
 const addFilesWithProgress = async (
   selected: SelectableFile[],
-  tuckDir: string
+  tuckDir: string,
 ): Promise<number> => {
   const prepared = await preparePathsForTracking(
     selected.map((file) => ({
@@ -218,7 +194,7 @@ const addFilesWithProgress = async (
     tuckDir,
     {
       secretHandling: 'interactive',
-    }
+    },
   );
 
   if (prepared.length === 0) {
@@ -230,7 +206,6 @@ const addFilesWithProgress = async (
     category: file.category,
   }));
 
-  // Use the shared tracking utility
   const result = await trackFilesWithProgress(filesToTrack, tuckDir, {
     showCategory: true,
     actionVerb: 'Tracking',
@@ -239,13 +214,9 @@ const addFilesWithProgress = async (
   return result.succeeded;
 };
 
-/**
- * Main scan function
- */
 export const runScan = async (options: ScanOptions): Promise<void> => {
   const tuckDir = getTuckDir();
 
-  // Check if tuck is initialized
   let manifest;
   try {
     manifest = await loadManifest(tuckDir);
@@ -254,7 +225,6 @@ export const runScan = async (options: ScanOptions): Promise<void> => {
   }
   assertMigrated(manifest);
 
-  // Detect dotfiles
   const spinner = prompts.spinner();
   spinner.start('Scanning for dotfiles...');
 
@@ -263,77 +233,63 @@ export const runScan = async (options: ScanOptions): Promise<void> => {
   spinner.stop(`Found ${detected.length} dotfiles on this system`);
 
   if (detected.length === 0) {
-    logger.warning('No common dotfiles detected on this system');
+    prompts.intro('tuck scan');
+    prompts.outro('No common dotfiles detected on this system');
     return;
   }
 
-  // Check which files are already tracked
   const selectableFiles: SelectableFile[] = [];
 
   for (const file of detected) {
     const tracked = await getTrackedFileBySource(tuckDir, file.path);
-
-    // Skip if in .tuckignore
-    if (await isIgnored(tuckDir, file.path)) {
-      continue;
-    }
-
-    // Skip if binary executable in bin directory
-    if (await shouldExcludeFromBin(expandPath(file.path))) {
-      continue;
-    }
+    if (await isIgnored(tuckDir, file.path)) continue;
+    if (await shouldExcludeFromBin(expandPath(file.path))) continue;
 
     selectableFiles.push({
       ...file,
-      selected: true, // All selected by default
+      selected: true,
       alreadyTracked: tracked !== null,
     });
   }
 
-  // Filter by category if specified
   let filesToShow = selectableFiles;
   if (options.category) {
     filesToShow = selectableFiles.filter((f) => f.category === options.category);
     if (filesToShow.length === 0) {
-      logger.warning(`No dotfiles found in category: ${options.category}`);
-      logger.info('Available categories:');
-      for (const [key, config] of Object.entries(DETECTION_CATEGORIES)) {
-        console.log(c.dim(`  ${config.icon} ${key} - ${config.name}`));
-      }
+      prompts.intro('tuck scan');
+      const availableLines = Object.entries(DETECTION_CATEGORIES).map(
+        ([key, config]) => `  ${config.icon} ${key} - ${config.name}`,
+      );
+      prompts.log.message(c.dim(['Available categories:', ...availableLines].join('\n')));
+      prompts.outro(`No dotfiles found in category '${options.category}'`);
       return;
     }
   }
 
-  // JSON output
   if (options.json) {
     console.log(JSON.stringify(filesToShow, null, 2));
     return;
   }
 
-  // Quick mode - just display
   if (options.quick) {
     await runQuickScan(filesToShow);
     return;
   }
 
-  // Interactive mode
-  banner();
   prompts.intro('tuck scan');
 
   const newFiles = filesToShow.filter((f) => !f.alreadyTracked);
   const trackedCount = filesToShow.filter((f) => f.alreadyTracked).length;
 
   prompts.log.info(
-    `Found ${filesToShow.length} dotfiles (${newFiles.length} new, ${trackedCount} tracked)`
+    `Found ${filesToShow.length} dotfiles (${newFiles.length} new, ${trackedCount} tracked)`,
   );
 
   if (newFiles.length === 0) {
-    prompts.log.success('All detected dotfiles are already being tracked!');
-    prompts.outro('Nothing to do');
+    prompts.outro('All detected dotfiles are already being tracked');
     return;
   }
 
-  // Ask how to proceed
   const action = await prompts.select('How would you like to proceed?', [
     {
       value: 'all',
@@ -371,7 +327,6 @@ export const runScan = async (options: ScanOptions): Promise<void> => {
     return;
   }
 
-  // Show summary of what will be tracked
   showSummary(selected);
 
   const confirmed = await prompts.confirm(`Track these ${selected.length} files?`, true);
@@ -381,20 +336,18 @@ export const runScan = async (options: ScanOptions): Promise<void> => {
     return;
   }
 
-  // Add the files with beautiful progress display
   const addedCount = await addFilesWithProgress(selected, tuckDir);
 
   if (addedCount > 0) {
-    // Ask if user wants to sync now
-    console.log();
     const shouldSync = await prompts.confirm('Would you like to sync these changes now?', true);
 
     if (shouldSync) {
-      console.log();
+      prompts.outro(`Tracked ${formatCount(addedCount, 'file')} — syncing now`);
       const { runSync } = await import('./sync.js');
       await runSync({});
     } else {
-      prompts.outro("Run 'tuck sync' when you're ready to commit changes");
+      prompts.log.message(c.dim("Run `tuck sync` when you're ready to commit changes"));
+      prompts.outro(`Tracked ${formatCount(addedCount, 'file')}`);
     }
   } else {
     prompts.outro('No files were added');
