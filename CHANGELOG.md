@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.26.4](https://github.com/stanrc85/tuck/compare/v2.26.3...v2.26.4) (2026-04-27)
 
 
 ### Bug Fixes
 
 * **hooks:** route hook output through prompts.log for clack-tree continuity ([5581c2b](https://github.com/stanrc85/tuck/commit/5581c2b85dd37c3fe2d9bd906bcfffdc9c75fdcc))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.3](https://github.com/stanrc85/tuck/compare/v2.26.2...v2.26.3) (2026-04-27)
 
