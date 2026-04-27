@@ -11,8 +11,6 @@ const getStatusMock = vi.fn();
 const getCurrentBranchMock = vi.fn();
 const getAheadBehindMock = vi.fn();
 const resetHardMock = vi.fn();
-const loggerSuccessMock = vi.fn();
-const loggerInfoMock = vi.fn();
 const promptsIntroMock = vi.fn();
 const promptsOutroMock = vi.fn();
 
@@ -27,17 +25,16 @@ vi.mock('../../src/ui/index.js', () => ({
       error: vi.fn(),
       success: vi.fn(),
       warning: vi.fn(),
+      message: vi.fn(),
     },
-  },
-  logger: {
-    success: loggerSuccessMock,
-    info: loggerInfoMock,
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   colors: {
     dim: (x: string) => x,
     yellow: (x: string) => x,
   },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({
@@ -98,13 +95,14 @@ describe('pull command', () => {
   });
 
   it('pulls with rebase in non-interactive mode', async () => {
+    getAheadBehindMock.mockResolvedValueOnce({ ahead: 0, behind: 2 });
     const { pullCommand } = await import('../../src/commands/pull.js');
 
     await pullCommand.parseAsync(['node', 'pull', '--rebase'], { from: 'user' });
 
     expect(fetchMock).toHaveBeenCalledWith('/test-home/.tuck');
     expect(pullMock).toHaveBeenCalledWith('/test-home/.tuck', { rebase: true });
-    expect(loggerSuccessMock).toHaveBeenCalledWith('Pulled successfully!');
+    expect(promptsOutroMock).toHaveBeenCalledWith('Pulled 2 commits');
   });
 
   it('runs interactive flow when no flags are provided', async () => {
