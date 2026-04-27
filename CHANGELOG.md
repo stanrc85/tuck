@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.26.1](https://github.com/stanrc85/tuck/compare/v2.26.0...v2.26.1) (2026-04-27)
 
 
 ### Bug Fixes
 
 * **cheatsheet:** route output through prompts.log for clack-tree continuity ([864c3fc](https://github.com/stanrc85/tuck/commit/864c3fcf33e3c0d49a94dc1030487bd5eba41576))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [2.26.0](https://github.com/stanrc85/tuck/compare/v2.25.0...v2.26.0) (2026-04-26)
 
