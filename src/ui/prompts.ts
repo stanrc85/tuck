@@ -16,6 +16,27 @@ export interface SelectOption<T> {
   hint?: string;
 }
 
+// Outro is callable (success-green default) plus .warning/.error variants
+// for failure paths so the closing line color matches the outcome.
+type OutroFn = ((message: string) => void) & {
+  warning: (message: string) => void;
+  error: (message: string) => void;
+};
+
+const outro: OutroFn = Object.assign(
+  (message: string): void => {
+    p.outro(c.success(message));
+  },
+  {
+    warning: (message: string): void => {
+      p.outro(c.warning(message));
+    },
+    error: (message: string): void => {
+      p.outro(c.error(message));
+    },
+  }
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Prompts Object
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,11 +50,10 @@ export const prompts = {
   },
 
   /**
-   * Display command outro/success message
+   * Display command outro. Default is success-green; use `.warning` or
+   * `.error` for non-success closures so the close line matches the outcome.
    */
-  outro: (message: string): void => {
-    p.outro(c.success(message));
-  },
+  outro,
 
   /**
    * Confirm dialog (yes/no)

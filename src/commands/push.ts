@@ -115,7 +115,7 @@ const runInteractivePush = async (tuckDir: string): Promise<void> => {
     } else {
       prompts.log.error(`Push failed: ${errorMsg}`);
     }
-    prompts.outro('Push failed');
+    prompts.outro.error('Push failed');
     return;
   }
 

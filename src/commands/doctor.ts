@@ -62,7 +62,14 @@ const printHumanReport = (report: DoctorReport, exitCode: number): void => {
     }
   }
 
-  prompts.outro(formatSummary(report.summary, exitCode));
+  const summary = formatSummary(report.summary, exitCode);
+  if (exitCode === 0) {
+    prompts.outro(summary);
+  } else if (exitCode === 2) {
+    prompts.outro.warning(summary);
+  } else {
+    prompts.outro.error(summary);
+  }
 };
 
 export const runDoctor = async (options: DoctorOptions = {}): Promise<DoctorReport> => {

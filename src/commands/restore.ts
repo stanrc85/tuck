@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { join } from 'path';
 import { colors as c } from '../ui/theme.js';
 import { chmod, stat } from 'fs/promises';
-import { prompts, logger, withSpinner, isInteractive, formatCount } from '../ui/index.js';
+import { prompts, withSpinner, isInteractive, formatCount } from '../ui/index.js';
 import {
   getTuckDir,
   expandPath,
@@ -396,19 +396,23 @@ const maybePromptForGroupAssignment = async (
   if (allGroups.length <= 1) return;
 
   if (!isInteractive()) {
-    logger.blank();
-    logger.warning('Host has no default group assigned on a multi-group repo.');
-    logger.info(`Available groups: ${allGroups.join(', ')}`);
-    logger.info('Sync/push will refuse until this is set. Run `tuck restore --all` interactively, or:');
-    logger.info(`  tuck config set defaultGroups ${allGroups[0]}`);
+    prompts.log.warning('Host has no default group assigned on a multi-group repo.');
+    prompts.log.message(
+      c.dim(
+        [
+          `Available groups: ${allGroups.join(', ')}`,
+          'Sync/push will refuse until this is set. Run `tuck restore --all` interactively, or:',
+          `  tuck config set defaultGroups ${allGroups[0]}`,
+        ].join('\n')
+      )
+    );
     return;
   }
 
-  logger.blank();
   prompts.log.info(
-    `This host has no default group assigned, but the repo has ${allGroups.length} groups.`
+    `This host has no default group assigned, but the repo has ${formatCount(allGroups.length, 'group')}.`
   );
-  logger.dim('(Space to toggle selection, Enter to confirm)');
+  prompts.log.message(c.dim('(Space to toggle selection, Enter to confirm)'));
 
   const preselected = (options.group ?? []).filter((g) => allGroups.includes(g));
   const selected = await prompts.multiselect<string>(
@@ -421,29 +425,28 @@ const maybePromptForGroupAssignment = async (
   );
 
   if (!selected || selected.length === 0) {
-    logger.info(`Skipped — set later with \`tuck config set defaultGroups ${allGroups[0]}\``);
+    prompts.log.message(
+      c.dim(`Skipped — set later with \`tuck config set defaultGroups ${allGroups[0]}\``)
+    );
     return;
   }
 
   await saveLocalConfig({ defaultGroups: selected });
-  logger.success(
-    `Host assigned to group${selected.length > 1 ? 's' : ''}: ${selected.join(', ')}`
+  prompts.log.success(
+    `Host assigned to ${selected.length > 1 ? 'groups' : 'group'}: ${c.brand(selected.join(', '))}`
   );
 };
 
 const logMissingDepsList = (missing: readonly MissingDep[]): void => {
-  logger.blank();
-  logger.warning(
-    `Detected ${missing.length} missing tool dependenc${missing.length === 1 ? 'y' : 'ies'} based on restored dotfiles:`
+  prompts.log.warning(
+    `Detected ${formatCount(missing.length, 'missing tool dependency', 'missing tool dependencies')} based on restored dotfiles:`
   );
-  for (const dep of missing) {
-    console.log(c.dim(`  • ${dep.id}`));
-  }
+  prompts.log.message(c.dim(missing.map((dep) => `  • ${dep.id}`).join('\n')));
 };
 
 const skippedAdvisory = (missing: readonly MissingDep[]): void => {
   const ids = missing.map((d) => d.id).join(',');
-  logger.info(`Skipped — run \`tuck bootstrap --tools ${ids}\` to install.`);
+  prompts.log.info(`Skipped — run \`tuck bootstrap --tools ${ids}\` to install.`);
 };
 
 /**

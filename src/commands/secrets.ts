@@ -712,7 +712,7 @@ const runTest = async (options: TestOptions): Promise<void> => {
     spinner.stop('Backend not available');
     prompts.log.error(`${backend.displayName} CLI is not installed`);
     prompts.log.message(c.dim(backend.getSetupInstructions()));
-    prompts.outro('Test failed');
+    prompts.outro.error('Test failed');
     return;
   }
 
@@ -723,7 +723,7 @@ const runTest = async (options: TestOptions): Promise<void> => {
     spinner.stop('Not authenticated');
     prompts.log.warning(`Not authenticated with ${backend.displayName}`);
     prompts.log.message(c.dim(backend.getSetupInstructions()));
-    prompts.outro('Test failed');
+    prompts.outro.error('Test failed');
     return;
   }
 

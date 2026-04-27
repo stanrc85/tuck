@@ -5,6 +5,8 @@ const getDoctorExitCodeMock = vi.fn();
 
 const promptsIntroMock = vi.fn();
 const promptsOutroMock = vi.fn();
+const promptsOutroWarningMock = vi.fn();
+const promptsOutroErrorMock = vi.fn();
 const promptsLogSuccessMock = vi.fn();
 const promptsLogWarningMock = vi.fn();
 const promptsLogErrorMock = vi.fn();
@@ -19,7 +21,10 @@ vi.mock('../../src/lib/doctor.js', () => ({
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: promptsIntroMock,
-    outro: promptsOutroMock,
+    outro: Object.assign(promptsOutroMock, {
+      warning: promptsOutroWarningMock,
+      error: promptsOutroErrorMock,
+    }),
     log: {
       success: promptsLogSuccessMock,
       warning: promptsLogWarningMock,
@@ -67,7 +72,8 @@ describe('doctor command', () => {
     expect(promptsIntroMock).toHaveBeenCalledWith('tuck doctor');
     expect(promptsLogErrorMock).toHaveBeenCalledTimes(1);
     expect(promptsLogMessageMock).toHaveBeenCalledWith('Fix: Run tuck init');
-    expect(promptsOutroMock).toHaveBeenCalledWith('1 passed, 0 warnings, 1 failed');
+    expect(promptsOutroErrorMock).toHaveBeenCalledWith('1 passed, 0 warnings, 1 failed');
+    expect(promptsOutroMock).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
 
@@ -138,7 +144,8 @@ describe('doctor command', () => {
 
     await runDoctor({ strict: true });
 
-    expect(promptsOutroMock).toHaveBeenCalledWith('2 passed, 1 warning (strict)');
+    expect(promptsOutroWarningMock).toHaveBeenCalledWith('2 passed, 1 warning (strict)');
+    expect(promptsOutroMock).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(2);
   });
 

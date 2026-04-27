@@ -5,9 +5,10 @@ import { NotInitializedError, NonInteractivePromptError } from '../../src/errors
 const isInteractiveMock = vi.fn(() => true);
 const multiselectMock = vi.fn();
 const confirmMock = vi.fn();
-const loggerWarningMock = vi.fn();
-const loggerInfoMock = vi.fn();
-const loggerSuccessMock = vi.fn();
+const promptsLogWarningMock = vi.fn();
+const promptsLogInfoMock = vi.fn();
+const promptsLogSuccessMock = vi.fn();
+const promptsLogMessageMock = vi.fn();
 const findMissingDepsMock = vi.fn();
 const runBootstrapMock = vi.fn();
 const loadBootstrapConfigMock = vi.fn();
@@ -40,16 +41,17 @@ vi.mock('../../src/ui/index.js', () => ({
     note: vi.fn(),
     spinner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn(), message: '' })),
     log: {
-      info: vi.fn(),
-      success: vi.fn(),
-      warning: vi.fn(),
+      info: promptsLogInfoMock,
+      success: promptsLogSuccessMock,
+      warning: promptsLogWarningMock,
       error: vi.fn(),
+      message: promptsLogMessageMock,
     },
   },
   logger: {
-    warning: loggerWarningMock,
-    info: loggerInfoMock,
-    success: loggerSuccessMock,
+    warning: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
     heading: vi.fn(),
     blank: vi.fn(),
     file: vi.fn(),
@@ -59,6 +61,15 @@ vi.mock('../../src/ui/index.js', () => ({
   isInteractive: isInteractiveMock,
   formatCount: (n: number, singular: string, plural?: string) =>
     `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  colors: {
+    brand: (x: string) => x,
+    dim: (x: string) => x,
+    bold: (x: string) => x,
+    warning: (x: string) => x,
+    error: (x: string) => x,
+    success: (x: string) => x,
+    muted: (x: string) => x,
+  },
 }));
 
 vi.mock('../../src/lib/bootstrap/missingDeps.js', () => ({
@@ -77,6 +88,12 @@ vi.mock('../../src/ui/theme.js', () => ({
   colors: {
     yellow: (x: string) => x,
     dim: (x: string) => x,
+    brand: (x: string) => x,
+    bold: (x: string) => x,
+    warning: (x: string) => x,
+    error: (x: string) => x,
+    success: (x: string) => x,
+    muted: (x: string) => x,
   },
 }));
 
@@ -430,7 +447,7 @@ describe('restore command behavior', () => {
 
       expect(multiselectMock).not.toHaveBeenCalled();
       expect(saveLocalConfigMock).not.toHaveBeenCalled();
-      expect(loggerWarningMock).toHaveBeenCalledWith(
+      expect(promptsLogWarningMock).toHaveBeenCalledWith(
         expect.stringContaining('no default group assigned')
       );
     });
@@ -526,7 +543,7 @@ describe('restore command behavior', () => {
 
       expect(confirmMock).not.toHaveBeenCalled();
       expect(runBootstrapMock).not.toHaveBeenCalled();
-      expect(loggerInfoMock).toHaveBeenCalledWith(
+      expect(promptsLogInfoMock).toHaveBeenCalledWith(
         expect.stringContaining('tuck bootstrap --tools neovim')
       );
     });
@@ -553,7 +570,7 @@ describe('restore command behavior', () => {
 
       expect(confirmMock).toHaveBeenCalledTimes(1);
       expect(runBootstrapMock).not.toHaveBeenCalled();
-      expect(loggerInfoMock).toHaveBeenCalledWith(
+      expect(promptsLogInfoMock).toHaveBeenCalledWith(
         expect.stringContaining('tuck bootstrap --tools neovim')
       );
     });
@@ -568,7 +585,7 @@ describe('restore command behavior', () => {
 
       expect(confirmMock).not.toHaveBeenCalled();
       expect(runBootstrapMock).not.toHaveBeenCalled();
-      expect(loggerInfoMock).toHaveBeenCalledWith(
+      expect(promptsLogInfoMock).toHaveBeenCalledWith(
         expect.stringContaining('tuck bootstrap --tools neovim')
       );
     });
