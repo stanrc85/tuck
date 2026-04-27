@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { prompts, logger } from '../ui/index.js';
+import { prompts, colors as c, formatCount } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
 import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { assertHostNotReadOnly } from '../lib/groupFilter.js';
@@ -86,7 +86,7 @@ const runInteractiveAdd = async (tuckDir: string, options: AddOptions): Promise<
   }
 
   if (filesToAdd.length === 0) {
-    logger.info('No files to add');
+    prompts.outro('No files to add');
     return;
   }
 
@@ -121,8 +121,8 @@ const runInteractiveAdd = async (tuckDir: string, options: AddOptions): Promise<
 
   await addFiles(filesToAdd, tuckDir, {});
 
-  prompts.outro(`Added ${filesToAdd.length} ${filesToAdd.length === 1 ? 'file' : 'files'}`);
-  logger.info("Run 'tuck sync' to commit changes");
+  prompts.log.message(c.dim("Run `tuck sync` to commit changes"));
+  prompts.outro(`Added ${formatCount(filesToAdd.length, 'file')}`);
 };
 
 /**
@@ -182,6 +182,8 @@ const runAdd = async (paths: string[], options: AddOptions): Promise<void> => {
     return;
   }
 
+  prompts.intro('tuck add');
+
   const candidates: TrackPathCandidate[] = paths.map((path) => ({
     path,
     category: options.category,
@@ -189,32 +191,40 @@ const runAdd = async (paths: string[], options: AddOptions): Promise<void> => {
     groups: options.group,
   }));
 
-  const filesToAdd = await preparePathsForTracking(candidates, tuckDir, {
-    category: options.category,
-    name: options.name,
-    force: options.force,
-    secretHandling: 'interactive',
-    forceBypassCommand: 'tuck add --force',
-    groups: options.group,
-  });
+  let filesToAdd: FileToAdd[];
+  try {
+    filesToAdd = await preparePathsForTracking(candidates, tuckDir, {
+      category: options.category,
+      name: options.name,
+      force: options.force,
+      secretHandling: 'interactive',
+      forceBypassCommand: 'tuck add --force',
+      groups: options.group,
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      prompts.log.error(error.message);
+    }
+    prompts.cancel();
+    return;
+  }
 
   if (filesToAdd.length === 0) {
-    logger.info('No files to add');
+    prompts.outro('No files to add');
     return;
   }
 
   await addFiles(filesToAdd, tuckDir, options);
 
-  console.log();
   const shouldSync = await prompts.confirm('Would you like to sync these changes now?', true);
 
   if (shouldSync) {
-    console.log();
+    prompts.outro(`Added ${formatCount(filesToAdd.length, 'file')}`);
     const { runSync } = await import('./sync.js');
     await runSync({});
   } else {
-    console.log();
-    logger.info("Run 'tuck sync' when you're ready to commit changes");
+    prompts.log.message(c.dim("Run `tuck sync` when you're ready to commit changes"));
+    prompts.outro(`Added ${formatCount(filesToAdd.length, 'file')}`);
   }
 };
 

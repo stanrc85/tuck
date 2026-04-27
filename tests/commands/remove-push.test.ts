@@ -10,10 +10,6 @@ const stageAllMock = vi.fn();
 const commitMock = vi.fn();
 const pushMock = vi.fn();
 const hasRemoteMock = vi.fn();
-const loggerSuccessMock = vi.fn();
-const loggerErrorMock = vi.fn();
-const loggerWarningMock = vi.fn();
-const loggerInfoMock = vi.fn();
 const promptConfirmMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', () => ({
@@ -34,17 +30,17 @@ vi.mock('../../src/ui/index.js', () => ({
       message: vi.fn(),
     },
   },
-  logger: {
-    info: loggerInfoMock,
-    warning: loggerWarningMock,
-    warn: loggerWarningMock,
-    success: loggerSuccessMock,
-    error: loggerErrorMock,
-    blank: vi.fn(),
-    dim: vi.fn(),
-    file: vi.fn(),
-    heading: vi.fn(),
+  colors: {
+    dim: (s: string) => s,
+    bold: (s: string) => s,
+    brand: (s: string) => s,
+    muted: (s: string) => s,
+    success: (s: string) => s,
+    warning: (s: string) => s,
+    error: (s: string) => s,
   },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
 }));
 

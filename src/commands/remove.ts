@@ -1,6 +1,6 @@
 import { basename } from 'path';
 import { Command } from 'commander';
-import { prompts, logger, withSpinner } from '../ui/index.js';
+import { prompts, colors as c, formatCount, withSpinner } from '../ui/index.js';
 import {
   getTuckDir,
   expandPath,
@@ -111,9 +111,9 @@ const removeFiles = async (
       }
     }
 
-    logger.success(`Removed ${file.source} from tracking`);
+    prompts.log.success(`Removed ${file.source} from tracking`);
     if (shouldDelete) {
-      logger.dim('  Also deleted from repository');
+      prompts.log.message(c.dim('  Also deleted from repository'));
     }
   }
 };
@@ -145,7 +145,7 @@ const commitAndPushRemoval = async (
   await withSpinner('Committing removal...', async () => {
     await commit(tuckDir, message);
   });
-  logger.success(`Committed: ${message}`);
+  prompts.log.success(`Committed: ${message}`);
 
   let attempts = 0;
   while (attempts < MAX_PUSH_RETRIES) {
@@ -157,19 +157,19 @@ const commitAndPushRemoval = async (
           await push(tuckDir);
         }
       );
-      logger.success('Pushed to remote');
+      prompts.log.success('Pushed to remote');
       return;
     } catch (error) {
-      logger.error(`Push failed: ${error instanceof Error ? error.message : String(error)}`);
+      prompts.log.error(`Push failed: ${error instanceof Error ? error.message : String(error)}`);
       if (attempts >= MAX_PUSH_RETRIES) {
-        logger.warning(
+        prompts.log.warning(
           `Giving up after ${MAX_PUSH_RETRIES} attempts. The commit is preserved locally — run 'tuck push' to retry.`
         );
         return;
       }
       const retry = await prompts.confirm('Retry push?', true);
       if (!retry) {
-        logger.info("Commit preserved locally. Run 'tuck push' to retry when ready.");
+        prompts.log.message(c.dim("Commit preserved locally. Run `tuck push` to retry when ready."));
         return;
       }
     }
@@ -184,8 +184,7 @@ const runInteractiveRemove = async (tuckDir: string): Promise<void> => {
   const fileEntries = Object.entries(trackedFiles);
 
   if (fileEntries.length === 0) {
-    prompts.log.warning('No files are currently tracked');
-    prompts.outro('');
+    prompts.outro('No files are currently tracked');
     return;
   }
 
@@ -244,14 +243,12 @@ const runInteractiveRemove = async (tuckDir: string): Promise<void> => {
 
   if (shouldPush) {
     await commitAndPushRemoval(tuckDir, filesToRemove, { push: true });
-    prompts.outro(
-      `Removed ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'} and pushed`
-    );
+    prompts.outro(`Removed ${formatCount(selectedFiles.length, 'file')} and pushed`);
     return;
   }
 
-  prompts.outro(`Removed ${selectedFiles.length} ${selectedFiles.length === 1 ? 'file' : 'files'}`);
-  logger.info("Run 'tuck sync' to commit changes");
+  prompts.log.message(c.dim("Run `tuck sync` to commit changes"));
+  prompts.outro(`Removed ${formatCount(selectedFiles.length, 'file')}`);
 };
 
 export const runRemove = async (paths: string[], options: RemoveOptions): Promise<void> => {
@@ -277,23 +274,21 @@ export const runRemove = async (paths: string[], options: RemoveOptions): Promis
     ? { ...options, delete: true }
     : options;
 
-  // Validate and prepare files
+  // Validate before opening the frame so errors propagate cleanly.
   const filesToRemove = await validateAndPrepareFiles(paths, tuckDir);
 
-  // Remove files
-  await removeFiles(filesToRemove, tuckDir, effectiveOptions);
+  prompts.intro('tuck remove');
 
-  logger.blank();
-  logger.success(
-    `Removed ${filesToRemove.length} ${filesToRemove.length === 1 ? 'item' : 'items'} from tracking`
-  );
+  await removeFiles(filesToRemove, tuckDir, effectiveOptions);
 
   if (effectiveOptions.push) {
     await commitAndPushRemoval(tuckDir, filesToRemove, effectiveOptions);
+    prompts.outro(`Removed ${formatCount(filesToRemove.length, 'file')} and pushed`);
     return;
   }
 
-  logger.info("Run 'tuck sync' to commit changes");
+  prompts.log.message(c.dim("Run `tuck sync` to commit changes"));
+  prompts.outro(`Removed ${formatCount(filesToRemove.length, 'file')}`);
 };
 
 export const removeCommand = new Command('remove')
