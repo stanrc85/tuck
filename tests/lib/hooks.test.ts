@@ -15,17 +15,18 @@ vi.mock('../../src/lib/config.js', () => ({
 }));
 
 // Mock the UI modules
-vi.mock('../../src/ui/logger.js', () => ({
-  logger: {
-    dim: vi.fn(),
-    warning: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
 vi.mock('../../src/ui/prompts.js', () => ({
   prompts: {
     confirm: vi.fn().mockResolvedValue(true),
+    note: vi.fn(),
+    log: {
+      info: vi.fn(),
+      success: vi.fn(),
+      warning: vi.fn(),
+      error: vi.fn(),
+      step: vi.fn(),
+      message: vi.fn(),
+    },
   },
 }));
 

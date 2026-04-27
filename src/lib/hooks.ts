@@ -1,8 +1,7 @@
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
-import chalk from 'chalk';
 import { loadConfig } from './config.js';
-import { logger } from '../ui/logger.js';
+import { colors as c } from '../ui/theme.js';
 import { prompts } from '../ui/prompts.js';
 import { IS_WINDOWS } from './platform.js';
 
@@ -81,24 +80,13 @@ export const runHook = async (
   const trusted = options?.trustHooks === true || config.trustHooks === true;
 
   if (!trusted) {
-    console.log();
-    console.log(chalk.yellow.bold('WARNING: Hook Execution'));
-    console.log(chalk.dim('─'.repeat(50)));
-    console.log(chalk.white(`Hook type: ${chalk.cyan(hookType)}`));
-    console.log(chalk.white('Command:'));
-    console.log(chalk.red(`  ${command}`));
-    console.log(chalk.dim('─'.repeat(50)));
-    console.log(
-      chalk.yellow(
-        'SECURITY: Hooks can execute arbitrary commands on your system.'
-      )
+    prompts.note(
+      `Hook type: ${c.brand(hookType)}\n` +
+        `Command:   ${c.error(command)}\n\n` +
+        `${c.warning('Hooks can execute arbitrary commands on your system.')}\n` +
+        `${c.warning('Only proceed if you trust the source of this configuration.')}`,
+      'Hook execution'
     );
-    console.log(
-      chalk.yellow(
-        'Only proceed if you trust the source of this configuration.'
-      )
-    );
-    console.log();
 
     const confirmed = await prompts.confirm(
       'Execute this hook?',
@@ -106,13 +94,13 @@ export const runHook = async (
     );
 
     if (!confirmed) {
-      logger.warning(`Hook ${hookType} skipped by user`);
+      prompts.log.warning(`Hook ${hookType} skipped by user`);
       return { success: true, skipped: true };
     }
   }
 
   if (!options?.silent) {
-    logger.dim(`Running ${hookType} hook...`);
+    prompts.log.message(c.dim(`Running ${hookType} hook...`));
   }
 
   try {
@@ -134,11 +122,11 @@ export const runHook = async (
     });
 
     if (stdout && !options?.silent) {
-      logger.dim(stdout.trim());
+      prompts.log.message(c.dim(stdout.trim()));
     }
 
     if (stderr && !options?.silent) {
-      logger.warning(stderr.trim());
+      prompts.log.warning(stderr.trim());
     }
 
     return { success: true, output: stdout };
@@ -146,7 +134,7 @@ export const runHook = async (
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     if (!options?.silent) {
-      logger.error(`Hook ${hookType} failed: ${errorMessage}`);
+      prompts.log.error(`Hook ${hookType} failed: ${errorMessage}`);
     }
 
     return { success: false, error: errorMessage };
