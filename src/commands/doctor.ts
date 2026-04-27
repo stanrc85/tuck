@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { logger, prompts } from '../ui/index.js';
+import { prompts, colors as c } from '../ui/index.js';
 import {
   DOCTOR_CATEGORIES,
   getDoctorExitCode,
@@ -17,32 +17,52 @@ const formatCheckId = (id: string): string => {
   return id.replace('.', ': ');
 };
 
-const printHumanReport = (report: DoctorReport): void => {
+const formatCheckLabel = (category: string, id: string, message: string): string => {
+  return `${c.dim(`[${category}]`)} ${formatCheckId(id)} — ${message}`;
+};
+
+const formatSubBlock = (details?: string, fix?: string): string | null => {
+  const lines: string[] = [];
+  if (details) lines.push(`Details: ${details}`);
+  if (fix) lines.push(`Fix: ${fix}`);
+  return lines.length === 0 ? null : c.dim(lines.join('\n'));
+};
+
+const num = (n: number): string => c.bold(n.toString());
+const plural = (n: number, word: string): string => (n === 1 ? word : `${word}s`);
+
+const formatSummary = (summary: DoctorReport['summary'], exitCode: number): string => {
+  const { passed, warnings, failed } = summary;
+  if (exitCode === 0) {
+    return `${num(passed)} ${plural(passed, 'check')} passed`;
+  }
+  if (exitCode === 2) {
+    return `${num(passed)} passed, ${num(warnings)} ${plural(warnings, 'warning')} (strict)`;
+  }
+  return `${num(passed)} passed, ${num(warnings)} ${plural(warnings, 'warning')}, ${num(failed)} failed`;
+};
+
+const printHumanReport = (report: DoctorReport, exitCode: number): void => {
   prompts.intro('tuck doctor');
 
   for (const check of report.checks) {
-    const label = `[${check.category}] ${formatCheckId(check.id)} - ${check.message}`;
+    const label = formatCheckLabel(check.category, check.id, check.message);
 
     if (check.status === 'pass') {
-      logger.success(label);
+      prompts.log.success(label);
     } else if (check.status === 'warn') {
-      logger.warning(label);
+      prompts.log.warning(label);
     } else {
-      logger.error(label);
+      prompts.log.error(label);
     }
 
-    if (check.details) {
-      logger.dim(`  Details: ${check.details}`);
-    }
-    if (check.fix) {
-      logger.dim(`  Fix: ${check.fix}`);
+    const sub = formatSubBlock(check.details, check.fix);
+    if (sub) {
+      prompts.log.message(sub);
     }
   }
 
-  logger.blank();
-  logger.info(
-    `Summary: ${report.summary.passed} passed, ${report.summary.warnings} warnings, ${report.summary.failed} failed`
-  );
+  prompts.outro(formatSummary(report.summary, exitCode));
 };
 
 export const runDoctor = async (options: DoctorOptions = {}): Promise<DoctorReport> => {
@@ -50,23 +70,13 @@ export const runDoctor = async (options: DoctorOptions = {}): Promise<DoctorRepo
     category: options.category,
   });
 
-  if (options.json) {
-    console.log(JSON.stringify(report, null, 2));
-  } else {
-    printHumanReport(report);
-  }
-
   const exitCode = getDoctorExitCode(report, options.strict);
   process.exitCode = exitCode;
 
-  if (!options.json) {
-    if (exitCode === 0) {
-      prompts.outro('Doctor checks completed successfully');
-    } else if (exitCode === 2) {
-      prompts.outro('Doctor completed with warnings (strict mode enabled)');
-    } else {
-      prompts.outro('Doctor found blocking issues');
-    }
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    printHumanReport(report, exitCode);
   }
 
   return report;
