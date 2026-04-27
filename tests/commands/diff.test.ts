@@ -36,6 +36,7 @@ vi.mock('../../src/ui/index.js', () => ({
       warning: vi.fn(),
       error: vi.fn(),
       step: vi.fn(),
+      message: vi.fn(),
     },
     note: vi.fn(),
     cancel: vi.fn(),
@@ -45,13 +46,8 @@ vi.mock('../../src/ui/index.js', () => ({
       message: '',
     })),
   },
-  logger: {
-    info: vi.fn(),
-    success: vi.fn(),
-    warning: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  },
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
 }));
 
 describe('diff command', () => {

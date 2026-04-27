@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { prompts, logger } from '../ui/index.js';
+import { prompts, formatCount } from '../ui/index.js';
 import { colors as c } from '../ui/theme.js';
 import {
   getTuckDir,
@@ -766,9 +766,11 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   if (options.staged) {
     const diff = await getDiff(tuckDir, { staged: true, stat: options.stat });
     if (diff) {
+      // Raw diff content for piping to git tools — no clack frame.
       console.log(diff);
     } else {
-      logger.info('No staged changes');
+      prompts.intro('tuck diff --staged');
+      prompts.outro('No staged changes');
     }
     return;
   }
@@ -823,9 +825,9 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
       });
     } catch (error) {
       if (error instanceof FileNotFoundError) {
-        logger.warning(`File not found: ${file.source}`);
+        prompts.log.warning(`File not found: ${file.source}`);
       } else if (error instanceof PermissionError) {
-        logger.warning(`Permission denied: ${file.source}`);
+        prompts.log.warning(`Permission denied: ${file.source}`);
       } else {
         throw error;
       }
@@ -835,25 +837,18 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   const allDiffs = groups.flatMap((g) => g.diffs);
 
   if (allDiffs.length === 0) {
-    if (paths.length > 0) {
-      logger.success('No differences found');
-    } else {
-      prompts.intro('tuck diff');
-      console.log();
-      logger.success('No differences found');
-      console.log();
-    }
+    prompts.intro('tuck diff');
+    prompts.outro('No differences found');
     return;
   }
 
   prompts.intro('tuck diff');
-  console.log();
 
-  // --name-only: plain path list, no stats. Directory groups emit their header
+  // --name-only: plain path list, no stats. Pipe-friendly — emit via raw
+  // console.log so each line is unprefixed. Directory groups emit their header
   // so expanded sub-files are visually attributed to the tracked directory.
   if (options.nameOnly) {
     console.log(c.bold('Changed files:'));
-    console.log();
     for (const group of groups) {
       if (group.directoryHeader) {
         console.log(`  ${formatDirectoryHeader(group.directoryHeader)}`);
@@ -867,14 +862,15 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
         console.log(`  ${c.yellow('~')} ${diff.source} ${status}`);
       }
     }
-    console.log();
-    prompts.outro(`Found ${allDiffs.length} changed file(s)`);
+    prompts.outro(`Found ${formatCount(allDiffs.length, 'changed file')}`);
     return;
   }
 
   // --stat: git-style bar graph. Column widths are computed across every diff
   // (including directory sub-files) so groups line up visually. Footer prints
   // once at the end with totals across everything.
+  // Output rendered via raw console.log so columns stay aligned without clack
+  // gutter prefixes interfering with the bar graph layout.
   if (options.stat) {
     const layout = computeStatLayout(allDiffs);
     for (const group of groups) {
@@ -885,16 +881,16 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
     }
     console.log();
     console.log(` ${formatSummaryLine(allDiffs.length, sumDiffStats(allDiffs))}`);
-    console.log();
-    prompts.outro(`Found ${allDiffs.length} changed file(s)`);
+    prompts.outro(`Found ${formatCount(allDiffs.length, 'changed file')}`);
     return;
   }
 
   // Full-diff mode: summary header above the per-file output so long runs show
   // their scale upfront. Binary/directory diffs contribute 0/0 to the totals.
+  // Header + body emitted via raw console.log so multi-line diff content
+  // doesn't get prefixed with clack gutters and stays pipe-friendly.
   const totals = sumDiffStats(allDiffs);
   console.log(c.bold(formatSummaryLine(allDiffs.length, totals)));
-  console.log();
 
   // Side-by-side renders only when the terminal is wide enough — a two-column
   // layout under 80 cols truncates too aggressively to be useful. Warn the
@@ -903,10 +899,9 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
   const wantsSideBySide = options.sideBySide === true;
   const useSideBySide = wantsSideBySide && termWidth >= SBS_MIN_WIDTH;
   if (wantsSideBySide && !useSideBySide) {
-    logger.warning(
+    prompts.log.warning(
       `Terminal width ${termWidth} < ${SBS_MIN_WIDTH} cols — falling back to unified diff`
     );
-    console.log();
   }
 
   for (const group of groups) {
@@ -922,7 +917,7 @@ const runDiff = async (paths: string[], options: DiffOptions): Promise<void> => 
     }
   }
 
-  prompts.outro(`Found ${allDiffs.length} changed file(s)`);
+  prompts.outro(`Found ${formatCount(allDiffs.length, 'changed file')}`);
 
   // Return exit code 1 if differences found and --exit-code is set
   if (options.exitCode) {
