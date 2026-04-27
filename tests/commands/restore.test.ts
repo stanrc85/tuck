@@ -57,6 +57,8 @@ vi.mock('../../src/ui/index.js', () => ({
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   isInteractive: isInteractiveMock,
+  formatCount: (n: number, singular: string, plural?: string) =>
+    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
 }));
 
 vi.mock('../../src/lib/bootstrap/missingDeps.js', () => ({

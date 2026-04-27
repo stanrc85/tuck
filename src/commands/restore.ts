@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { join } from 'path';
 import { colors as c } from '../ui/theme.js';
 import { chmod, stat } from 'fs/promises';
-import { prompts, logger, withSpinner, isInteractive } from '../ui/index.js';
+import { prompts, logger, withSpinner, isInteractive, formatCount } from '../ui/index.js';
 import {
   getTuckDir,
   expandPath,
@@ -213,16 +213,16 @@ const restoreFilesInternal = async (
 
     // Check if source exists in repository
     if (!(await pathExists(file.destination))) {
-      logger.warning(`Source not found in repository: ${file.source}`);
+      prompts.log.warning(`Source not found in repository: ${file.source}`);
       continue;
     }
 
     // Dry run - just show what would happen
     if (options.dryRun) {
       if (file.existsAtTarget) {
-        logger.file('modify', `${file.source} (would overwrite)`);
+        prompts.log.warning(`${file.source} (would overwrite)`);
       } else {
-        logger.file('add', `${file.source} (would create)`);
+        prompts.log.success(`${file.source} (would create)`);
       }
       continue;
     }
@@ -318,12 +318,8 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
   // Check for files that exist
   const existingFiles = selectedFiles.filter((f) => f.existsAtTarget);
   if (existingFiles.length > 0) {
-    console.log();
-    prompts.log.warning(
-      `${existingFiles.length} file${existingFiles.length > 1 ? 's' : ''} will be backed up:`
-    );
-    existingFiles.forEach((f) => console.log(c.dim(`  ${f.source}`)));
-    console.log();
+    prompts.log.warning(`${formatCount(existingFiles.length, 'file')} will be backed up:`);
+    prompts.log.message(c.dim(existingFiles.map((f) => `  ${f.source}`).join('\n')));
   }
 
   // Ask about strategy
@@ -350,43 +346,29 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
     noSecrets: options.noSecrets,
   });
 
-  console.log();
+  displaySecretSummary(result);
 
-  // Display secret restoration info
-  if (result.secretsRestored > 0) {
-    prompts.log.success(`Restored ${result.secretsRestored} secret${result.secretsRestored !== 1 ? 's' : ''}`);
-  }
-  if (result.unresolvedPlaceholders.length > 0) {
-    prompts.log.warning(
-      `${result.unresolvedPlaceholders.length} unresolved placeholder${result.unresolvedPlaceholders.length !== 1 ? 's' : ''}:`
-    );
-    result.unresolvedPlaceholders.slice(0, 5).forEach((p) => console.log(c.dim(`  {{${p}}}`)));
-    if (result.unresolvedPlaceholders.length > 5) {
-      console.log(c.dim(`  ... and ${result.unresolvedPlaceholders.length - 5} more`));
-    }
-    prompts.note("Use 'tuck secrets set <NAME>' to add missing secrets", 'Tip');
-  }
-
-  prompts.outro(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
+  prompts.outro(`Restored ${formatCount(result.restoredCount, 'file')}`);
   return result.restoredPaths;
 };
 
 /**
- * Display secret restoration summary
+ * Display secret restoration summary. Caller assumes a clack frame is open.
  */
 const displaySecretSummary = (result: RestoreResult): void => {
   if (result.secretsRestored > 0) {
-    logger.success(`Restored ${result.secretsRestored} secret${result.secretsRestored !== 1 ? 's' : ''}`);
+    prompts.log.success(`Restored ${formatCount(result.secretsRestored, 'secret')}`);
   }
   if (result.unresolvedPlaceholders.length > 0) {
-    logger.warning(
-      `${result.unresolvedPlaceholders.length} unresolved placeholder${result.unresolvedPlaceholders.length !== 1 ? 's' : ''}:`
+    prompts.log.warning(
+      `${formatCount(result.unresolvedPlaceholders.length, 'unresolved placeholder')}:`
     );
-    result.unresolvedPlaceholders.slice(0, 5).forEach((p) => console.log(c.dim(`  {{${p}}}`)));
+    const previewLines = result.unresolvedPlaceholders.slice(0, 5).map((p) => `  {{${p}}}`);
     if (result.unresolvedPlaceholders.length > 5) {
-      console.log(c.dim(`  ... and ${result.unresolvedPlaceholders.length - 5} more`));
+      previewLines.push(`  ... and ${result.unresolvedPlaceholders.length - 5} more`);
     }
-    logger.info("Use 'tuck secrets set <NAME>' to add missing secrets");
+    prompts.log.message(c.dim(previewLines.join('\n')));
+    prompts.log.message(c.dim("Use `tuck secrets set <NAME>` to add missing secrets"));
   }
 };
 
@@ -583,26 +565,23 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
 
   let restoredPaths: string[] = [];
 
-  // Run interactive restore when called programmatically with --all
+  // Run programmatic --all restore inside its own frame
   if (options.all) {
-    // Prepare files to restore
     const filterGroups = await resolveGroupFilter(tuckDir, options);
     const files = await prepareFilesToRestore(tuckDir, undefined, filterGroups);
 
+    prompts.intro('tuck restore');
+
     if (files.length === 0) {
-      // Don't early-return: we still want to offer group assignment on a fresh
-      // unassigned host where "no files" may be *caused by* the missing group.
-      logger.warning('No files to restore');
+      // Don't early-return after the outro: we still want to offer group
+      // assignment on a fresh unassigned host where "no files" may be
+      // *caused by* the missing group.
+      prompts.outro('No files to restore');
     } else {
-      // Restore files with progress
       const result = await restoreFilesInternal(tuckDir, files, options);
       restoredPaths = result.restoredPaths;
-
-      logger.blank();
       displaySecretSummary(result);
-      logger.success(
-        `Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`
-      );
+      prompts.outro(`Restored ${formatCount(result.restoredCount, 'file')}`);
     }
   } else {
     restoredPaths = await runInteractiveRestore(tuckDir, options);
@@ -642,29 +621,22 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
     filterGroups
   );
 
+  prompts.intro('tuck restore');
+
   if (files.length === 0) {
-    logger.warning('No files to restore');
+    prompts.outro('No files to restore');
     await maybePromptForGroupAssignment(tuckDir, options);
     return;
   }
 
-  // Show what will be restored
-  if (options.dryRun) {
-    logger.heading('Dry run - would restore:');
-  } else {
-    logger.heading('Restoring:');
-  }
-
-  // Restore files
+  // Restore files (per-file progress emitted inside restoreFilesInternal)
   const result = await restoreFilesInternal(tuckDir, files, options);
 
-  logger.blank();
-
   if (options.dryRun) {
-    logger.info(`Would restore ${files.length} file${files.length > 1 ? 's' : ''}`);
+    prompts.outro(`Would restore ${formatCount(files.length, 'file')}`);
   } else {
     displaySecretSummary(result);
-    logger.success(`Restored ${result.restoredCount} file${result.restoredCount !== 1 ? 's' : ''}`);
+    prompts.outro(`Restored ${formatCount(result.restoredCount, 'file')}`);
     await maybePromptForGroupAssignment(tuckDir, options);
     await maybeRunBootstrapForGroups(tuckDir, options);
     await maybePromptForMissingDeps(tuckDir, result.restoredPaths, options);

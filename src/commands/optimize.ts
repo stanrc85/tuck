@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { readFile, writeFile } from 'fs/promises';
 import { basename, join } from 'path';
 import { homedir } from 'os';
-import { prompts, logger, colors as c } from '../ui/index.js';
+import { prompts, logger, colors as c, formatCount } from '../ui/index.js';
 import { pathExists } from '../lib/paths.js';
 import {
   runShellProfile,
@@ -79,52 +79,56 @@ const formatMs = (ms: number): string => {
 };
 
 const printProfileReport = (report: ProfileReport): void => {
-  console.log(c.bold('Shell startup profile'));
-  console.log(c.dim(`  Total instrumented time: ${formatMs(report.totalMs)}`));
-  console.log(c.dim(`  Events: ${report.events.length}`));
-  console.log();
+  prompts.log.message(
+    [
+      c.bold('Shell startup profile'),
+      c.dim(`  Total instrumented time: ${formatMs(report.totalMs)}`),
+      c.dim(`  Events: ${report.events.length}`),
+    ].join('\n'),
+  );
 
   if (report.perFile.length === 0) {
-    logger.warning('No events parsed — is zsh configured and does it run to completion?');
+    prompts.log.warning('No events parsed — is zsh configured and does it run to completion?');
     return;
   }
 
-  console.log(c.bold('Top files by wall-clock time:'));
   const top = report.perFile.slice(0, 10);
   const maxLen = Math.max(...top.map((f) => f.file.length));
   const pathWidth = Math.min(maxLen, 50);
+  const tableLines: string[] = [c.bold('Top files by wall-clock time:')];
   for (const f of top) {
     const pct = report.totalMs > 0 ? (f.totalMs / report.totalMs) * 100 : 0;
     const path = f.file.length > pathWidth
       ? '...' + f.file.slice(-(pathWidth - 3))
       : f.file.padEnd(pathWidth);
-    console.log(
+    tableLines.push(
       `  ${path}  ${formatMs(f.totalMs).padStart(8)}  ${c.dim(`${pct.toFixed(1)}% (${f.eventCount} events)`)}`,
     );
   }
-  console.log();
+  prompts.log.message(tableLines.join('\n'));
 };
 
 const printRecommendations = (recs: Recommendation[]): void => {
   if (recs.length === 0) {
-    logger.success('No advisory issues detected.');
+    prompts.log.success('No advisory issues detected.');
     return;
   }
 
-  console.log(c.bold(`Recommendations (${recs.length}):`));
-  console.log();
+  prompts.log.info(`Recommendations (${recs.length}):`);
   for (const r of recs) {
     const badge = r.severity === 'warn' ? c.yellow('warn') : c.cyan('info');
-    console.log(`  ${badge}  ${c.bold(r.rule)}`);
-    console.log(`         ${r.message}`);
-    console.log(`         ${c.dim('→ ' + r.suggestion)}`);
+    const lines = [
+      `${badge}  ${c.bold(r.rule)}`,
+      `       ${r.message}`,
+      `       ${c.dim('→ ' + r.suggestion)}`,
+    ];
     if (r.evidence.length > 0) {
-      console.log(c.dim('         Evidence:'));
+      lines.push(c.dim('       Evidence:'));
       for (const line of r.evidence) {
-        console.log(c.dim(`           ${line}`));
+        lines.push(c.dim(`         ${line}`));
       }
     }
-    console.log();
+    prompts.log.message(lines.join('\n'));
   }
 };
 
@@ -191,38 +195,37 @@ const renderAutoFixPreview = (fix: AutoFix): string => {
 
 const runAutoFixes = async (fixes: AutoFix[], options: OptimizeOptions): Promise<void> => {
   if (fixes.length === 0) {
-    logger.info('No auto-applicable fixes available for the detected issues.');
+    prompts.log.message(c.dim('No auto-applicable fixes available for the detected issues.'));
     return;
   }
 
-  console.log();
-  logger.info(
-    `Proposed auto-fixes (${fixes.length}):`,
-  );
-  console.log();
+  prompts.log.info(`Proposed auto-fixes (${fixes.length}):`);
   for (const fix of fixes) {
-    console.log(c.bold(fix.targetPath) + ' ' + c.dim(`(${fix.summary})`));
-    console.log(renderAutoFixPreview(fix));
-    console.log();
+    prompts.log.message(
+      [
+        `${c.bold(fix.targetPath)} ${c.dim(`(${fix.summary})`)}`,
+        renderAutoFixPreview(fix),
+      ].join('\n'),
+    );
   }
 
   let confirmed: boolean;
   if (options.yes) {
     confirmed = true;
   } else if (!isInteractive()) {
-    logger.error(
+    prompts.log.error(
       'Cannot confirm fixes in non-interactive mode. Re-run with --yes after reviewing the preview above.',
     );
     confirmed = false;
   } else {
     confirmed = await prompts.confirm(
-      `Apply ${fixes.length} auto-fix${fixes.length === 1 ? '' : 'es'}?`,
+      `Apply ${formatCount(fixes.length, 'auto-fix', 'auto-fixes')}?`,
       false,
     );
   }
 
   if (!confirmed) {
-    logger.info('No changes written.');
+    prompts.log.message(c.dim('No changes written.'));
     return;
   }
 
@@ -234,13 +237,13 @@ const runAutoFixes = async (fixes: AutoFix[], options: OptimizeOptions): Promise
     `Pre-optimize --auto backup (${fixes.length} file${fixes.length === 1 ? '' : 's'})`,
     { kind: 'optimize-auto' },
   );
-  logger.info(`Snapshot created: ${c.dim(snapshot.id)}`);
+  prompts.log.message(c.dim(`Snapshot created: ${snapshot.id}`));
 
   for (const fix of fixes) {
     await writeFile(fix.targetPath, fix.after, 'utf-8');
   }
-  logger.success(
-    `Applied ${fixes.length} fix${fixes.length === 1 ? '' : 'es'}. Use 'tuck undo ${snapshot.id}' to revert.`,
+  prompts.log.success(
+    `Applied ${formatCount(fixes.length, 'fix', 'fixes')}. Use \`tuck undo ${snapshot.id}\` to revert.`,
   );
 };
 
@@ -252,12 +255,6 @@ export const runOptimize = async (options: OptimizeOptions): Promise<void> => {
     process.exitCode = 1;
     return;
   }
-  if (run.exitCode !== 0) {
-    logger.warning(
-      `${shell} exited with code ${run.exitCode}. Profile may be incomplete.`,
-    );
-  }
-
   const report = parseXtrace(run.stderr);
   const sources = await readShellSources(shell);
   const recs = options.profile ? [] : applyRules(report, sources);
@@ -280,7 +277,13 @@ export const runOptimize = async (options: OptimizeOptions): Promise<void> => {
   }
 
   prompts.intro(`tuck optimize (${shell})`);
-  console.log();
+
+  if (run.exitCode !== 0) {
+    prompts.log.warning(
+      `${shell} exited with code ${run.exitCode}. Profile may be incomplete.`,
+    );
+  }
+
   printProfileReport(report);
   if (!options.profile) {
     printRecommendations(recs);
@@ -293,7 +296,7 @@ export const runOptimize = async (options: OptimizeOptions): Promise<void> => {
 
   prompts.outro(
     recs.length > 0
-      ? `${recs.length} recommendation${recs.length === 1 ? '' : 's'} — review above`
+      ? `${formatCount(recs.length, 'recommendation')} — review above`
       : 'Profile complete',
   );
 };

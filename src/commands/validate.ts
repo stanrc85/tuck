@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { readFile } from 'fs/promises';
-import { prompts, logger, colors as c } from '../ui/index.js';
+import { prompts, colors as c, formatCount } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
 import { loadManifest, assertMigrated } from '../lib/manifest.js';
 import { isBinaryExecutable } from '../lib/binary.js';
@@ -28,34 +28,31 @@ interface ValidateOptions {
 
 const isInteractive = (): boolean => Boolean(process.stdout.isTTY);
 
-const formatResultText = (result: ValidationResult): string => {
-  if (result.skipped) {
-    return `${c.dim('skip')} ${result.file} ${c.dim(`(${result.skipReason})`)}`;
-  }
-  if (result.issues.length === 0) {
-    return `${c.green('pass')} ${result.file}`;
-  }
-  const header = `${c.red('fail')} ${result.file} ${c.dim(`(${result.language})`)}`;
-  const body = result.issues.map((issue) => {
-    const loc =
-      issue.line !== undefined
-        ? `${issue.line}${issue.column !== undefined ? `:${issue.column}` : ''}`
-        : '—';
-    const sev = issue.severity === 'error' ? c.red('error') : c.yellow('warn');
-    return `    ${c.dim(loc.padEnd(6))} ${sev}  ${issue.message}`;
-  });
-  return [header, ...body].join('\n');
+const formatIssueLines = (result: ValidationResult): string => {
+  return result.issues
+    .map((issue) => {
+      const loc =
+        issue.line !== undefined
+          ? `${issue.line}${issue.column !== undefined ? `:${issue.column}` : ''}`
+          : '—';
+      const sev = issue.severity === 'error' ? c.red('error') : c.yellow('warn');
+      return `    ${c.dim(loc.padEnd(6))} ${sev}  ${issue.message}`;
+    })
+    .join('\n');
 };
 
-const printTextReport = (results: ValidationResult[]): void => {
-  for (const r of results) console.log(formatResultText(r));
-  console.log();
-  const pass = results.filter((r) => !r.skipped && r.issues.length === 0).length;
-  const fail = results.filter((r) => hasErrors(r)).length;
-  const skipped = results.filter((r) => r.skipped).length;
-  logger.info(
-    `${c.green(`${pass} passed`)}, ${c.red(`${fail} failed`)}, ${c.dim(`${skipped} skipped`)}`,
-  );
+const printTextResults = (results: ValidationResult[]): void => {
+  for (const r of results) {
+    if (r.skipped) {
+      prompts.log.message(c.dim(`${r.file} (${r.skipReason})`));
+    } else if (r.issues.length === 0) {
+      prompts.log.success(r.file);
+    } else if (hasErrors(r)) {
+      prompts.log.error(`${r.file} ${c.dim(`(${r.language})`)}\n${formatIssueLines(r)}`);
+    } else {
+      prompts.log.warning(`${r.file} ${c.dim(`(${r.language})`)}\n${formatIssueLines(r)}`);
+    }
+  }
 };
 
 const printJsonReport = (results: ValidationResult[]): void => {
@@ -89,38 +86,33 @@ const runFixPass = async (
   }
 
   if (proposals.length === 0) {
-    logger.success('No auto-fixable issues found.');
+    prompts.log.success('No auto-fixable issues found.');
     return;
   }
 
-  console.log();
-  logger.info(
-    `Proposed fixes across ${proposals.length} file${proposals.length === 1 ? '' : 's'}:`,
-  );
-  console.log();
+  prompts.log.info(`Proposed fixes across ${formatCount(proposals.length, 'file')}:`);
   for (const p of proposals) {
-    console.log(c.bold(p.file) + ' ' + c.dim(`(${p.fixes.join(', ')})`));
-    console.log(renderFixDiff(p));
-    console.log();
+    prompts.log.message(`${c.bold(p.file)} ${c.dim(`(${p.fixes.join(', ')})`)}`);
+    prompts.log.message(renderFixDiff(p));
   }
 
   let confirmed: boolean;
   if (options.yes) {
     confirmed = true;
   } else if (!isInteractive()) {
-    logger.error(
+    prompts.log.error(
       'Cannot confirm fix in non-interactive mode. Re-run with --yes after reviewing the preview above.',
     );
     confirmed = false;
   } else {
     confirmed = await prompts.confirm(
-      `Apply fixes to ${proposals.length} file${proposals.length === 1 ? '' : 's'}?`,
+      `Apply fixes to ${formatCount(proposals.length, 'file')}?`,
       false,
     );
   }
 
   if (!confirmed) {
-    logger.info('No changes written.');
+    prompts.log.message(c.dim('No changes written.'));
     return;
   }
 
@@ -132,11 +124,11 @@ const runFixPass = async (
     `Pre-validate --fix backup (${proposals.length} file${proposals.length === 1 ? '' : 's'})`,
     { kind: 'validate-fix' },
   );
-  logger.info(`Snapshot created: ${c.dim(snapshot.id)}`);
+  prompts.log.message(c.dim(`Snapshot created: ${snapshot.id}`));
 
   await applyFixes(proposals);
-  logger.success(
-    `Applied fixes to ${proposals.length} file${proposals.length === 1 ? '' : 's'}. Use 'tuck undo ${snapshot.id}' to revert.`,
+  prompts.log.success(
+    `Applied fixes to ${formatCount(proposals.length, 'file')}. Use \`tuck undo ${snapshot.id}\` to revert.`,
   );
 };
 
@@ -159,23 +151,33 @@ export const runValidate = async (
 
   if (options.format === 'json') {
     printJsonReport(results);
-  } else {
-    if (paths.length === 0) prompts.intro('tuck validate');
-    printTextReport(results);
+    if (results.some((r) => hasErrors(r))) {
+      process.exitCode = 1;
+    }
+    return;
   }
+
+  prompts.intro('tuck validate');
+
+  printTextResults(results);
+
+  const passCount = results.filter((r) => !r.skipped && r.issues.length === 0).length;
+  const failCount = results.filter((r) => hasErrors(r)).length;
+  const skipCount = results.filter((r) => r.skipped).length;
+
+  prompts.log.message(
+    `${c.green(`${passCount} passed`)}, ${c.red(`${failCount} failed`)}, ${c.dim(`${skipCount} skipped`)}`,
+  );
 
   if (options.fix) {
     await runFixPass(targets, options);
   }
 
-  if (paths.length === 0 && options.format !== 'json') {
-    const failCount = results.filter((r) => hasErrors(r)).length;
-    prompts.outro(
-      failCount > 0
-        ? `Found ${failCount} file${failCount === 1 ? '' : 's'} with errors`
-        : 'All files valid',
-    );
-  }
+  prompts.outro(
+    failCount > 0
+      ? `${formatCount(failCount, 'file')} with errors`
+      : `All ${formatCount(results.length, 'file')} valid`,
+  );
 
   if (results.some((r) => hasErrors(r))) {
     process.exitCode = 1;
