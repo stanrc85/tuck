@@ -6,9 +6,8 @@ const getAllTrackedFilesMock = vi.fn();
 const promptsIntroMock = vi.fn();
 const promptsOutroMock = vi.fn();
 const promptsWarningMock = vi.fn();
+const promptsMessageMock = vi.fn();
 const promptsNoteMock = vi.fn();
-
-const loggerWarningMock = vi.fn();
 
 vi.mock('../../src/lib/paths.js', () => ({
   getTuckDir: vi.fn(() => '/test-home/.tuck'),
@@ -37,11 +36,9 @@ vi.mock('../../src/ui/index.js', () => ({
     outro: promptsOutroMock,
     log: {
       warning: promptsWarningMock,
+      message: promptsMessageMock,
     },
     note: promptsNoteMock,
-  },
-  logger: {
-    warning: loggerWarningMock,
   },
   formatCount: vi.fn((count: number, label: string) => `${count} ${label}${count === 1 ? '' : 's'}`),
   colors: {
@@ -72,16 +69,13 @@ describe('list command', () => {
   });
 
   it('prints grouped files in default mode', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { listCommand } = await import('../../src/commands/list.js');
 
     await listCommand.parseAsync(['node', 'list'], { from: 'user' });
 
     expect(promptsIntroMock).toHaveBeenCalledWith('tuck list');
     expect(promptsOutroMock).toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalled();
-
-    logSpy.mockRestore();
+    expect(promptsMessageMock).toHaveBeenCalled();
   });
 
   it('prints JSON output when --json is passed', async () => {
@@ -119,11 +113,11 @@ describe('list command', () => {
     });
   });
 
-  it('warns when category filter has no matches', async () => {
+  it('signals empty result when category filter has no matches', async () => {
     const { listCommand } = await import('../../src/commands/list.js');
 
     await listCommand.parseAsync(['node', 'list', '--category', 'terminal'], { from: 'user' });
 
-    expect(loggerWarningMock).toHaveBeenCalledWith('No files found in category: terminal');
+    expect(promptsOutroMock).toHaveBeenCalledWith("No files in category 'terminal'");
   });
 });

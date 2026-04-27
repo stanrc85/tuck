@@ -4,10 +4,8 @@
  */
 
 import { Command } from 'commander';
-import boxen from 'boxen';
-import logSymbols from 'log-symbols';
 import figures from 'figures';
-import { colors as c, boxStyles, indent, formatStatus, categoryStyles } from '../ui/index.js';
+import { colors as c, indent, formatStatus, categoryStyles, formatCount } from '../ui/index.js';
 import { prompts } from '../ui/prompts.js';
 import {
   getTuckDir,
@@ -155,56 +153,61 @@ const formatRemoteUrl = (url: string): string => {
     .replace(/^github\.com\//, '');
 };
 
+const formatRemoteStatusLine = (status: TuckStatus): { kind: 'success' | 'warning' | 'error'; msg: string } | null => {
+  if (!status.remote) return null;
+  switch (status.remoteStatus) {
+    case 'up-to-date':
+      return { kind: 'success', msg: 'Up to date with remote' };
+    case 'ahead':
+      return {
+        kind: 'warning',
+        msg: `${figures.arrowUp} ${formatCount(status.ahead, 'commit')} ahead`,
+      };
+    case 'behind':
+      return {
+        kind: 'warning',
+        msg: `${figures.arrowDown} ${formatCount(status.behind, 'commit')} behind`,
+      };
+    case 'diverged':
+      return {
+        kind: 'error',
+        msg: `Diverged (${status.ahead} ahead, ${status.behind} behind)`,
+      };
+    default:
+      return null;
+  }
+};
+
+const pickNextStep = (status: TuckStatus): string => {
+  if (status.changes.length > 0) return 'Run `tuck sync` to commit changes';
+  if (status.remoteStatus === 'ahead') return 'Run `tuck push` to push changes';
+  if (status.remoteStatus === 'behind') return 'Run `tuck pull` to pull changes';
+  if (status.trackedCount === 0) return 'Run `tuck add <path>` to start tracking';
+  return 'Everything up to date';
+};
+
 const printStatus = (status: TuckStatus): void => {
-  // Header box
+  prompts.intro(`tuck status ${c.muted(`v${VERSION}`)}`);
+
+  // Header info as a single dim block
   const headerLines: string[] = [
-    `${c.brandBold('tuck')} ${c.muted(`v${VERSION}`)}`,
-    '',
-    `${c.muted('Repository:')} ${collapsePath(status.tuckDir)}`,
-    `${c.muted('Branch:')}     ${c.brand(status.branch)}`,
+    `Repository: ${collapsePath(status.tuckDir)}`,
+    `Branch:     ${c.brand(status.branch)}`,
   ];
-
   if (status.remote) {
-    headerLines.push(`${c.muted('Remote:')}     ${formatRemoteUrl(status.remote)}`);
+    headerLines.push(`Remote:     ${formatRemoteUrl(status.remote)}`);
   } else {
-    headerLines.push(`${c.muted('Remote:')}     ${c.warning('not configured')}`);
+    headerLines.push(`Remote:     ${c.warning('not configured')}`);
+  }
+  prompts.log.message(c.dim(headerLines.join('\n')));
+
+  // Remote sync status
+  const remoteLine = formatRemoteStatusLine(status);
+  if (remoteLine) {
+    prompts.log[remoteLine.kind](remoteLine.msg);
   }
 
-  console.log(boxen(headerLines.join('\n'), boxStyles.header));
-
-  // Remote status
-  if (status.remote) {
-    console.log();
-    switch (status.remoteStatus) {
-      case 'up-to-date':
-        console.log(logSymbols.success, c.success('Up to date with remote'));
-        break;
-      case 'ahead':
-        console.log(
-          c.warning(figures.arrowUp),
-          c.warning(`${status.ahead} commit${status.ahead > 1 ? 's' : ''} ahead`)
-        );
-        break;
-      case 'behind':
-        console.log(
-          c.warning(figures.arrowDown),
-          c.warning(`${status.behind} commit${status.behind > 1 ? 's' : ''} behind`)
-        );
-        break;
-      case 'diverged':
-        console.log(
-          logSymbols.warning,
-          c.error(`Diverged (${status.ahead} ahead, ${status.behind} behind)`)
-        );
-        break;
-    }
-  }
-
-  // Tracked files summary
-  console.log();
-  console.log(c.bold(`${status.trackedCount} files tracked`));
-
-  // Category breakdown (inline, compact)
+  // Tracked files summary + category breakdown as one block
   const categoryOrder = ['shell', 'git', 'editors', 'terminal', 'ssh', 'misc'];
   const sortedCategories = Object.keys(status.categoryCounts).sort((a, b) => {
     const aIdx = categoryOrder.indexOf(a);
@@ -215,6 +218,7 @@ const printStatus = (status: TuckStatus): void => {
     return aIdx - bIdx;
   });
 
+  const summaryLines: string[] = [`${formatCount(status.trackedCount, 'file')} tracked`];
   if (sortedCategories.length > 0) {
     const categoryLine = sortedCategories
       .map((cat) => {
@@ -223,17 +227,17 @@ const printStatus = (status: TuckStatus): void => {
         return `${style.color(style.icon)} ${cat}: ${count}`;
       })
       .join('  ');
-    console.log(c.muted(indent() + categoryLine));
+    summaryLines.push(c.muted(indent() + categoryLine));
   }
+  prompts.log.message(summaryLines.join('\n'));
 
   // File changes
   if (status.changes.length > 0) {
-    console.log();
-    console.log(c.bold('Changes:'));
+    const changeLines = [c.bold('Changes:')];
     for (const change of status.changes) {
-      const statusText = formatStatus(change.status);
-      console.log(`${indent()}${statusText} ${c.brand(change.path)}`);
+      changeLines.push(`${indent()}${formatStatus(change.status)} ${c.brand(change.path)}`);
     }
+    prompts.log.warning(changeLines.join('\n'));
   }
 
   // Git changes
@@ -243,45 +247,33 @@ const printStatus = (status: TuckStatus): void => {
     status.gitChanges.untracked.length > 0;
 
   if (hasGitChanges) {
-    console.log();
-    console.log(c.bold('Repository:'));
+    const repoLines: string[] = [c.bold('Repository:')];
 
     if (status.gitChanges.staged.length > 0) {
-      console.log(c.success(`${indent()}Staged:`));
+      repoLines.push(c.success(`${indent()}Staged:`));
       status.gitChanges.staged.forEach((f) =>
-        console.log(c.success(`${indent()}${indent()}+ ${f}`))
+        repoLines.push(c.success(`${indent()}${indent()}+ ${f}`))
       );
     }
 
     if (status.gitChanges.modified.length > 0) {
-      console.log(c.warning(`${indent()}Modified:`));
+      repoLines.push(c.warning(`${indent()}Modified:`));
       status.gitChanges.modified.forEach((f) =>
-        console.log(c.warning(`${indent()}${indent()}~ ${f}`))
+        repoLines.push(c.warning(`${indent()}${indent()}~ ${f}`))
       );
     }
 
     if (status.gitChanges.untracked.length > 0) {
-      console.log(c.muted(`${indent()}Untracked:`));
+      repoLines.push(c.muted(`${indent()}Untracked:`));
       status.gitChanges.untracked.forEach((f) =>
-        console.log(c.muted(`${indent()}${indent()}? ${f}`))
+        repoLines.push(c.muted(`${indent()}${indent()}? ${f}`))
       );
     }
+
+    prompts.log.message(repoLines.join('\n'));
   }
 
-  console.log();
-
-  // Next step suggestion
-  if (status.changes.length > 0) {
-    prompts.note("Run 'tuck sync' to commit changes", 'Next');
-  } else if (status.remoteStatus === 'ahead') {
-    prompts.note("Run 'tuck push' to push changes", 'Next');
-  } else if (status.remoteStatus === 'behind') {
-    prompts.note("Run 'tuck pull' to pull changes", 'Next');
-  } else if (status.trackedCount === 0) {
-    prompts.note("Run 'tuck add <path>' to start tracking", 'Next');
-  } else {
-    prompts.outro('Everything up to date');
-  }
+  prompts.outro(pickNextStep(status));
 };
 
 const printShortStatus = (status: TuckStatus): void => {

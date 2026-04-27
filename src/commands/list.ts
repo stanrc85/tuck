@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { basename, sep } from 'path';
-import { prompts, logger, formatCount, colors as c } from '../ui/index.js';
+import { prompts, formatCount, colors as c } from '../ui/index.js';
 import { getTuckDir } from '../lib/paths.js';
 import {
   loadManifest,
@@ -73,12 +73,25 @@ const groupByCategory = async (
     }));
 };
 
-const printList = (groups: CategoryGroup[]): void => {
+interface PrintListContext {
+  categoryFilter?: string;
+  filterGroups?: string[];
+}
+
+const printList = (groups: CategoryGroup[], ctx: PrintListContext = {}): void => {
   prompts.intro('tuck list');
 
   if (groups.length === 0) {
-    prompts.log.warning('No files are currently tracked');
-    prompts.note("Run 'tuck add <path>' to start tracking files", 'Tip');
+    if (ctx.categoryFilter) {
+      prompts.outro(`No files in category '${ctx.categoryFilter}'`);
+      return;
+    }
+    if (ctx.filterGroups && ctx.filterGroups.length > 0) {
+      prompts.outro(`No files in group(s): ${ctx.filterGroups.join(', ')}`);
+      return;
+    }
+    prompts.log.message(c.dim("Run `tuck add <path>` to start tracking files"));
+    prompts.outro('No files are currently tracked');
     return;
   }
 
@@ -88,25 +101,17 @@ const printList = (groups: CategoryGroup[]): void => {
     const fileCount = group.files.length;
     totalFiles += fileCount;
 
-    console.log();
-    console.log(
-      c.bold(`${group.icon} ${group.name}`) + c.dim(` (${formatCount(fileCount, 'file')})`)
-    );
-
-    group.files.forEach((file, index) => {
-      const isLast = index === group.files.length - 1;
-      const prefix = isLast ? '└── ' : '├── ';
+    const header =
+      c.bold(`${group.icon} ${group.name}`) + c.dim(` (${formatCount(fileCount, 'file')})`);
+    const fileLines = group.files.map((file) => {
       const name = basename(file.source) || file.source;
-      const arrow = c.dim(' → ');
-      const dest = c.dim(file.source);
       const groupsLabel =
         file.groups.length > 0 ? c.dim(`  [${file.groups.join(', ')}]`) : '';
-
-      console.log(c.dim(prefix) + c.cyan(name) + arrow + dest + groupsLabel);
+      return `  ${c.cyan(name)}${c.dim(' → ')}${c.dim(file.source)}${groupsLabel}`;
     });
+    prompts.log.message([header, ...fileLines].join('\n'));
   }
 
-  console.log();
   prompts.outro(`Total: ${formatCount(totalFiles, 'tracked item')}`);
 };
 
@@ -149,27 +154,19 @@ const runList = async (options: ListOptions): Promise<void> => {
   const filterGroups = await resolveGroupFilter(tuckDir, options);
   let groups = await groupByCategory(tuckDir, filterGroups);
 
-  // Filter by category if specified
   if (options.category) {
     groups = groups.filter((g) => g.name === options.category);
-    if (groups.length === 0) {
-      logger.warning(`No files found in category: ${options.category}`);
-      return;
-    }
   }
 
-  if (groups.length === 0 && filterGroups && filterGroups.length > 0) {
-    logger.warning(`No files found in group(s): ${filterGroups.join(', ')}`);
-    return;
-  }
-
-  // Output based on format
   if (options.json) {
     printJson(groups);
   } else if (options.paths) {
     printPathsOnly(groups);
   } else {
-    printList(groups);
+    printList(groups, {
+      categoryFilter: options.category,
+      filterGroups: filterGroups ?? undefined,
+    });
   }
 };
 
