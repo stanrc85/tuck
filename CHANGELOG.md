@@ -1,3 +1,10 @@
+## [2.26.3](https://github.com/stanrc85/tuck/compare/v2.26.2...v2.26.3) (2026-04-27)
+
+
+### Bug Fixes
+
+* **ui:** apply UI_CONVENTIONS to init command (drift cleanup) ([f60f221](https://github.com/stanrc85/tuck/commit/f60f221f057311a8b0a4869b6156419d6a67769a))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.2](https://github.com/stanrc85/tuck/compare/v2.26.1...v2.26.2) (2026-04-27)
