@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { writeFile, mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
-import { prompts, logger } from '../ui/index.js';
+import { prompts } from '../ui/index.js';
 import { c } from '../ui/theme.js';
 import { getTuckDir, collapsePath } from '../lib/paths.js';
 import { resolveGroupFilter } from '../lib/groupFilter.js';
@@ -104,22 +104,23 @@ export const runCheatsheet = async (
 
   prompts.intro('tuck cheatsheet');
   if (result.totalEntries === 0) {
-    logger.warning('No keybinds detected in tracked files.');
-    logger.info(
-      `Supported sources: ${getParserIds().join(', ')}. Cheatsheet still written (empty).`
+    prompts.log.warning('No keybinds detected in tracked files.');
+    prompts.log.message(
+      c.dim(`Supported sources: ${getParserIds().join(', ')}. Cheatsheet still written (empty).`)
     );
   } else {
-    logger.success(
+    prompts.log.success(
       `Wrote ${result.totalEntries} entr${result.totalEntries === 1 ? 'y' : 'ies'} across ${result.sections.length} source${result.sections.length === 1 ? '' : 's'}`
     );
-    for (const section of result.sections) {
-      console.log(
-        c.dim(`  • ${section.label}: ${section.entries.length} entr${section.entries.length === 1 ? 'y' : 'ies'}`)
-      );
-    }
+    const breakdown = result.sections
+      .map(
+        (section) =>
+          `• ${section.label}: ${section.entries.length} entr${section.entries.length === 1 ? 'y' : 'ies'}`
+      )
+      .join('\n');
+    prompts.log.message(c.dim(breakdown));
   }
-  logger.info(`→ ${collapsePath(outputPath)}`);
-  prompts.outro('');
+  prompts.outro(`→ ${collapsePath(outputPath)}`);
 
   return {
     path: outputPath,

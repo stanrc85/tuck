@@ -22,7 +22,13 @@ vi.mock('../../src/ui/index.js', async () => {
       ...actual.prompts,
       intro: vi.fn(),
       outro: vi.fn(),
-      log: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+      log: {
+        info: vi.fn(),
+        success: vi.fn(),
+        warning: vi.fn(),
+        error: vi.fn(),
+        message: vi.fn(),
+      },
     },
     logger: {
       info: vi.fn(),
