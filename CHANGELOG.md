@@ -1,3 +1,10 @@
+## [2.26.2](https://github.com/stanrc85/tuck/compare/v2.26.1...v2.26.2) (2026-04-27)
+
+
+### Bug Fixes
+
+* **ui:** apply UI_CONVENTIONS to secrets command (drift cleanup) ([c40dbbf](https://github.com/stanrc85/tuck/commit/c40dbbfdd699873f7dc0f5501687244b7980313f))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.1](https://github.com/stanrc85/tuck/compare/v2.26.0...v2.26.1) (2026-04-27)
