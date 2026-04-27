@@ -1,3 +1,10 @@
+## [2.26.5](https://github.com/stanrc85/tuck/compare/v2.26.4...v2.26.5) (2026-04-27)
+
+
+### Bug Fixes
+
+* **ui:** add prompts.outro.warning/error variants and finish UI_CONVENTIONS sweep ([a2b5d58](https://github.com/stanrc85/tuck/commit/a2b5d58a1aefa2e07194f8fbb42dfafd8154c4ac))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.4](https://github.com/stanrc85/tuck/compare/v2.26.3...v2.26.4) (2026-04-27)
