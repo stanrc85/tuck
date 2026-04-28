@@ -7,6 +7,7 @@ import {
   expandPath,
   pathExists,
   collapsePath,
+  isDirectory,
   validateSafeSourcePath,
   validateSafeManifestDestination,
   validatePathWithinRoot,
@@ -292,6 +293,15 @@ const syncFiles = async (
         // Symlink tracking can make source and destination the same underlying file.
         // Skip copying in that case to avoid same-file copy errors.
         if (!(await pathsResolveToSameLocation(sourcePath, destPath))) {
+          // For tracked directories, mirror deletions: fs-extra.copy is additive
+          // (overwrites matching files but never removes stale ones). Without
+          // this prune, deleting or renaming a file inside a tracked dir leaves
+          // a ghost in the repo, source/dest checksums diverge permanently, and
+          // every subsequent sync re-detects the dir as "modified" forever.
+          // The pre-sync snapshot above covers rollback.
+          if (await isDirectory(sourcePath)) {
+            await deleteFileOrDir(destPath);
+          }
           await copyFileOrDir(sourcePath, destPath, { overwrite: true });
         }
 

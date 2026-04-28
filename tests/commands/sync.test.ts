@@ -17,6 +17,7 @@ const isIgnoredMock = vi.fn();
 const validateSafeSourcePathMock = vi.fn();
 const validateSafeManifestDestinationMock = vi.fn();
 const validatePathWithinRootMock = vi.fn();
+const isDirectoryMock = vi.fn();
 const runPreSyncHookMock = vi.fn();
 const runPostSyncHookMock = vi.fn();
 const stageAllMock = vi.fn();
@@ -73,7 +74,7 @@ vi.mock('../../src/lib/paths.js', () => ({
   ),
   detectCategory: vi.fn(() => 'misc'),
   sanitizeFilename: vi.fn((path: string) => path.split('/').pop() || 'file'),
-  isDirectory: vi.fn().mockResolvedValue(false),
+  isDirectory: isDirectoryMock,
   validateSafeSourcePath: validateSafeSourcePathMock,
   validateSafeManifestDestination: validateSafeManifestDestinationMock,
   validatePathWithinRoot: validatePathWithinRootMock,
@@ -192,6 +193,7 @@ describe('sync command behavior', () => {
     validateSafeSourcePathMock.mockImplementation(() => {});
     validateSafeManifestDestinationMock.mockImplementation(() => {});
     validatePathWithinRootMock.mockImplementation(() => {});
+    isDirectoryMock.mockResolvedValue(false);
   });
 
   it('throws NotInitializedError when manifest is missing', async () => {
@@ -240,6 +242,58 @@ describe('sync command behavior', () => {
     );
     expect(stageAllMock).not.toHaveBeenCalled();
     expect(commitMock).not.toHaveBeenCalled();
+  });
+
+  // Regression guard for the directory-sync infinite loop: when a tracked
+  // entry is a directory and the user deletes/renames a file inside it,
+  // sync must remove the destination dir before re-copying. fs-extra.copy
+  // is additive (overwrites matching files but never removes stale ones),
+  // so without this prune a deleted source file lingers in the repo, the
+  // dir-level checksums diverge permanently, and every subsequent sync
+  // re-detects "modified" forever.
+  it('mirrors deletions for tracked directories by removing dest before copy', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      nvim: {
+        source: '~/.config/nvim',
+        destination: 'files/config/nvim',
+        checksum: 'old',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('new');
+    isDirectoryMock.mockResolvedValue(true);
+    const callOrder: string[] = [];
+    deleteFileOrDirMock.mockImplementation(async () => {
+      callOrder.push('delete');
+    });
+    copyFileOrDirMock.mockImplementation(async () => {
+      callOrder.push('copy');
+    });
+
+    const { runSyncCommand } = await import('../../src/commands/sync.js');
+    await runSyncCommand('sync: update', { noCommit: true, noHooks: true, scan: false, pull: false });
+
+    const expectedDest = join('/test-home/.tuck', 'files', 'config', 'nvim');
+    expect(deleteFileOrDirMock).toHaveBeenCalledWith(expectedDest);
+    expect(copyFileOrDirMock).toHaveBeenCalledWith('/test-home/.config/nvim', expectedDest, { overwrite: true });
+    expect(callOrder).toEqual(['delete', 'copy']);
+  });
+
+  it('does NOT remove dest before copy when tracked entry is a single file', async () => {
+    getAllTrackedFilesMock.mockResolvedValue({
+      zshrc: {
+        source: '~/.zshrc',
+        destination: 'files/shell/zshrc',
+        checksum: 'old',
+      },
+    });
+    getFileChecksumMock.mockResolvedValue('new');
+    isDirectoryMock.mockResolvedValue(false);
+
+    const { runSyncCommand } = await import('../../src/commands/sync.js');
+    await runSyncCommand('sync: update', { noCommit: true, noHooks: true, scan: false, pull: false });
+
+    expect(deleteFileOrDirMock).not.toHaveBeenCalled();
+    expect(copyFileOrDirMock).toHaveBeenCalledTimes(1);
   });
 
   // preSync hook fires BEFORE change detection in both sync paths so that
