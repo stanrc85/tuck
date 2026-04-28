@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.26.6](https://github.com/stanrc85/tuck/compare/v2.26.5...v2.26.6) (2026-04-28)
 
 
 ### Bug Fixes
 
 * **sync:** mirror deletions for tracked directories to break sync loop ([b221629](https://github.com/stanrc85/tuck/commit/b22162994d0f6d7d5e0676d536e29eb9831accc8))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.5](https://github.com/stanrc85/tuck/compare/v2.26.4...v2.26.5) (2026-04-27)
 
