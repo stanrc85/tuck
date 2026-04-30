@@ -1,3 +1,30 @@
+# [3.0.0](https://github.com/stanrc85/tuck/compare/v2.26.7...v3.0.0) (2026-04-30)
+
+
+* feat(bootstrap)!: remove built-in tool registry, add restore-time uncovered-reference warning ([ab4bf5b](https://github.com/stanrc85/tuck/commit/ab4bf5bb13b32bbfc806ced8111c21afdbd8c018))
+
+
+### BREAKING CHANGES
+
+* bootstrap.toml is now required for `tuck bootstrap` to do anything.
+A missing or empty file exits cleanly with "nothing to do" instead of falling through
+to the (now-removed) built-in registry. Existing bootstrap.toml files with `requires`
+chains pointing at former built-ins (e.g. `requires = ["fzf"]`) will hit "unknown
+tool id" unless those ids are also defined as user [[tool]] blocks.
+
+- src/lib/bootstrap/registry/* (13 files, ~800 lines) — deleted
+- src/lib/bootstrap/wellKnownTools.ts — new (12 detection signatures)
+- src/lib/bootstrap/uncoveredReferences.ts — new (scan + coverage check)
+- src/lib/bootstrap/brewInstall.ts — new (spawn helper)
+- src/commands/restore.ts — wire warning + --install-missing flag
+- src/{commands/bootstrap,bootstrap-bundle,bootstrap-update}.ts + missingDeps.ts —
+  drop mergeWithRegistry calls, use config.tool directly
+- templates/bootstrap.toml.{example,full.example} — drop built-in references
+- docs/wiki/Bootstrapping-Tools.md — rewrite around user-defined tools
+- tests: 1550/1550 passing (was 1588 — minus the ~50 registry-entry tests deleted)
+
+Net -1107 LOC.
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.7](https://github.com/stanrc85/tuck/compare/v2.26.6...v2.26.7) (2026-04-30)
