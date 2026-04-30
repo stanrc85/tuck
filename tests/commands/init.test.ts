@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const cloneRepoMock = vi.fn();
 const createManifestMock = vi.fn();
@@ -17,7 +18,7 @@ vi.mock('../../src/ui/index.js', () => ({
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     text: vi.fn(),
     confirm: vi.fn(),
     select: vi.fn(),
@@ -43,13 +44,8 @@ vi.mock('../../src/ui/index.js', () => ({
     dim: vi.fn(),
     blank: vi.fn(),
   },
-  colors: {
-    brand: (x: string) => x,
-    dim: (x: string) => x,
-    bold: (x: string) => x,
-  },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || singular + 's'}`,
+  colors: mockColors(),
+  formatCount: mockFormatCount,
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({

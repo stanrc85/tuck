@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockColors, mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const getAllGroupsMock = vi.fn();
@@ -16,7 +17,7 @@ const confirmDangerousMock = vi.fn();
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     confirm: vi.fn().mockResolvedValue(true),
     confirmDangerous: confirmDangerousMock,
     text: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock('../../src/ui/index.js', () => ({
     log: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn(), message: vi.fn() },
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
-  colors: { dim: (x: string) => x, green: (x: string) => x, yellow: (x: string) => x, cyan: (x: string) => x },
+  colors: mockColors(),
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({

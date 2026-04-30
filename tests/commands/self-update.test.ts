@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { mockColors, mockOutro } from '../utils/uiMocks.js';
 
 const fetchLatestReleaseMock = vi.fn();
 const fetchReleaseByTagMock = vi.fn();
@@ -21,7 +22,7 @@ vi.mock('../../src/lib/updater.js', async (importOriginal) => {
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     cancel: vi.fn(),
     confirm: promptConfirmMock,
     note: vi.fn(),
@@ -45,12 +46,7 @@ vi.mock('../../src/ui/index.js', () => ({
     heading: vi.fn(),
   },
   isInteractive: isInteractiveMock,
-  colors: {
-    muted: (s: string) => s,
-    success: (s: string) => s,
-    brand: (s: string) => s,
-    bold: (s: string) => s,
-  },
+  colors: mockColors(),
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
 }));
 

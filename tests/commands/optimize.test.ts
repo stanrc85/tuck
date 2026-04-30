@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { vol } from 'memfs';
 import { TEST_HOME } from '../setup.js';
+import { mockOutro } from '../utils/uiMocks.js';
 
 const promptConfirmMock = vi.fn();
 const runShellProfileMock = vi.fn();
@@ -14,7 +15,7 @@ vi.mock('../../src/ui/index.js', async () => {
     prompts: {
       ...actual.prompts,
       intro: vi.fn(),
-      outro: vi.fn(),
+      outro: mockOutro(),
       confirm: promptConfirmMock,
     },
   };

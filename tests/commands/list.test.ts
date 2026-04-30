@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
 
 const promptsIntroMock = vi.fn();
-const promptsOutroMock = vi.fn();
+const promptsOutroMock = mockOutro();
 const promptsWarningMock = vi.fn();
 const promptsMessageMock = vi.fn();
 const promptsNoteMock = vi.fn();

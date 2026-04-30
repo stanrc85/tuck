@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotInitializedError } from '../../src/errors.js';
+import { mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const getTrackedFileBySourceMock = vi.fn();
@@ -12,7 +13,7 @@ const preparePathsForTrackingMock = vi.fn();
 const promptsSelectMock = vi.fn();
 const promptsConfirmMock = vi.fn();
 const promptsLogInfoMock = vi.fn();
-const promptsOutroMock = vi.fn();
+const promptsOutroMock = mockOutro();
 
 vi.mock('../../src/ui/index.js', () => ({
   banner: vi.fn(),
@@ -25,8 +26,7 @@ vi.mock('../../src/ui/index.js', () => ({
     cyan: (x: string) => x,
     white: (x: string) => x,
   },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  formatCount: mockFormatCount,
   prompts: {
     intro: vi.fn(),
     outro: promptsOutroMock,

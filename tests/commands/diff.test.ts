@@ -8,6 +8,7 @@ chalk.level = 2;
 import { clearManifestCache } from '../../src/lib/manifest.js';
 import { TEST_HOME, TEST_TUCK_DIR } from '../setup.js';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
+import { mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 interface TestFileDiff {
   source: string;
@@ -26,7 +27,7 @@ interface TestFileDiff {
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     confirm: vi.fn().mockResolvedValue(true),
     select: vi.fn().mockResolvedValue('general'),
     text: vi.fn(),
@@ -46,8 +47,7 @@ vi.mock('../../src/ui/index.js', () => ({
       message: '',
     })),
   },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  formatCount: mockFormatCount,
 }));
 
 describe('diff command', () => {

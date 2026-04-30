@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
@@ -15,7 +16,7 @@ const promptConfirmMock = vi.fn();
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     cancel: vi.fn(),
     confirm: promptConfirmMock,
     multiselect: vi.fn(),
@@ -30,17 +31,8 @@ vi.mock('../../src/ui/index.js', () => ({
       message: vi.fn(),
     },
   },
-  colors: {
-    dim: (s: string) => s,
-    bold: (s: string) => s,
-    brand: (s: string) => s,
-    muted: (s: string) => s,
-    success: (s: string) => s,
-    warning: (s: string) => s,
-    error: (s: string) => s,
-  },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  colors: mockColors(),
+  formatCount: mockFormatCount,
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
 }));
 

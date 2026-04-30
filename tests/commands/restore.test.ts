@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { join, sep } from 'path';
 import { NotInitializedError, NonInteractivePromptError } from '../../src/errors.js';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const isInteractiveMock = vi.fn(() => true);
 const multiselectMock = vi.fn();
@@ -33,7 +34,7 @@ const validatePathWithinRootMock = vi.fn();
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     multiselect: multiselectMock,
     select: vi.fn(),
     confirm: confirmMock,
@@ -59,17 +60,8 @@ vi.mock('../../src/ui/index.js', () => ({
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   isInteractive: isInteractiveMock,
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
-  colors: {
-    brand: (x: string) => x,
-    dim: (x: string) => x,
-    bold: (x: string) => x,
-    warning: (x: string) => x,
-    error: (x: string) => x,
-    success: (x: string) => x,
-    muted: (x: string) => x,
-  },
+  formatCount: mockFormatCount,
+  colors: mockColors(),
 }));
 
 vi.mock('../../src/lib/bootstrap/missingDeps.js', () => ({

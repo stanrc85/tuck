@@ -3,6 +3,7 @@ import { vol } from 'memfs';
 import { join } from 'path';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
 import { TEST_HOME, TEST_TUCK_DIR } from '../setup.js';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const cloneRepoMock = vi.fn();
 const createPreApplySnapshotMock = vi.fn();
@@ -12,7 +13,7 @@ const restoreSecretsMock = vi.fn();
 const getAllSecretsMock = vi.fn();
 const getSecretCountMock = vi.fn();
 
-const promptsOutroMock = vi.fn();
+const promptsOutroMock = mockOutro();
 const promptsLogInfoMock = vi.fn();
 const promptsLogSuccessMock = vi.fn();
 const promptsLogWarningMock = vi.fn();
@@ -40,16 +41,8 @@ vi.mock('../../src/ui/index.js', () => ({
     multiselect: vi.fn().mockResolvedValue([]),
     cancel: vi.fn(),
   },
-  colors: {
-    yellow: (x: string) => x,
-    dim: (x: string) => x,
-    bold: (x: string) => x,
-    green: (x: string) => x,
-    cyan: (x: string) => x,
-    brand: (x: string) => x,
-  },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  colors: mockColors(),
+  formatCount: mockFormatCount,
 }));
 
 vi.mock('../../src/lib/git.js', () => ({

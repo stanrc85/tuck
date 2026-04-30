@@ -5,6 +5,7 @@ import {
   FileAlreadyTrackedError,
   SecretsDetectedError,
 } from '../../src/errors.js';
+import { mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const isFileTrackedMock = vi.fn();
@@ -27,7 +28,7 @@ const checkFileSizeThresholdMock = vi.fn();
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     confirm: vi.fn().mockResolvedValue(false),
     confirmDangerous: vi.fn().mockResolvedValue(true),
     select: vi.fn().mockResolvedValue('continue'),

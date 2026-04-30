@@ -5,12 +5,13 @@ import { TEST_TUCK_DIR } from '../setup.js';
 import { initTestTuck, getTestConfig } from '../utils/testHelpers.js';
 import { createMockConfig } from '../utils/factories.js';
 import { ConfigError } from '../../src/errors.js';
+import { mockOutro } from '../utils/uiMocks.js';
 
 // Mock modules
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     confirm: vi.fn(),
     select: vi.fn(),
     text: vi.fn(),

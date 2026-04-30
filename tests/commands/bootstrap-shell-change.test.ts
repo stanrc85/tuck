@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
+import { mockOutro } from '../utils/uiMocks.js';
 
 const confirmMock = vi.fn();
 const logSuccessMock = vi.fn();
@@ -10,7 +11,7 @@ vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     confirm: confirmMock,
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     multiselect: vi.fn(),
     select: vi.fn(),
     cancel: vi.fn(),

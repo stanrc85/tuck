@@ -4,6 +4,7 @@ import { join } from 'path';
 import { clearManifestCache } from '../../src/lib/manifest.js';
 import { TEST_HOME, TEST_TUCK_DIR } from '../setup.js';
 import { createMockManifest, createMockTrackedFile } from '../utils/factories.js';
+import { mockOutro } from '../utils/uiMocks.js';
 
 const promptConfirmMock = vi.fn();
 
@@ -16,7 +17,7 @@ vi.mock('../../src/ui/index.js', async () => {
     prompts: {
       ...actual.prompts,
       intro: vi.fn(),
-      outro: vi.fn(),
+      outro: mockOutro(),
       confirm: promptConfirmMock,
     },
   };

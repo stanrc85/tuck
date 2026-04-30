@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { join, sep } from 'path';
 import { NotInitializedError } from '../../src/errors.js';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const getAllTrackedFilesMock = vi.fn();
@@ -24,7 +25,7 @@ const stageAllMock = vi.fn();
 const commitMock = vi.fn();
 const hasRemoteMock = vi.fn();
 const pushMock = vi.fn();
-const promptsOutroMock = vi.fn();
+const promptsOutroMock = mockOutro();
 const getStatusMock = vi.fn();
 
 vi.mock('../../src/ui/index.js', () => ({
@@ -48,19 +49,8 @@ vi.mock('../../src/ui/index.js', () => ({
     },
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
-  colors: {
-    dim: (x: string) => x,
-    bold: (x: string) => x,
-    yellow: (x: string) => x,
-    red: (x: string) => x,
-    cyan: (x: string) => x,
-    brand: (x: string) => x,
-    error: (x: string) => x,
-    warning: (x: string) => x,
-    success: (x: string) => x,
-  },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  colors: mockColors(),
+  formatCount: mockFormatCount,
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({

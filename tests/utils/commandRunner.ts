@@ -3,6 +3,7 @@
  */
 
 import { vi } from 'vitest';
+import { mockOutro } from './uiMocks.js';
 
 export interface CommandResult {
   stdout: string[];
@@ -140,7 +141,7 @@ export const createPromptsMock = (responses: Record<string, unknown>) => {
 
   return {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: mockOutro(),
     confirm: vi.fn().mockImplementation((message: string) => {
       // Check for partial matches in response keys (longest/most specific first)
       for (const [key, value] of sortedEntries) {

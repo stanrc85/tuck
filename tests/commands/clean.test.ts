@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const assertMigratedMock = vi.fn();
@@ -16,7 +17,7 @@ const loggerInfoMock = vi.fn();
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: Object.assign(vi.fn(), { warning: vi.fn(), error: vi.fn() }),
+    outro: mockOutro(),
     cancel: vi.fn(),
     confirm: promptConfirmMock,
     multiselect: vi.fn(),
@@ -43,16 +44,8 @@ vi.mock('../../src/ui/index.js', () => ({
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
   isInteractive: isInteractiveMock,
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || singular + 's'}`,
-  colors: {
-    muted: (s: string) => s,
-    success: (s: string) => s,
-    brand: (s: string) => s,
-    brandBold: (s: string) => s,
-    bold: (s: string) => s,
-    dim: (s: string) => s,
-  },
+  formatCount: mockFormatCount,
+  colors: mockColors(),
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({

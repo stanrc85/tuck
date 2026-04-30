@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mockColors, mockFormatCount, mockOutro } from '../utils/uiMocks.js';
 
 const loadManifestMock = vi.fn();
 const checkLocalModeMock = vi.fn();
@@ -12,7 +13,7 @@ const getCurrentBranchMock = vi.fn();
 const getAheadBehindMock = vi.fn();
 const resetHardMock = vi.fn();
 const promptsIntroMock = vi.fn();
-const promptsOutroMock = vi.fn();
+const promptsOutroMock = mockOutro();
 
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
@@ -29,12 +30,8 @@ vi.mock('../../src/ui/index.js', () => ({
     },
   },
   withSpinner: vi.fn(async (_label: string, fn: () => Promise<unknown>) => fn()),
-  colors: {
-    dim: (x: string) => x,
-    yellow: (x: string) => x,
-  },
-  formatCount: (n: number, singular: string, plural?: string) =>
-    `${n} ${n === 1 ? singular : plural || `${singular}s`}`,
+  colors: mockColors(),
+  formatCount: mockFormatCount,
 }));
 
 vi.mock('../../src/lib/paths.js', () => ({

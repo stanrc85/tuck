@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mockOutro } from '../utils/uiMocks.js';
 
 const runDoctorChecksMock = vi.fn();
 const getDoctorExitCodeMock = vi.fn();
@@ -21,7 +22,8 @@ vi.mock('../../src/lib/doctor.js', () => ({
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: promptsIntroMock,
-    outro: Object.assign(promptsOutroMock, {
+    outro: mockOutro({
+      base: promptsOutroMock,
       warning: promptsOutroWarningMock,
       error: promptsOutroErrorMock,
     }),

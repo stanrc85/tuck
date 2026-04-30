@@ -25,12 +25,16 @@ vi.mock('../../src/ui/index.js', async () => {
   const actual = await vi.importActual<typeof import('../../src/ui/index.js')>(
     '../../src/ui/index.js'
   );
+  // Dynamic import: this file eagerly imports its SUT, so static-importing
+  // mockOutro at top-level races vitest's mock-hoisting (binding not initialized
+  // when factory runs). Import inside the factory to defer evaluation.
+  const { mockOutro } = await import('../utils/uiMocks.js');
   return {
     ...actual,
     prompts: {
       ...actual.prompts,
       intro: vi.fn(),
-      outro: vi.fn(),
+      outro: mockOutro(),
       note: vi.fn(),
       cancel: vi.fn(),
       confirm: confirmMock,
