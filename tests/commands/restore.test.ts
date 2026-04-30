@@ -176,6 +176,7 @@ describe('restore command behavior', () => {
       tool: [],
       bundles: {},
       registry: { disabled: [] },
+      restore: { ignoreUncovered: [] },
     });
     confirmMock.mockResolvedValue(true);
   });
@@ -662,6 +663,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -682,6 +684,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -703,6 +706,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: {},
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -723,6 +727,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -744,6 +749,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'], kali: ['ripgrep'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -770,6 +776,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -789,6 +796,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');
@@ -831,6 +839,7 @@ describe('restore command behavior', () => {
         tool: [],
         bundles: { kubuntu: ['fzf'] },
         registry: { disabled: [] },
+        restore: { ignoreUncovered: [] },
       });
 
       const { runRestore } = await import('../../src/commands/restore.js');

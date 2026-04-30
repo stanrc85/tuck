@@ -61,8 +61,9 @@ export const findUncoveredReferences = async (
     })
   );
 
-  const referenced = WELL_KNOWN_TOOLS.filter((tool) =>
-    isReferenced(tool, restoredFilePaths, rcContents)
+  const ignored = new Set(config.restore.ignoreUncovered);
+  const referenced = WELL_KNOWN_TOOLS.filter(
+    (tool) => !ignored.has(tool.id) && isReferenced(tool, restoredFilePaths, rcContents)
   );
   if (referenced.length === 0) return [];
 

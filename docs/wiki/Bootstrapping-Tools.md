@@ -132,6 +132,17 @@ tuck restore --install-missing
 
 This does **not** modify `bootstrap.toml` — anything you install this way only persists on the current host. Add a `[[tool]]` block to track the tool across all your machines.
 
+### Suppressing the warning per id — `[restore] ignoreUncovered`
+
+When a tool is referenced in your dotfiles but you intentionally don't want tuck to flag or auto-install it (e.g., starship installed via a one-off; zimfw skipped on Kali), list its id under `[restore]`:
+
+```toml
+[restore]
+ignoreUncovered = ["starship", "zimfw"]
+```
+
+The setting persists with your dotfiles repo, so the suppression list syncs across hosts. Unknown ids (typos, ids removed from the well-known table later) are no-ops, not errors.
+
 ## Variable interpolation
 
 Exactly five tokens are substituted in `check`, `install`, and `update` strings:

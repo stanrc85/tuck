@@ -111,6 +111,22 @@ export const bootstrapConfigSchema = z.object({
       disabled: z.array(toolIdSchema).default([]),
     })
     .default({}),
+  /**
+   * Restore-flow knobs.
+   *
+   * `ignoreUncovered` suppresses well-known tool ids from the post-restore
+   * "uncovered references" warning (see findUncoveredReferences). Useful
+   * when a tool is referenced in your dotfiles but you intentionally don't
+   * want tuck to flag or auto-install it (e.g., starship installed via a
+   * one-off, or zimfw skipped on Kali). Ids here are matched literally
+   * against the well-known table — unknown ids are no-ops, not errors,
+   * so users can safely list ids that may or may not be in the table.
+   */
+  restore: z
+    .object({
+      ignoreUncovered: z.array(z.string()).default([]),
+    })
+    .default({}),
 });
 
 export type ToolDetect = z.output<typeof toolDetectSchema>;

@@ -27,10 +27,14 @@ const importFindUncovered = async () =>
   (await import('../../src/lib/bootstrap/uncoveredReferences.js'))
     .findUncoveredReferences;
 
-const userToolsConfig = (tools: ToolDefinition[]) => ({
+const userToolsConfig = (
+  tools: ToolDefinition[],
+  overrides: { ignoreUncovered?: string[] } = {}
+) => ({
   tool: tools,
   bundles: {},
   registry: { disabled: [] },
+  restore: { ignoreUncovered: overrides.ignoreUncovered ?? [] },
 });
 
 const makeTool = (overrides: Partial<ToolDefinition>): ToolDefinition => ({
@@ -274,6 +278,44 @@ alias verify="echo no compromise"
     expect(zimfw).toBeDefined();
     expect(zimfw?.installType).toBe('manual');
     expect(zimfw?.brewFormula).toBe('');
+  });
+
+  it('suppresses ids listed in [restore] ignoreUncovered from the warning', async () => {
+    // Real-world fit: starship is referenced in the user's .zshrc but they
+    // install it via a one-off (not bootstrap), so they don't want tuck
+    // flagging it on every restore. Listing it in ignoreUncovered hides
+    // it without faking a user tool block.
+    loadBootstrapConfigMock.mockResolvedValue(
+      userToolsConfig([], { ignoreUncovered: ['starship', 'zimfw'] })
+    );
+    readFileMock.mockResolvedValueOnce(`
+eval "$(starship init zsh)"
+zimfw upgrade
+eval "$(zoxide init zsh)"
+`);
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    const ids = result.map((u) => u.id);
+    expect(ids).not.toContain('starship');
+    expect(ids).not.toContain('zimfw');
+    // zoxide is NOT in the ignore list, so it still surfaces.
+    expect(ids).toContain('zoxide');
+  });
+
+  it('treats unknown ignoreUncovered ids as no-ops (not errors)', async () => {
+    // Users may list ids that are not (yet) in WELL_KNOWN_TOOLS — typo, or
+    // a tool that lived in the table at some point and was removed. The
+    // unknown id should silently no-op so a stale config doesn't break
+    // restore.
+    loadBootstrapConfigMock.mockResolvedValue(
+      userToolsConfig([], { ignoreUncovered: ['exa', 'never-existed'] })
+    );
+    readFileMock.mockResolvedValueOnce('eval "$(zoxide init zsh)"');
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    expect(result.map((u) => u.id)).toContain('zoxide');
   });
 
   it('only scans rc-shaped paths for content (ignores .toml mentions)', async () => {

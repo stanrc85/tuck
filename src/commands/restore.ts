@@ -537,7 +537,7 @@ const maybeWarnAboutUncoveredReferences = async (
 
   if (options.installMissing !== true) {
     prompts.log.info(
-      'Add `[[tool]]` blocks to bootstrap.toml to track these, or re-run with --install-missing to attempt `brew install`.'
+      'Add `[[tool]]` blocks to bootstrap.toml to track these, pass --install-missing next time to attempt `brew install`, or `brew install <id>` directly. Suppress per id via `[restore] ignoreUncovered = [...]` in bootstrap.toml.'
     );
     return;
   }
@@ -571,7 +571,7 @@ const attemptInstallMissing = async (
 
   if (manual.length > 0) {
     prompts.log.info(
-      `Skipping ${formatCount(manual.length, 'tool', 'tools')} that need a manual bootstrap.toml entry: ${manual.map((m) => m.id).join(', ')}`
+      `Skipping ${formatCount(manual.length, 'tool', 'tools')} that need a manual bootstrap.toml entry: ${manual.map((m) => m.id).join(', ')}. See the Bootstrapping-Tools wiki for [[tool]] block reference.`
     );
   }
 
@@ -588,6 +588,9 @@ const attemptInstallMissing = async (
     } else if (result.status === 'skipped') {
       prompts.log.warning(
         `Skipped ${tool.id}: ${result.message ?? 'brew unavailable'}. Stopping auto-install.`
+      );
+      prompts.log.info(
+        'Install brew first (https://brew.sh) or add apt-based [[tool]] blocks to bootstrap.toml.'
       );
       // brew unavailable means every subsequent attempt would also skip.
       // Bail with a single warning rather than N copies of the same message.
