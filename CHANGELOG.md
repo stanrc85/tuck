@@ -1,3 +1,10 @@
+## [3.1.1](https://github.com/stanrc85/tuck/compare/v3.1.0...v3.1.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* **bootstrap:** tighten coverage check + harden brew install + improve UX ([3dcdf48](https://github.com/stanrc85/tuck/commit/3dcdf48dfbb331e50ed0fbc0bdf71773fc354fbf))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.1.0](https://github.com/stanrc85/tuck/compare/v3.0.0...v3.1.0) (2026-04-30)
