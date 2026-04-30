@@ -1,3 +1,10 @@
+# [3.3.0](https://github.com/stanrc85/tuck/compare/v3.2.0...v3.3.0) (2026-04-30)
+
+
+### Features
+
+* **bootstrap:** add updateVia: "manual" for cleaner skip messages ([3aaaef7](https://github.com/stanrc85/tuck/commit/3aaaef739deffcdf78ee03b11a730b952b04bd94))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.2.0](https://github.com/stanrc85/tuck/compare/v3.1.1...v3.2.0) (2026-04-30)
