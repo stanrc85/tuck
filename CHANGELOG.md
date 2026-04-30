@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [3.0.0](https://github.com/stanrc85/tuck/compare/v2.26.7...v3.0.0) (2026-04-30)
 
 
@@ -24,8 +26,6 @@ tool id" unless those ids are also defined as user [[tool]] blocks.
 - tests: 1550/1550 passing (was 1588 — minus the ~50 registry-entry tests deleted)
 
 Net -1107 LOC.
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.7](https://github.com/stanrc85/tuck/compare/v2.26.6...v2.26.7) (2026-04-30)
 
