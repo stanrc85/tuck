@@ -294,6 +294,53 @@ disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "p
       expect(result.plan?.ordered.map((t) => t.id)).toEqual(['pet']);
     });
 
+    it('--all excludes updateVia:manual tools too (same skip behavior as system)', async () => {
+      // updateVia: 'manual' shares the skip-from-`--all` behavior of
+      // 'system' but uses a different log message. The plan should not
+      // include the manually-managed tool.
+      const fontTool = makeTool('nerd-font', { install: 'install-font' });
+      const pet = makeTool('pet', { install: 'install-pet' });
+      await seedState('nerd-font', fontTool);
+      await seedState('pet', pet);
+
+      writeBootstrapToml(`
+[[tool]]
+id = "nerd-font"
+description = "RobotoMono Nerd Font"
+install = "install-font"
+update = "@install"
+updateVia = "manual"
+
+[[tool]]
+id = "pet"
+description = "snippet manager"
+install = "install-pet"
+`);
+
+      const result = await runBootstrapUpdate({ all: true, dryRun: true });
+      expect(result.plan?.ordered.map((t) => t.id)).toEqual(['pet']);
+    });
+
+    it('--tools explicitly names a manual tool and runs it (escape hatch)', async () => {
+      // updateVia: 'manual' must honor the explicit --tools naming the
+      // same way 'system' does. Users who type `--tools nerd-font` want
+      // a forced refresh, not the routine skip.
+      const fontTool = makeTool('nerd-font', { install: 'install-font' });
+      await seedState('nerd-font', fontTool);
+
+      writeBootstrapToml(`
+[[tool]]
+id = "nerd-font"
+description = "RobotoMono Nerd Font"
+install = "install-font"
+update = "@install"
+updateVia = "manual"
+`);
+
+      const result = await runBootstrapUpdate({ tools: 'nerd-font', dryRun: true });
+      expect(result.plan?.ordered.map((t) => t.id)).toEqual(['nerd-font']);
+    });
+
     it('--tools explicitly names a system-managed tool and runs it (escape hatch)', async () => {
       // The flag defers, it doesn't forbid — a user who names a
       // system-managed tool by id opts into the update script.

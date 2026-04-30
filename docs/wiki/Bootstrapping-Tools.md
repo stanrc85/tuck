@@ -85,7 +85,7 @@ minimal   = ["ripgrep", "fzf"]
 | `check`             | string (shell)            | Exit 0 = already installed, skip install. Exit non-zero = proceed.      |
 | `install`           | string (shell, required)  | Install command. Runs in `sh` (or `pwsh` on Windows).                   |
 | `update`            | string (shell) or `@install` | Update command. `@install` or omitted → re-run `install`.            |
-| `updateVia`         | `"self"` \| `"system"`    | `"system"` defers to OS package manager (see [below](#updatevia-system)). Default `"self"`. |
+| `updateVia`         | `"self"` \| `"system"` \| `"manual"`    | `"system"` defers to OS package manager, `"manual"` defers to manual user invocation (see [below](#updatevia-system)). Default `"self"`. |
 | `detect.paths`      | string[]                  | Glob paths that, if present, mark the tool as "detected" in the picker  |
 | `detect.rcReferences` | string[]                 | Substrings to look for in tracked shell dotfiles (rc/alias/function refs) |
 | `associatedConfig`  | string[]                  | Globs of config paths this tool owns. Used by `tuck restore` to offer a post-restore install prompt when those paths get written but the tool isn't installed. |
@@ -201,11 +201,14 @@ tuck bootstrap --rerun neovim
 }
 ```
 
-## `updateVia: "system"`
+## `updateVia: "system"` / `"manual"`
 
-Tools installed via a system package manager (apt, brew, dnf, nix) already receive updates through that package manager's own flow. Re-running tuck's `update` for those tools is redundant at best and racy at worst (two package operations fighting for the apt lock).
+Some tools shouldn't routinely re-run on `tuck bootstrap update`. Two reasons:
 
-Mark such tools with `updateVia = "system"`:
+- **`"system"`** — the host package manager (apt, brew, dnf, nix) already updates the tool. Re-running tuck's `update` is redundant at best and racy at worst (two package operations fighting for the apt lock).
+- **`"manual"`** — no package manager is involved, but the user wants the tool refreshed only when they explicitly say so. Curl-from-GitHub-release fonts, one-shot cache rebuilds, and similar "set it and forget it" tools fit here.
+
+Both share the same skip behavior; only the deferred-log message differs:
 
 ```toml
 [[tool]]
@@ -213,16 +216,24 @@ id = "ripgrep"
 install = "sudo apt-get install -y ripgrep"
 update = "sudo apt-get install -y --only-upgrade ripgrep"
 updateVia = "system"                        # defer to apt
+
+[[tool]]
+id = "nerd-font-roboto-mono"
+install = "..."
+update = "@install"
+updateVia = "manual"                        # only refresh when I say so
 ```
 
-**Behavior:**
+**Behavior (both `"system"` and `"manual"`):**
 
 - `tuck bootstrap --all` and the picker still INSTALL the tool (install is the "first-time setup" path).
-- `tuck bootstrap update --all` and the picker **skip** the tool with a `Deferred to system package manager` info log. The tool doesn't appear selectable in the picker.
-- `tuck bootstrap update --check` excludes the tool from both the `pending` payload AND the exit-code signal, so CI that runs `tuck bootstrap update --check` won't fail just because apt has a newer `ripgrep` available.
-- `tuck bootstrap update --tools <id>` is the escape hatch — explicit naming always runs the update script.
+- `tuck bootstrap update --all` and the picker **skip** the tool. The deferred-log message branches by reason:
+  - `"system"` → `Deferred to system package manager: <ids>`
+  - `"manual"` → `Manually managed: <ids> (run \`tuck bootstrap update --tools <id>\` to refresh)`
+- `tuck bootstrap update --check` excludes the tool from both the `pending` payload AND the exit-code signal — CI running `tuck bootstrap update --check` won't fail just because apt has a newer `ripgrep` available, or because a font's GitHub release has moved.
+- `tuck bootstrap update --tools <id>` is the escape hatch — explicit naming always runs the update script regardless of `updateVia`.
 
-Use `"system"` for any tool where something else (brew, nix, manual install, etc.) owns updates.
+Use `"system"` when something else (brew, apt, nix, etc.) owns updates. Use `"manual"` when nothing else owns updates but you want to call the shots on timing.
 
 ## Sudo handling
 

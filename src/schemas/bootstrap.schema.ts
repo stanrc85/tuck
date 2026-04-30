@@ -65,11 +65,18 @@ export const toolDefinitionSchema = z.object({
    *   - `'system'`: updates are delegated to the host package manager
    *     (apt/dnf/brew/…). `tuck bootstrap update` skips the tool under
    *     the picker / `--all` / `--check` — you run `apt upgrade` (or
-   *     equivalent) instead. `--tools <id>` still forces the tool's
-   *     `update` script to run, as an explicit escape hatch.
-   * Install is unaffected either way — tuck still bootstraps the tool.
+   *     equivalent) instead. The deferred-log message names the package
+   *     manager. `--tools <id>` still forces the tool's `update` script
+   *     to run, as an explicit escape hatch.
+   *   - `'manual'`: same skip behavior as `'system'`, but the log message
+   *     instead says "Manually managed: <ids>". Use when a tool isn't
+   *     owned by any package manager but you don't want it routinely
+   *     re-running on every `tuck bootstrap update` (curl-from-GitHub
+   *     fonts, one-shot cache rebuilds, anything you refresh manually
+   *     when needed).
+   * Install is unaffected by `updateVia` — tuck still bootstraps the tool.
    */
-  updateVia: z.enum(['self', 'system']).optional(),
+  updateVia: z.enum(['self', 'system', 'manual']).optional(),
   /** Signals used by the picker's auto-detection. */
   detect: toolDetectSchema,
   /**

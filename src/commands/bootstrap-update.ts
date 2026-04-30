@@ -115,7 +115,7 @@ export const runBootstrapUpdate = async (
     // System-managed tools are not tuck's problem — exclude them from
     // both the "pending" exit-code signal and the returned payload so
     // `tuck bootstrap update --check` doesn't flag apt-owned drift.
-    const actionable = pending.filter((p) => !p.systemManaged);
+    const actionable = pending.filter((p) => p.excludeReason === null);
     const anyPending = actionable.some((p) => p.hasPendingUpdate);
     // Non-zero exit so `tuck bootstrap update --check` is scriptable the
     // same way `tuck self-update --check` is.
@@ -231,20 +231,21 @@ const determineUpdateSelection = async (
   pending: EnrichedPending[],
   installedIds: string[]
 ): Promise<string[]> => {
-  const systemManagedIds = new Set(
-    pending.filter((p) => p.systemManaged).map((p) => p.id)
+  const excludedById = new Map(
+    pending
+      .filter((p) => p.excludeReason !== null)
+      .map((p) => [p.id, p.excludeReason as 'system' | 'manual'])
   );
   if (options.all) {
-    // --all obeys the updateVia: 'system' filter — users running
-    // `tuck update --all` don't want apt-owned tools included. Surfacing
-    // the deferred set lets them see WHY bat/eza/fd/… aren't in the plan.
-    const filtered = installedIds.filter((id) => !systemManagedIds.has(id));
-    const deferred = installedIds.filter((id) => systemManagedIds.has(id));
-    if (deferred.length > 0) {
-      prompts.log.info(
-        `Deferred to system package manager: ${deferred.join(', ')}`
-      );
-    }
+    // --all obeys the updateVia filter — users running `tuck update --all`
+    // don't want apt/manual-managed tools running their update scripts on
+    // every refresh. Surfacing the deferred set lets them see WHY those
+    // tools aren't in the plan.
+    const filtered = installedIds.filter((id) => !excludedById.has(id));
+    const deferred = installedIds
+      .filter((id) => excludedById.has(id))
+      .map((id) => ({ id, reason: excludedById.get(id)! }));
+    logDeferredPicks(deferred);
     return filtered;
   }
   if (options.tools) {
@@ -266,16 +267,14 @@ const runUpdatePicker = async (pending: EnrichedPending[]): Promise<string[]> =>
 
   // Surface pending-update tools first so the default multiselect focus is
   // useful. Orphaned entries aren't offered — we can't update a tool whose
-  // definition isn't in the catalog anymore. System-managed tools are also
-  // excluded (apt/brew/dnf owns their update path); if any were filtered
-  // out we log them so the user isn't confused about missing entries.
-  const deferred = pending.filter((p) => p.systemManaged && !p.orphaned);
-  if (deferred.length > 0) {
-    prompts.log.info(
-      `Deferred to system package manager: ${deferred.map((p) => p.id).join(', ')}`
-    );
-  }
-  const selectable = pending.filter((p) => !p.orphaned && !p.systemManaged);
+  // definition isn't in the catalog anymore. Excluded tools (system- or
+  // manually-managed) are also filtered out; if any were dropped we log
+  // them so the user isn't confused about missing entries.
+  const deferred = pending
+    .filter((p) => p.excludeReason !== null && !p.orphaned)
+    .map((p) => ({ id: p.id, reason: p.excludeReason as 'system' | 'manual' }));
+  logDeferredPicks(deferred);
+  const selectable = pending.filter((p) => !p.orphaned && p.excludeReason === null);
   if (selectable.length === 0) {
     prompts.log.warning('No installed tools have definitions in the current catalog.');
     return [];
@@ -307,16 +306,19 @@ interface EnrichedPending extends PendingUpdate {
   /** Convenience: `versionBump || hashDrift`. Not persisted. */
   hasPendingUpdate: boolean;
   /**
-   * Tool's catalog definition sets `updateVia: 'system'` — apt/dnf/brew
-   * owns the update path and `tuck update` skips it under the default
-   * flow (`--all`, picker, `--check`). `--tools <id>` still runs the
-   * tool's own `update` script as an explicit escape hatch.
+   * When set, the tool is excluded from the default-flow update scopes
+   * (`--all`, picker, `--check`). `--tools <id>` still honors the request
+   * as an explicit escape hatch.
+   *   `'system'` — `updateVia: 'system'`; deferred to apt/dnf/brew/...
+   *   `'manual'` — `updateVia: 'manual'`; user refreshes manually when
+   *               they want it (curl-from-GitHub fonts, cache rebuilds).
+   *   `null`     — included in default-flow updates.
    */
-  systemManaged: boolean;
+  excludeReason: 'system' | 'manual' | null;
 }
 
 const stripInternal = (p: EnrichedPending): PendingUpdate => {
-  const { hasPendingUpdate: _a, systemManaged: _b, ...rest } = p;
+  const { hasPendingUpdate: _a, excludeReason: _b, ...rest } = p;
   void _a;
   void _b;
   return rest;
@@ -338,7 +340,7 @@ const computePendingUpdates = (
         hashDrift: false,
         orphaned: true,
         hasPendingUpdate: false,
-        systemManaged: false,
+        excludeReason: null,
       });
       continue;
     }
@@ -352,7 +354,12 @@ const computePendingUpdates = (
       hashDrift,
       orphaned: false,
       hasPendingUpdate: versionBump || hashDrift,
-      systemManaged: tool.updateVia === 'system',
+      excludeReason:
+        tool.updateVia === 'system'
+          ? 'system'
+          : tool.updateVia === 'manual'
+            ? 'manual'
+            : null,
     });
   }
   return out;
@@ -393,14 +400,48 @@ const formatPendingHint = (p: EnrichedPending): string => {
   return 'up to date';
 };
 
+/**
+ * Log the tools we're skipping under the default `tuck bootstrap update`
+ * scopes, branching the message by `updateVia` reason. Pre-v3.2 we only
+ * had `'system'`, so the single message ("Deferred to system package
+ * manager: ...") was correct. Now we split:
+ *
+ *   - 'system' → "Deferred to system package manager: <ids>"
+ *     (apt/dnf/brew owns the update path, run that instead)
+ *   - 'manual' → "Manually managed: <ids> (run `tuck bootstrap update
+ *               --tools <id>` to refresh)"
+ *     (no package manager involved; user invokes manually when wanted)
+ *
+ * Both groups are logged when present. Empty input is a no-op.
+ */
+const logDeferredPicks = (
+  deferred: readonly { id: string; reason: 'system' | 'manual' }[]
+): void => {
+  if (deferred.length === 0) return;
+  const systemIds = deferred.filter((d) => d.reason === 'system').map((d) => d.id);
+  const manualIds = deferred.filter((d) => d.reason === 'manual').map((d) => d.id);
+  if (systemIds.length > 0) {
+    prompts.log.info(
+      `Deferred to system package manager: ${systemIds.join(', ')}`
+    );
+  }
+  if (manualIds.length > 0) {
+    prompts.log.info(
+      `Manually managed: ${manualIds.join(', ')} (run \`tuck bootstrap update --tools <id>\` to refresh)`
+    );
+  }
+};
+
 const reportPending = (pending: EnrichedPending[]): void => {
-  // System-managed tools are excluded from the drift signal — apt/brew/dnf
-  // owns their update path, so tuck reporting "pending" for bat/eza/fd is
-  // noise that would drive scripted users to run `tuck update` needlessly.
-  const actionable = pending.filter((p) => !p.systemManaged);
+  // Excluded tools (system- or manually-managed) are filtered from the drift
+  // signal — they have their own update path, and tuck reporting "pending"
+  // for them would drive scripted users to run `tuck update` needlessly.
+  const actionable = pending.filter((p) => p.excludeReason === null);
   const pendingOnly = actionable.filter((p) => p.hasPendingUpdate);
   const orphaned = actionable.filter((p) => p.orphaned);
-  const deferred = pending.filter((p) => p.systemManaged);
+  const deferred = pending
+    .filter((p) => p.excludeReason !== null)
+    .map((p) => ({ id: p.id, reason: p.excludeReason as 'system' | 'manual' }));
 
   if (pendingOnly.length === 0) {
     prompts.log.success('All installed tools are up to date.');
@@ -414,11 +455,7 @@ const reportPending = (pending: EnrichedPending[]): void => {
     }
   }
 
-  if (deferred.length > 0) {
-    prompts.log.info(
-      `Deferred to system package manager: ${deferred.map((p) => p.id).join(', ')}`
-    );
-  }
+  logDeferredPicks(deferred);
 
   if (orphaned.length > 0) {
     prompts.log.warning(
