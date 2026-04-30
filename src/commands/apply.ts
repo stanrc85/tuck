@@ -521,7 +521,7 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     isUrl = resolved.isUrl;
   } catch (error) {
     prompts.log.error(error instanceof Error ? error.message : String(error));
-    prompts.outro('Apply aborted');
+    prompts.outro.warning('Apply aborted');
     return;
   }
 
@@ -534,7 +534,7 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
     spinner.stop('Repository cloned');
   } catch (error) {
     prompts.log.error(`Failed to clone: ${error instanceof Error ? error.message : String(error)}`);
-    prompts.outro('Apply aborted');
+    prompts.outro.warning('Apply aborted');
     return;
   }
 
@@ -547,7 +547,7 @@ const runInteractiveApply = async (source: string, options: ApplyOptions): Promi
       prompts.log.message(
         c.dim('This repository may not be managed by tuck.\nLook for a .tuckmanifest.json file.'),
       );
-      prompts.outro('Apply aborted');
+      prompts.outro.warning('Apply aborted');
       return;
     }
 

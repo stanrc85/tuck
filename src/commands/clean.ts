@@ -192,7 +192,7 @@ export const runClean = async (options: CleanOptions): Promise<void> => {
       false
     );
     if (!confirmed) {
-      prompts.outro('Cancelled');
+      prompts.outro.warning('Cancelled');
       return;
     }
   }

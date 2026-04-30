@@ -778,7 +778,7 @@ const runConfigRemote = async (): Promise<void> => {
   const result = await setupProvider();
 
   if (!result) {
-    prompts.outro('Configuration cancelled');
+    prompts.outro.warning('Configuration cancelled');
     return;
   }
 

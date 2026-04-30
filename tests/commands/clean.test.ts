@@ -16,7 +16,7 @@ const loggerInfoMock = vi.fn();
 vi.mock('../../src/ui/index.js', () => ({
   prompts: {
     intro: vi.fn(),
-    outro: vi.fn(),
+    outro: Object.assign(vi.fn(), { warning: vi.fn(), error: vi.fn() }),
     cancel: vi.fn(),
     confirm: promptConfirmMock,
     multiselect: vi.fn(),

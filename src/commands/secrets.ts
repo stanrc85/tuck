@@ -230,7 +230,7 @@ const runScanHistory = async (options: { since?: string; limit?: string }): Prom
       spinner.stop('Git integration is unavailable (simple-git module could not be loaded).');
       const errorMsg = importError instanceof Error ? importError.message : String(importError);
       prompts.log.error(`Failed to load simple-git for scan-history: ${errorMsg}`);
-      prompts.outro('Scan aborted');
+      prompts.outro.warning('Scan aborted');
       return;
     }
     const git = simpleGit(tuckDir);
@@ -344,7 +344,7 @@ const runScanFiles = async (paths: string[]): Promise<void> => {
   if (paths.length === 0) {
     prompts.log.error('No files specified');
     prompts.log.message(c.dim('Usage: tuck secrets scan <file> [files...]'));
-    prompts.outro('Scan aborted');
+    prompts.outro.warning('Scan aborted');
     return;
   }
 
@@ -689,7 +689,7 @@ const runTest = async (options: TestOptions): Promise<void> => {
     prompts.intro('tuck secrets test');
     prompts.log.error(`Invalid backend: ${rawBackendName}`);
     prompts.log.message(c.dim(`Valid backends: ${BACKEND_NAMES.join(', ')}`));
-    prompts.outro('Test aborted');
+    prompts.outro.warning('Test aborted');
     return;
   }
   const backendName = rawBackendName;
@@ -703,7 +703,7 @@ const runTest = async (options: TestOptions): Promise<void> => {
   if (!backend) {
     spinner.stop('Unknown backend');
     prompts.log.error(`Unknown backend: ${backendName}`);
-    prompts.outro('Test aborted');
+    prompts.outro.warning('Test aborted');
     return;
   }
 

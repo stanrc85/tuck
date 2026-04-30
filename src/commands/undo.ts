@@ -117,7 +117,7 @@ const restoreFromSnapshot = async (snapshotId: string, options: UndoOptions): Pr
       }
       prompts.log.message(c.dim(lines.join('\n')));
     }
-    prompts.outro('Restore aborted');
+    prompts.outro.warning('Restore aborted');
     return;
   }
 
@@ -131,7 +131,7 @@ const restoreFromSnapshot = async (snapshotId: string, options: UndoOptions): Pr
     );
 
     if (!confirmed) {
-      prompts.outro('Restore cancelled');
+      prompts.outro.warning('Restore cancelled');
       return;
     }
   }
@@ -178,7 +178,7 @@ const restoreSingleFile = async (
 
   if (!snapshot) {
     prompts.log.error(`Snapshot not found: ${snapshotId}`);
-    prompts.outro('Restore aborted');
+    prompts.outro.warning('Restore aborted');
     return;
   }
 
@@ -202,7 +202,7 @@ const removeSnapshot = async (snapshotId: string, options: UndoOptions): Promise
 
   if (!snapshot) {
     prompts.log.error(`Snapshot not found: ${snapshotId}`);
-    prompts.outro('Deletion aborted');
+    prompts.outro.warning('Deletion aborted');
     return;
   }
 
@@ -211,7 +211,7 @@ const removeSnapshot = async (snapshotId: string, options: UndoOptions): Promise
     const confirmed = await prompts.confirm('Delete this snapshot permanently?', false);
 
     if (!confirmed) {
-      prompts.outro('Deletion cancelled');
+      prompts.outro.warning('Deletion cancelled');
       return;
     }
   }
@@ -256,7 +256,7 @@ const runInteractiveUndo = async (): Promise<void> => {
   const snapshot = await getSnapshot(selectedId);
   if (!snapshot) {
     prompts.log.error('Snapshot not found');
-    prompts.outro('Restore aborted');
+    prompts.outro.warning('Restore aborted');
     return;
   }
 
