@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [3.2.0](https://github.com/stanrc85/tuck/compare/v3.1.1...v3.2.0) (2026-04-30)
 
 
 ### Features
 
 * **restore:** add [restore] ignoreUncovered + improve --install-missing hints ([c32195d](https://github.com/stanrc85/tuck/commit/c32195dba32691554c2e9af21422cef254f42835))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.1.1](https://github.com/stanrc85/tuck/compare/v3.1.0...v3.1.1) (2026-04-30)
 
