@@ -577,24 +577,42 @@ const attemptInstallMissing = async (
 
   if (brewable.length === 0) return;
 
+  let installed = 0;
+  let failed = 0;
   for (const tool of brewable) {
     prompts.log.step(`Installing ${tool.id} via brew (formula: ${tool.brewFormula})…`);
     const result = await attemptBrewInstall(tool.brewFormula);
     if (result.status === 'installed') {
       prompts.log.success(`Installed ${tool.id}`);
+      installed++;
     } else if (result.status === 'skipped') {
       prompts.log.warning(
         `Skipped ${tool.id}: ${result.message ?? 'brew unavailable'}. Stopping auto-install.`
       );
       // brew unavailable means every subsequent attempt would also skip.
       // Bail with a single warning rather than N copies of the same message.
+      // Print the partial summary so the user knows what (if anything) ran
+      // before the bail.
+      if (installed > 0 || failed > 0) {
+        prompts.log.info(
+          `brew install summary: ${installed} installed, ${failed} failed (${brewable.length - installed - failed - 1} not attempted).`
+        );
+      }
       return;
     } else {
       prompts.log.warning(
         `Failed to install ${tool.id}: ${result.message ?? 'unknown error'}. Continuing with the rest.`
       );
+      failed++;
     }
   }
+
+  // End-of-batch summary so users running `restore --install-missing` against
+  // 3+ tools get a single grokkable line instead of having to scroll the per-
+  // tool steps.
+  prompts.log.info(
+    `brew install summary: ${installed} installed, ${failed} failed.`
+  );
 };
 
 /**

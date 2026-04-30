@@ -1,9 +1,10 @@
 import { readFile } from 'fs/promises';
-import { basename, join } from 'path';
+import { join } from 'path';
 import { expandPath, pathExists } from '../paths.js';
 import { loadBootstrapConfig } from './parser.js';
 import { bootstrapConfigSchema } from '../../schemas/bootstrap.schema.js';
 import { runCheck } from './runner.js';
+import { containsToken, isShellRcLikePath } from './rcDetection.js';
 import { detectPlatformVars, type BootstrapVars } from './interpolator.js';
 import { toolMatchesRestoredFiles } from './associatedConfig.js';
 import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
@@ -62,7 +63,7 @@ export const findMissingDeps = async (
     return rcContents.some(
       ({ content }) =>
         content !== null &&
-        tool.detect.rcReferences.some((ref) => content.includes(ref))
+        tool.detect.rcReferences.some((ref) => containsToken(content, ref))
     );
   };
 
@@ -82,33 +83,6 @@ export const findMissingDeps = async (
   return checks
     .filter(({ installed }) => !installed)
     .map(({ tool }) => ({ id: tool.id, description: tool.description }));
-};
-
-const SHELL_RC_BASENAMES = new Set([
-  '.zshrc',
-  '.zshenv',
-  '.zprofile',
-  '.zlogin',
-  '.zlogout',
-  '.bashrc',
-  '.bash_profile',
-  '.bash_login',
-  '.profile',
-  'config.fish',
-]);
-
-/**
- * True for paths that look like shell rc files — either by literal
- * basename (`.zshrc`, `.bashrc`, etc.) or by extension (`.zsh`, `.bash`,
- * `.sh`, `.fish`). Used to narrow content-scanning to files where
- * `rcReferences` strings are meaningful, avoiding false positives from
- * binary blobs or unrelated config that happens to contain short
- * substrings like "fzf" or "eza".
- */
-const isShellRcLikePath = (filePath: string): boolean => {
-  const base = basename(filePath);
-  if (SHELL_RC_BASENAMES.has(base)) return true;
-  return /\.(zsh|bash|sh|fish)$/i.test(base);
 };
 
 /**

@@ -199,6 +199,83 @@ alias verify="echo no compromise"
     expect(result.map((u) => u.id)).not.toContain('mise');
   });
 
+  it('considers covered when a user tool mentions the binary in its check command', async () => {
+    // Real pattern: a user's tool block whose install handles a bundle of
+    // CLIs but whose check probes for one specific binary. Coverage logic
+    // should accept the binary mention from check too, not just install.
+    loadBootstrapConfigMock.mockResolvedValue(
+      userToolsConfig([
+        makeTool({
+          id: 'shell-bundle',
+          install: 'true',
+          check: 'command -v fzf >/dev/null 2>&1',
+        }),
+      ])
+    );
+    readFileMock.mockResolvedValueOnce('eval "$(fzf --zsh)"');
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    expect(result.map((u) => u.id)).not.toContain('fzf');
+  });
+
+  it('considers covered when user.detect.paths overlap with the well-known paths', async () => {
+    // Path-claim overlap: a user-defined "config-only" tool block can claim
+    // ownership of a directory by listing it in detect.paths, even without
+    // any install command that would otherwise signal coverage.
+    loadBootstrapConfigMock.mockResolvedValue(
+      userToolsConfig([
+        makeTool({
+          id: 'nvim-config',
+          install: 'true',
+          detect: { paths: ['~/.config/nvim/**'], rcReferences: [] },
+        }),
+      ])
+    );
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', [
+      '/test-home/.config/nvim/init.lua',
+    ]);
+    expect(result.map((u) => u.id)).not.toContain('neovim');
+  });
+
+  it('does NOT false-flag bat on the substring "combat" in restored rc content', async () => {
+    // Word-boundary upgrade for rcReferences: pre-fix the matcher used
+    // .includes() so `bat` matched `combat`. Post-fix uses \bbat\b.
+    readFileMock.mockResolvedValueOnce('# combat-ready alias setup\n');
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    expect(result.map((u) => u.id)).not.toContain('bat');
+  });
+
+  it('detects tools with empty rcReferences via path-only matching (gh)', async () => {
+    // gh has rcReferences=[] (token too short for safe content scan) and
+    // relies on ~/.config/gh/** paths. Restore that path → uncovered warning.
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', [
+      '/test-home/.config/gh/config.yml',
+    ]);
+    const ids = result.map((u) => u.id);
+    expect(ids).toContain('gh');
+  });
+
+  it('handles manual-install tools with empty binary and brewFormula without crashing', async () => {
+    // zimfw has binary='' and brewFormula='' (manual installType).
+    // The coverage check's empty-string short-circuits should keep these
+    // safe — no crash, just falls through to id/rcReferences checks.
+    readFileMock.mockResolvedValueOnce('zimfw config goes here');
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    const zimfw = result.find((u) => u.id === 'zimfw');
+    expect(zimfw).toBeDefined();
+    expect(zimfw?.installType).toBe('manual');
+    expect(zimfw?.brewFormula).toBe('');
+  });
+
   it('only scans rc-shaped paths for content (ignores .toml mentions)', async () => {
     // Token "fzf" inside a .toml file shouldn't trigger a match. Only
     // shell-rc-shaped basenames or extensions are scanned.

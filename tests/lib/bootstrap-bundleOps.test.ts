@@ -133,6 +133,23 @@ describe('createBundle', () => {
     }
   });
 
+  it('hints v2→v3 migration when an unknown id matches a former built-in', () => {
+    // `bat` was a v2 built-in, removed in v3. If a user lists it as a bundle
+    // member without defining a `[[tool]]` block, they should see a hint
+    // explaining the migration — not just "Available ids: my-tool".
+    const catalog = [makeTool('my-tool')];
+    try {
+      createBundle(makeConfig(), catalog, 'b', ['bat']);
+      throw new Error('expected to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BootstrapError);
+      const suggestions = (error as BootstrapError).suggestions ?? [];
+      const joined = suggestions.join('\n');
+      expect(joined).toMatch(/built-in registry tool pre-v3/);
+      expect(joined).toContain('bat');
+    }
+  });
+
   it('rejects duplicate bundle names unless overwrite is true', () => {
     const config = makeConfig({ kali: ['fzf'] });
     const catalog = [makeTool('fzf'), makeTool('eza')];

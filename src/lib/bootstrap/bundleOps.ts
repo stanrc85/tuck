@@ -6,6 +6,7 @@ import type {
 import { detectTool } from './detect.js';
 import { runCheck } from './runner.js';
 import { detectPlatformVars, type BootstrapVars } from './interpolator.js';
+import { WELL_KNOWN_TOOLS } from './wellKnownTools.js';
 
 /**
  * Pure operations over a loaded `BootstrapConfig`'s `bundles` map. Each
@@ -207,9 +208,25 @@ const assertMembersKnown = (
   const unknown = members.filter((id) => !knownIds.has(id));
   if (unknown.length === 0) return;
 
-  const known = Array.from(knownIds).sort().join(', ');
+  // Help v2→v3 migrators: if any unknown id matches a former built-in
+  // (now in WELL_KNOWN_TOOLS as detection-only), surface the migration
+  // hint instead of just listing the user's actual tool ids — which is
+  // what `Available ids:` would show alone, and is rarely useful when
+  // the user typed `fzf` expecting v2 behavior.
+  const wellKnownIds = new Set(WELL_KNOWN_TOOLS.map((t) => t.id));
+  const formerBuiltIns = unknown.filter((id) => wellKnownIds.has(id));
+
+  const suggestions: string[] = [];
+  if (formerBuiltIns.length > 0) {
+    suggestions.push(
+      `${formerBuiltIns.join(', ')} ${formerBuiltIns.length === 1 ? 'was' : 'were'} a built-in registry tool pre-v3. v3 removed the registry — define ${formerBuiltIns.length === 1 ? 'it' : 'them'} as your own \`[[tool]]\` block(s) in bootstrap.toml first.`
+    );
+  }
+  const known = Array.from(knownIds).sort().join(', ') || '(none defined)';
+  suggestions.push(`Available ids: ${known}`);
+
   throw new BootstrapError(
     `Unknown tool id${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}`,
-    [`Available ids: ${known}`]
+    suggestions
   );
 };
