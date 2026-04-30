@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [3.1.0](https://github.com/stanrc85/tuck/compare/v3.0.0...v3.1.0) (2026-04-30)
 
 
 ### Features
 
 * **bootstrap:** expand well-known tools table with modern shell-ecosystem entries ([3572392](https://github.com/stanrc85/tuck/commit/3572392a40e3240b5d6bce643584fd2c8a34fef7))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.0.0](https://github.com/stanrc85/tuck/compare/v2.26.7...v3.0.0) (2026-04-30)
 
