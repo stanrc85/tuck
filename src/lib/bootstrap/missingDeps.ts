@@ -3,7 +3,6 @@ import { basename, join } from 'path';
 import { expandPath, pathExists } from '../paths.js';
 import { loadBootstrapConfig } from './parser.js';
 import { bootstrapConfigSchema } from '../../schemas/bootstrap.schema.js';
-import { mergeWithRegistry } from './registry/index.js';
 import { runCheck } from './runner.js';
 import { detectPlatformVars, type BootstrapVars } from './interpolator.js';
 import { toolMatchesRestoredFiles } from './associatedConfig.js';
@@ -25,9 +24,10 @@ export interface MissingDep {
  * positives are the expensive case (we'd prompt the user to install
  * something they already have), so we prefer false negatives.
  *
- * Registry-only mode: when `bootstrap.toml` is absent we still run the
- * built-ins against the restored set, which is the common fresh-host
- * case (user hasn't authored a bootstrap.toml but has nvim configs).
+ * Pre-v3 this also overlaid a built-in registry against the restored set
+ * for fresh hosts without a bootstrap.toml. The registry is gone in v3 —
+ * the fresh-host signal now lives in `findUncoveredReferences`, which
+ * cross-references restored content against a static well-known table.
  */
 export const findMissingDeps = async (
   tuckDir: string,
@@ -40,7 +40,7 @@ export const findMissingDeps = async (
     ? await loadBootstrapConfig(configPath)
     : bootstrapConfigSchema.parse({});
 
-  const catalog = mergeWithRegistry(config);
+  const catalog = config.tool;
   if (catalog.length === 0) return [];
 
   // Second candidate signal: some tools (eza, ripgrep, fzf) ship no

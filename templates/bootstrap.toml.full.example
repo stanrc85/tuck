@@ -4,10 +4,14 @@
 #
 #  This is the "batteries included" example: a direct translation of the
 #  kind of setup script people hand-roll for a fresh Kali/kubuntu/Debian
-#  box. Covers the bulk apt prereqs, a Node toolchain, tealdeer, ZimFW,
-#  zsh-fzf-history-search, and a `chsh` helper — everything a new host
-#  needs on top of the built-in registry (fzf/eza/bat/fd/ripgrep/neovim/
-#  neovim-plugins/pet/yazi).
+#  box. Covers the bulk apt prereqs, a Node toolchain, ripgrep/zoxide/
+#  tealdeer, ZimFW, zsh-fzf-history-search, and a `chsh` helper.
+#
+#  v3 has no built-in tool registry — every tool you want bootstrapped
+#  must appear in this file as a `[[tool]]` block. The shape below
+#  installs the common dev-CLI set via apt; swap to a single
+#  `brew install fzf yazi neovim bat fd ripgrep …` line in one tool block
+#  if you prefer Linuxbrew (see `brew-cli-utils` pattern in the README).
 #
 #  Copy to your dotfiles repo or ~/.tuck/bootstrap.toml and edit to taste:
 #
@@ -39,7 +43,7 @@ update = "sudo apt-get install -y --only-upgrade zsh curl wget unzip git"
 
 # ------------------------------------------------------------------------------
 # TIER 2 — Node.js toolchain (required before neovim-plugins builds
-# tree-sitter-cli). Broken out from dev-utilities so ordering is clear.
+# tree-sitter-cli). Broken out so dep ordering is explicit.
 # ------------------------------------------------------------------------------
 [[tool]]
 id = "node-toolchain"
@@ -52,23 +56,30 @@ update = "sudo apt-get install -y --only-upgrade nodejs npm"
 
 
 # ------------------------------------------------------------------------------
-# TIER 3 — dev utilities bulk apt install. Mirrors the deploy_dots.sh
-# do_fresh_install PACKAGES list, minus anything the built-in registry
-# already handles (fzf/eza/bat/fd/ripgrep/neovim all come from BUILT_IN_TOOLS).
-# Grouped into one [[tool]] because the whole point is "run one apt-get".
+# TIER 3 — dev CLI bulk apt install. One [[tool]] block keeps it to a single
+# `apt-get install` invocation. Swap apt for `brew install …` if you prefer
+# Linuxbrew across hosts.
 # ------------------------------------------------------------------------------
 [[tool]]
-id = "dev-utilities"
-description = "CLI utility packages (ripgrep/zoxide/fastfetch/dtrx/lnav/etc.)"
+id = "dev-cli-utils"
+description = "common CLI tools (fzf/eza/bat/fd/ripgrep/neovim/yazi/pet/tealdeer/zoxide)"
 category = "shell"
 requires = ["system-prereqs"]
-# rg + zoxide + fastfetch is a reasonable signal set — if all three are
+# rg + zoxide + neovim is a reasonable signal set — if all three are
 # present the bulk install succeeded.
-check = "command -v rg >/dev/null && command -v zoxide >/dev/null && command -v fastfetch >/dev/null"
+check = "command -v rg >/dev/null && command -v zoxide >/dev/null && command -v nvim >/dev/null"
 install = """
 set -e
 sudo apt-get install -y \\
+  fzf \\
+  eza \\
+  bat \\
+  fd-find \\
   ripgrep \\
+  neovim \\
+  yazi \\
+  pet \\
+  tealdeer \\
   zoxide \\
   fastfetch \\
   dtrx \\
@@ -82,31 +93,38 @@ sudo apt-get install -y \\
 """
 update = """
 sudo apt-get install -y --only-upgrade \\
-  ripgrep zoxide fastfetch dtrx lnav ffmpeg 7zip jq poppler-utils imagemagick build-essential
+  fzf eza bat fd-find ripgrep neovim yazi pet tealdeer zoxide fastfetch dtrx lnav ffmpeg 7zip jq poppler-utils imagemagick build-essential
 """
-detect = { paths = [], rcReferences = ["zoxide init"] }
+detect = { paths = [], rcReferences = ["fzf", "eza", "rg", "nvim", "zoxide init"] }
 
 
 # ------------------------------------------------------------------------------
-# TIER 4 — individual tools with non-trivial update semantics
+# TIER 4 — neovim plugin sync (runs `lazy.sync` headlessly + treesitter
+# parser install). Requires neovim from dev-cli-utils plus node for
+# tree-sitter-cli.
 # ------------------------------------------------------------------------------
-
-# tealdeer — simplified man pages. `tldr --update` refreshes the cache
-# independently of the package itself, so we run it under `update` even
-# when the apt package hasn't changed.
 [[tool]]
-id = "tealdeer"
-description = "simplified man pages (tldr)"
-category = "shell"
-requires = ["system-prereqs"]
-check = "command -v tldr >/dev/null 2>&1"
-install = "sudo apt-get install -y tealdeer"
-update = """
+id = "neovim-plugins"
+description = "sync lazy.nvim-managed neovim plugins"
+category = "editors"
+requires = ["dev-cli-utils", "node-toolchain"]
+check = 'test -d "$HOME/.local/share/nvim/lazy/nvim-treesitter"'
+install = """
 set -e
-sudo apt-get install -y --only-upgrade tealdeer
-tldr --update || true
+if command -v npm >/dev/null 2>&1; then
+  sudo npm install -g tree-sitter-cli
+fi
+nvim --headless \\
+  -c 'lua require("lazy").sync({ wait = true, show = false })' \\
+  -c 'silent! lua require("lazy").load({ plugins = { "nvim-treesitter" } })' \\
+  -c 'silent! TSInstallSync! markdown lua go bash python json yaml toml vim regex' \\
+  -c 'qa!'
 """
-detect = { paths = [], rcReferences = ["tldr"] }
+update = """
+nvim --headless -c 'Lazy! sync' -c 'qa!'
+"""
+detect = { paths = ["~/.config/nvim/lua/plugins", "~/.config/nvim/lazy-lock.json"], rcReferences = [] }
+associatedConfig = ["~/.config/nvim/lazy-lock.json", "~/.config/nvim/lua/**"]
 
 
 # ------------------------------------------------------------------------------
@@ -117,33 +135,37 @@ detect = { paths = [], rcReferences = ["tldr"] }
 # Skipped on Kali by default because Kali ships with its own oh-my-zsh-
 # style setup; override by removing the guard or omitting the check.
 [[tool]]
-id = "zim-framework"
+id = "zimfw"
 description = "ZimFW — modular zsh framework"
 category = "shell"
 requires = ["system-prereqs"]
-# $HOME is shell-expanded (not ${HOME} — tuck only interpolates ${HOME}
-# via the inteproplator). Either works; plain $HOME keeps the script
-# copy-pasteable outside of tuck.
-check = "test -e $HOME/.zim"
+check = """
+if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then exit 0; fi
+test -e $HOME/.zim
+"""
 install = """
 set -e
 if [ -f /etc/os-release ] && (. /etc/os-release && [ "$ID" = "kali" ]); then
   echo "Skipping ZimFW on Kali (Kali ships its own zsh setup)."
   exit 0
 fi
-curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh
+ZSH_PATH="$(command -v zsh)"
+curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | SHELL="$ZSH_PATH" zsh
 """
-update = "@install"
-detect = { paths = ["~/.zim"], rcReferences = ["zimfw"] }
+update = """
+zsh -c 'source "${ZIM_HOME:-${ZDOTDIR:-$HOME}/.zim}/init.zsh" && zimfw upgrade && zimfw update'
+"""
+detect = { paths = ["~/.zim", "~/.zimrc", "~/.config/zsh/.zimrc"], rcReferences = ["zimfw"] }
+associatedConfig = ["~/.zimrc", "~/.config/zsh/.zimrc"]
 
 
-# zsh-fzf-history-search — fzf-powered history search. Shares fzf as a
-# hard dep so the resolver orders fzf first.
+# zsh-fzf-history-search — fzf-powered history search. Requires fzf from
+# dev-cli-utils so the resolver orders that bundle first.
 [[tool]]
 id = "zsh-fzf-history-search"
 description = "fzf-powered zsh history search plugin"
 category = "shell"
-requires = ["fzf", "system-prereqs"]
+requires = ["dev-cli-utils", "system-prereqs"]
 check = "test -d $HOME/.zsh/plugins/zsh-fzf-history-search"
 install = """
 set -e
@@ -153,8 +175,6 @@ if [ ! -d "$HOME/.zsh/plugins/zsh-fzf-history-search" ]; then
     "$HOME/.zsh/plugins/zsh-fzf-history-search"
 fi
 """
-# Plugins-in-a-git-clone: `update` pulls the plugin repo rather than
-# apt-installing anything. Keep --rebase to stay linear.
 update = """
 set -e
 if [ -d "$HOME/.zsh/plugins/zsh-fzf-history-search/.git" ]; then
@@ -168,35 +188,6 @@ fi
 detect = { paths = ["~/.zsh/plugins/zsh-fzf-history-search"], rcReferences = ["zsh-fzf-history-search"] }
 
 
-# ------------------------------------------------------------------------------
-# TIER 6 — host mutation: switch the login shell to zsh
-# ------------------------------------------------------------------------------
-
-# `chsh` is stubbornly interactive under PAM — it asks for your password
-# even with -y. We call it under `timeout 5` so a non-cached sudo doesn't
-# hang the picker; if it fails we print the manual command. Users who
-# don't want this at all should leave the tool out of their bundle.
-[[tool]]
-id = "chsh-zsh"
-description = "switch login shell to zsh (one-time)"
-category = "shell"
-requires = ["system-prereqs"]
-# Check passes when the login shell for this user is already zsh — so
-# this tool no-ops after the first successful run.
-check = """
-test "$(getent passwd \\"$USER\\" | cut -d: -f7)" = "$(command -v zsh)"
-"""
-install = """
-set -e
-ZSH_PATH="$(command -v zsh)"
-if ! timeout 5 chsh -s "$ZSH_PATH" 2>/dev/null; then
-  echo "chsh requires a password. Run manually: chsh -s \\"\\$(command -v zsh)\\""
-  exit 1
-fi
-"""
-update = "@install"
-
-
 # ==============================================================================
 #  BUNDLES — named collections invoked with `tuck bootstrap --bundle <name>`
 # ==============================================================================
@@ -206,51 +197,29 @@ update = "@install"
 
 [bundles]
 
-# `kali` — Kali-specific overlay setup. Skips ZimFW (Kali's shell setup
-# is its own thing) and skips chsh (Kali already defaults to zsh in most
-# setups). Keeps all the CLIs.
+# `kali` — Kali-specific setup. Skips ZimFW (Kali's shell setup is its own
+# thing) and skips chsh (Kali already defaults to zsh).
 kali = [
   "system-prereqs",
   "node-toolchain",
-  "dev-utilities",
-  "tealdeer",
-  "fzf", "eza", "bat", "fd", "ripgrep",   # built-ins
-  "neovim", "neovim-plugins",              # built-ins
-  "pet", "yazi",                           # built-ins
+  "dev-cli-utils",
+  "neovim-plugins",
   "zsh-fzf-history-search",
 ]
 
-# `full` — the full new-machine setup for non-Kali boxes. Adds ZimFW and
-# the chsh step on top of the CLI set.
+# `full` — full new-machine setup for non-Kali boxes. Adds ZimFW on top.
 full = [
   "system-prereqs",
   "node-toolchain",
-  "dev-utilities",
-  "tealdeer",
-  "fzf", "eza", "bat", "fd", "ripgrep",   # built-ins
-  "neovim", "neovim-plugins",              # built-ins
-  "pet", "yazi",                           # built-ins
+  "dev-cli-utils",
+  "neovim-plugins",
   "zsh-fzf-history-search",
-  "zim-framework",
-  "chsh-zsh",
+  "zimfw",
 ]
 
-# `minimal` — just the CLI toolchain, no shell-framework side-effects.
-# Good for servers or ephemeral containers. (Add `"dev-utilities"` if you
-# also want zoxide/fastfetch and the rest of the utility bulk.)
+# `minimal` — system prereqs + the CLI bundle, no shell-framework side
+# effects. Good for servers or ephemeral containers.
 minimal = [
   "system-prereqs",
-  "fzf", "fd", "bat", "ripgrep", "neovim",
+  "dev-cli-utils",
 ]
-
-
-# ==============================================================================
-#  REGISTRY — disable built-ins on a per-host basis
-# ==============================================================================
-#
-#  `disabled` drops the named built-ins from the overlay. User `[[tool]]`
-#  entries with the same id still win — `disabled` only affects the
-#  built-in registry, not user-declared tools.
-
-[registry]
-disabled = []  # e.g. ["yazi"] on a server where you don't want a TUI file manager

@@ -5,7 +5,6 @@ import { prompts, isInteractive } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
-import { mergeWithRegistry } from '../lib/bootstrap/registry/index.js';
 import { detectTool } from '../lib/bootstrap/detect.js';
 import {
   detectPlatformVars,
@@ -89,20 +88,19 @@ export const runBootstrap = async (
 
   prompts.intro('tuck bootstrap');
 
-  // bootstrap.toml is optional: absent at the default location → run with
-  // just the built-in registry (so users who only want fzf/eza/pet/etc.
-  // don't need to hand-create an empty file). An explicit `--file` that
-  // points at a missing path is a user typo — still errors loudly.
+  // bootstrap.toml is optional: absent at the default location yields an
+  // empty config (parses cleanly via schema defaults). An explicit `--file`
+  // that points at a missing path is a user typo — still errors loudly.
   let config;
   if (!explicitFile && !(await pathExists(configPath))) {
     config = bootstrapConfigSchema.parse({});
   } else {
     config = await loadBootstrapConfig(configPath);
   }
-  const catalog = mergeWithRegistry(config);
+  const catalog = config.tool;
 
   if (catalog.length === 0) {
-    prompts.log.warning('No tools defined in bootstrap.toml (and no built-ins).');
+    prompts.log.warning('No tools defined in bootstrap.toml.');
     prompts.outro('Nothing to do');
     return { plan: null, counts: null, dryRun: false };
   }

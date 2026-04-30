@@ -20,7 +20,7 @@ import { computeDefinitionHash, recordToolInstalled } from './state.js';
  */
 
 export interface PlanOptions {
-  /** Full catalog — usually `mergeWithRegistry(config)` output. */
+  /** Full catalog — usually `config.tool` from the parsed bootstrap.toml. */
   catalog: ToolDefinition[];
   /** Ids the user picked (directly or via a bundle / `--all`). */
   selectedIds: string[];

@@ -52,8 +52,8 @@ describe('runBootstrap (command layer)', () => {
       writeBootstrapToml(SIMPLE_TOML);
       const result = await runBootstrap({ all: true, dryRun: true });
       expect(result.dryRun).toBe(true);
-      // User tools must all be present. Built-in registry adds more entries
-      // on top, so we assert containment rather than exact length.
+      // User tools must all be present. Assert containment rather than
+      // exact length so the test stays resilient if SIMPLE_TOML grows.
       const ids = result.plan!.ordered.map((t) => t.id);
       expect(ids).toContain('eza');
       expect(ids).toContain('fzf');
@@ -110,15 +110,14 @@ describe('runBootstrap (command layer)', () => {
   });
 
   describe('error paths', () => {
-    it('runs with only built-ins when bootstrap.toml is absent at the default path', async () => {
-      // No bootstrap.toml at TEST_TUCK_DIR; should fall through to the
-      // built-in catalog rather than erroring. Users who only want the
-      // built-ins shouldn't have to create an empty file.
+    it('exits cleanly with "nothing to do" when bootstrap.toml is absent at the default path', async () => {
+      // No bootstrap.toml at TEST_TUCK_DIR; v3 has no built-in registry,
+      // so an absent file parses to an empty config and the run exits
+      // cleanly without erroring (an explicit --file pointing at a missing
+      // path is still a user typo — see the test below).
       const result = await runBootstrap({ all: true, dryRun: true });
-      expect(result.plan).not.toBeNull();
-      const ids = result.plan!.ordered.map((t) => t.id);
-      expect(ids).toContain('fzf');
-      expect(ids).toContain('neovim');
+      expect(result.plan).toBeNull();
+      expect(result.counts).toBeNull();
     });
 
     it('throws BootstrapError when --file is explicit but missing', async () => {
@@ -134,7 +133,7 @@ describe('runBootstrap (command layer)', () => {
       vol.mkdirSync('/test-home/custom/path', { recursive: true });
       vol.writeFileSync(customPath, SIMPLE_TOML);
       const result = await runBootstrap({ file: customPath, all: true, dryRun: true });
-      // User tools from the custom path appear in the plan (plus built-ins).
+      // User tools from the custom path appear in the plan.
       const ids = result.plan!.ordered.map((t) => t.id);
       expect(ids).toContain('fzf');
       expect(ids).toContain('pet');
@@ -142,13 +141,9 @@ describe('runBootstrap (command layer)', () => {
     });
 
     it('empty catalog exits cleanly without error', async () => {
-      // Disable every built-in so the resulting merged catalog is truly empty.
-      // Hardcoded list mirrors BUILT_IN_TOOLS; if a new built-in lands, this
-      // test reminds the author to include it here (or rethink the test).
-      writeBootstrapToml(`
-[registry]
-disabled = ["fzf", "eza", "bat", "fd", "ripgrep", "neovim", "neovim-plugins", "pet", "yazi", "zsh", "zimfw", "tealdeer"]
-`);
+      // v3: bootstrap.toml is the single source of truth. An empty file
+      // (no [[tool]] blocks) yields an empty catalog and exits cleanly.
+      writeBootstrapToml('# empty\n');
       const result = await runBootstrap({ all: true, dryRun: true });
       expect(result).toEqual({ plan: null, counts: null, dryRun: false });
     });

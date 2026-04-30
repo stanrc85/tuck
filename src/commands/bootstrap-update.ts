@@ -4,7 +4,6 @@ import { prompts, isInteractive } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
-import { mergeWithRegistry } from '../lib/bootstrap/registry/index.js';
 import { detectPlatformVars } from '../lib/bootstrap/interpolator.js';
 import {
   executeBootstrap,
@@ -97,7 +96,7 @@ export const runBootstrapUpdate = async (
   } else {
     config = await loadBootstrapConfig(configPath);
   }
-  const catalog = mergeWithRegistry(config);
+  const catalog = config.tool;
   const byId = new Map(catalog.map((t) => [t.id, t]));
 
   const state = await loadBootstrapState(tuckDir);

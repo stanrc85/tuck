@@ -191,6 +191,17 @@ export interface RestoreOptions {
    */
   installDeps?: boolean;
   /**
+   * When true, after the restore-tail "uncovered references" check, attempt
+   * `brew install <formula>` for any well-known tool referenced by the
+   * restored dotfiles but not declared in the user's bootstrap.toml.
+   *
+   * Brew-only by design (no apt fallback in v1) — manual-install tools
+   * (zimfw, neovim-plugins, zsh) appear in the warning but never trigger an
+   * auto-install attempt. Per-tool brew failures (formula not found, brew
+   * not on PATH, network) are surfaced as warnings; the run continues.
+   */
+  installMissing?: boolean;
+  /**
    * When true, after restore completes run `tuck bootstrap --bundle <g>`
    * for each `-g` value (or `defaultGroups` fallback) whose name matches
    * a bundle in `bootstrap.toml`. Groups without a matching bundle

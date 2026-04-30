@@ -87,7 +87,7 @@ export const toolDefinitionSchema = z.object({
 export const bootstrapConfigSchema = z.object({
   /**
    * Tool catalog. `[[tool]]` in TOML produces an array here. An empty
-   * catalog is legal (the built-in registry still applies in later sessions).
+   * catalog is legal — `tuck bootstrap` warns and exits cleanly.
    */
   tool: z.array(toolDefinitionSchema).default([]),
   /**
@@ -97,8 +97,14 @@ export const bootstrapConfigSchema = z.object({
    */
   bundles: z.record(z.array(toolIdSchema)).default({}),
   /**
-   * Overrides for the built-in tool registry. `disabled` opts out of
-   * specific built-in entries for users who want to supply their own.
+   * **Deprecated** as of v3.0.0. Pre-v3 this field disabled built-in
+   * registry entries (the 12 tools shipped in src/lib/bootstrap/registry/).
+   * v3 removed the registry — `bootstrap.toml` is now the only source of
+   * tool definitions, so there is nothing to disable.
+   *
+   * The field still parses cleanly so existing bootstrap.toml files (which
+   * commonly list every former built-in here as a hedge) keep working
+   * across the upgrade. The value is ignored at merge time.
    */
   registry: z
     .object({

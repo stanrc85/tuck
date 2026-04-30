@@ -5,7 +5,6 @@ import { c } from '../ui/theme.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
-import { mergeWithRegistry } from '../lib/bootstrap/registry/index.js';
 import { writeBootstrapToml } from '../lib/bootstrap/tomlWriter.js';
 import {
   addToBundle,
@@ -107,7 +106,7 @@ const STATUS_GLYPH: Record<MemberStatus, string> = {
 const runShow = async (bundleName: string, options: BaseOptions): Promise<void> => {
   const configPath = resolveConfigPath(options);
   const { config } = await loadConfigOrEmpty(configPath, options);
-  const catalog = mergeWithRegistry(config);
+  const catalog = config.tool;
 
   prompts.intro(`tuck bootstrap bundle show ${bundleName}`);
 
@@ -130,7 +129,7 @@ const runCreate = async (
 ): Promise<void> => {
   const configPath = resolveConfigPath(options);
   const { config, existed } = await loadConfigOrEmpty(configPath, options);
-  const catalog = mergeWithRegistry(config);
+  const catalog = config.tool;
 
   prompts.intro(`tuck bootstrap bundle create ${bundleName}`);
 
@@ -153,7 +152,7 @@ const runAdd = async (
       'Create one first with `tuck bootstrap bundle create`',
     ]);
   }
-  const catalog = mergeWithRegistry(config);
+  const catalog = config.tool;
 
   prompts.intro(`tuck bootstrap bundle add ${bundleName} ${toolId}`);
 

@@ -81,6 +81,11 @@ id = "my-tool"
 description = "user tool"
 install = "true"
 
+[[tool]]
+id = "fzf"
+description = "fuzzy finder"
+install = "true"
+
 [bundles]
 kali = ["fzf", "my-tool"]
 minimal = ["fzf"]
@@ -135,6 +140,15 @@ describe('tuck bootstrap bundle', () => {
     });
 
     it('creates bootstrap.toml from scratch when absent', async () => {
+      // Pre-v3 the registry always provided fzf; v3 requires the tool block
+      // up front, so seed a minimal bootstrap.toml with the referenced id
+      // before exercising the from-scratch bundle write.
+      writeBootstrapToml(`
+[[tool]]
+id = "fzf"
+description = "fuzzy finder"
+install = "true"
+`);
       await runBundleCreate('seed', ['fzf'], {});
       const parsed = readConfig();
       expect((parsed.bundles as Record<string, string[]>).seed).toEqual(['fzf']);

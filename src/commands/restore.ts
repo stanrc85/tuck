@@ -30,6 +30,11 @@ import { CATEGORIES } from '../constants.js';
 import type { RestoreOptions } from '../types.js';
 import { restoreFiles as restoreSecrets, getSecretCount } from '../lib/secrets/index.js';
 import { findMissingDeps, type MissingDep } from '../lib/bootstrap/missingDeps.js';
+import {
+  findUncoveredReferences,
+  type UncoveredReference,
+} from '../lib/bootstrap/uncoveredReferences.js';
+import { attemptBrewInstall } from '../lib/bootstrap/brewInstall.js';
 import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
 import { runBootstrap } from './bootstrap.js';
@@ -506,6 +511,93 @@ const maybePromptForMissingDeps = async (
 };
 
 /**
+ * Sibling check to `maybePromptForMissingDeps`. Where missingDeps says
+ * "your bootstrap.toml defines this tool, install it" — this says "your
+ * dotfiles reference this tool, but bootstrap.toml has nothing covering
+ * it; you should add a [[tool]] block (or pass --install-missing for a
+ * one-shot brew install)."
+ *
+ * Default = warn-only. With `--install-missing`, brew-installs the
+ * brew-installable subset and surfaces per-tool failures. Manual-install
+ * tools (zimfw, neovim-plugins, zsh) always warn — they need a real
+ * bootstrap.toml entry, not a one-liner.
+ */
+const maybeWarnAboutUncoveredReferences = async (
+  tuckDir: string,
+  restoredPaths: readonly string[],
+  options: RestoreOptions
+): Promise<void> => {
+  if (options.dryRun) return;
+  if (restoredPaths.length === 0) return;
+
+  const uncovered = await findUncoveredReferences(tuckDir, restoredPaths);
+  if (uncovered.length === 0) return;
+
+  logUncoveredReferencesList(uncovered);
+
+  if (options.installMissing !== true) {
+    prompts.log.info(
+      'Add `[[tool]]` blocks to bootstrap.toml to track these, or re-run with --install-missing to attempt `brew install`.'
+    );
+    return;
+  }
+
+  await attemptInstallMissing(uncovered);
+};
+
+const logUncoveredReferencesList = (
+  uncovered: readonly UncoveredReference[]
+): void => {
+  prompts.log.warning(
+    `Detected ${formatCount(uncovered.length, 'tool', 'tools')} referenced by restored dotfiles with no covering bootstrap.toml entry:`
+  );
+  prompts.log.message(
+    c.dim(
+      uncovered
+        .map((u) => {
+          const tag = u.installType === 'manual' ? ' (needs manual entry)' : '';
+          return `  • ${u.id} — ${u.description}${tag}`;
+        })
+        .join('\n')
+    )
+  );
+};
+
+const attemptInstallMissing = async (
+  uncovered: readonly UncoveredReference[]
+): Promise<void> => {
+  const brewable = uncovered.filter((u) => u.installType === 'brew');
+  const manual = uncovered.filter((u) => u.installType === 'manual');
+
+  if (manual.length > 0) {
+    prompts.log.info(
+      `Skipping ${formatCount(manual.length, 'tool', 'tools')} that need a manual bootstrap.toml entry: ${manual.map((m) => m.id).join(', ')}`
+    );
+  }
+
+  if (brewable.length === 0) return;
+
+  for (const tool of brewable) {
+    prompts.log.step(`Installing ${tool.id} via brew (formula: ${tool.brewFormula})…`);
+    const result = await attemptBrewInstall(tool.brewFormula);
+    if (result.status === 'installed') {
+      prompts.log.success(`Installed ${tool.id}`);
+    } else if (result.status === 'skipped') {
+      prompts.log.warning(
+        `Skipped ${tool.id}: ${result.message ?? 'brew unavailable'}. Stopping auto-install.`
+      );
+      // brew unavailable means every subsequent attempt would also skip.
+      // Bail with a single warning rather than N copies of the same message.
+      return;
+    } else {
+      prompts.log.warning(
+        `Failed to install ${tool.id}: ${result.message ?? 'unknown error'}. Continuing with the rest.`
+      );
+    }
+  }
+};
+
+/**
  * `tuck restore --bootstrap -g <group>`: after restore completes, run
  * `runBootstrap({ bundle })` for each resolved group whose name matches
  * a bundle in `bootstrap.toml`. Groups without a matching bundle
@@ -593,6 +685,7 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
   await maybePromptForGroupAssignment(tuckDir, options);
   await maybeRunBootstrapForGroups(tuckDir, options);
   await maybePromptForMissingDeps(tuckDir, restoredPaths, options);
+  await maybeWarnAboutUncoveredReferences(tuckDir, restoredPaths, options);
 };
 
 const runRestoreCommand = async (paths: string[], options: RestoreOptions): Promise<void> => {
@@ -613,6 +706,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
     await maybePromptForGroupAssignment(tuckDir, options);
     await maybeRunBootstrapForGroups(tuckDir, options);
     await maybePromptForMissingDeps(tuckDir, restoredPaths, options);
+    await maybeWarnAboutUncoveredReferences(tuckDir, restoredPaths, options);
     return;
   }
 
@@ -643,6 +737,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
     await maybePromptForGroupAssignment(tuckDir, options);
     await maybeRunBootstrapForGroups(tuckDir, options);
     await maybePromptForMissingDeps(tuckDir, result.restoredPaths, options);
+    await maybeWarnAboutUncoveredReferences(tuckDir, result.restoredPaths, options);
   }
 };
 
@@ -673,6 +768,10 @@ export const restoreCommand = new Command('restore')
   .option(
     '--no-install-deps',
     'Skip the missing-deps prompt/advisory entirely'
+  )
+  .option(
+    '--install-missing',
+    'Attempt `brew install` for tools referenced by restored dotfiles but not declared in bootstrap.toml. Per-tool brew failures warn and continue; manual-install tools (zimfw, neovim-plugins, zsh) are never auto-installed.'
   )
   .option(
     '--bootstrap',

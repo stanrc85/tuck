@@ -1,0 +1,145 @@
+import { readFile } from 'fs/promises';
+import { basename, join } from 'path';
+import { expandPath, pathExists } from '../paths.js';
+import { loadBootstrapConfig } from './parser.js';
+import { bootstrapConfigSchema } from '../../schemas/bootstrap.schema.js';
+import { matchesAssociatedConfig } from './associatedConfig.js';
+import { WELL_KNOWN_TOOLS, type WellKnownTool } from './wellKnownTools.js';
+import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
+
+export interface UncoveredReference {
+  id: string;
+  description: string;
+  brewFormula: string;
+  installType: 'brew' | 'manual';
+}
+
+/**
+ * Given the paths `tuck restore` just wrote to disk, find well-known tools
+ * (the legacy registry's 12 ids) that the dotfiles reference but the user's
+ * `bootstrap.toml` doesn't define a covering `[[tool]]` block for.
+ *
+ * Two-stage filter:
+ *   1. **Reference detection** — scan rc-file contents for `rcReferences`
+ *      substrings, and restored paths against the well-known tool's `paths`
+ *      globs. A hit on either says "the dotfiles use this tool".
+ *   2. **Coverage check** — for each referenced tool, look at the user's
+ *      `[[tool]]` blocks. Covered if any block:
+ *        - shares the well-known id
+ *        - mentions the binary or brewFormula in its install/update text
+ *        - lists the well-known id in its `detect.rcReferences`
+ *
+ * Coverage is intentionally liberal — a single weak signal counts. False
+ * negatives (real gap, missed warning) are recoverable later when bootstrap
+ * runs; false positives (uncovered warning for a tool the user already
+ * installs some other way) are noise the user has to dismiss every restore.
+ *
+ * Returns an empty array when no `bootstrap.toml` exists OR no well-known
+ * tools are referenced. The caller decides whether to warn or auto-install.
+ */
+export const findUncoveredReferences = async (
+  tuckDir: string,
+  restoredFilePaths: readonly string[]
+): Promise<UncoveredReference[]> => {
+  if (restoredFilePaths.length === 0) return [];
+
+  const configPath = join(tuckDir, 'bootstrap.toml');
+  const config = (await pathExists(configPath))
+    ? await loadBootstrapConfig(configPath)
+    : bootstrapConfigSchema.parse({});
+
+  const rcShaped = restoredFilePaths.filter(isShellRcLikePath);
+  const rcContents = await Promise.all(
+    rcShaped.map(async (path) => {
+      const content = await readFile(expandPath(path), 'utf-8').catch(
+        () => null as string | null
+      );
+      return { path, content };
+    })
+  );
+
+  const referenced = WELL_KNOWN_TOOLS.filter((tool) =>
+    isReferenced(tool, restoredFilePaths, rcContents)
+  );
+  if (referenced.length === 0) return [];
+
+  return referenced
+    .filter((tool) => !isCoveredByUserConfig(tool, config.tool))
+    .map((tool) => ({
+      id: tool.id,
+      description: tool.description,
+      brewFormula: tool.brewFormula,
+      installType: tool.installType,
+    }));
+};
+
+const isReferenced = (
+  tool: WellKnownTool,
+  restoredPaths: readonly string[],
+  rcContents: readonly { path: string; content: string | null }[]
+): boolean => {
+  if (
+    tool.paths.some((pattern) =>
+      restoredPaths.some((path) => matchesAssociatedConfig(pattern, path))
+    )
+  ) {
+    return true;
+  }
+
+  if (tool.rcReferences.length === 0) return false;
+  return rcContents.some(
+    ({ content }) =>
+      content !== null &&
+      tool.rcReferences.some((ref) => content.includes(ref))
+  );
+};
+
+const isCoveredByUserConfig = (
+  tool: WellKnownTool,
+  userTools: readonly ToolDefinition[]
+): boolean => {
+  for (const user of userTools) {
+    if (user.id === tool.id) return true;
+
+    if (user.detect.rcReferences.includes(tool.id)) return true;
+
+    // Check whether install/update commands install the tool's binary or
+    // brew formula. Word-boundary regex avoids `bat` matching `combat` or
+    // `fd` matching `xargs -fd`. Tokens are short and meant to appear as
+    // standalone arguments to install commands (`brew install fzf yazi`,
+    // `apt install ripgrep`).
+    const haystack = `${user.install} ${user.update}`;
+    if (tool.binary && containsToken(haystack, tool.binary)) return true;
+    if (tool.brewFormula && containsToken(haystack, tool.brewFormula)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const containsToken = (haystack: string, token: string): boolean => {
+  // Escape regex metacharacters in the token before composing the
+  // word-boundary match. None of the well-known tokens contain metacharacters
+  // today, but defending against a future addition is cheap.
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`).test(haystack);
+};
+
+const SHELL_RC_BASENAMES = new Set([
+  '.zshrc',
+  '.zshenv',
+  '.zprofile',
+  '.zlogin',
+  '.zlogout',
+  '.bashrc',
+  '.bash_profile',
+  '.bash_login',
+  '.profile',
+  'config.fish',
+]);
+
+const isShellRcLikePath = (filePath: string): boolean => {
+  const base = basename(filePath);
+  if (SHELL_RC_BASENAMES.has(base)) return true;
+  return /\.(zsh|bash|sh|fish)$/i.test(base);
+};

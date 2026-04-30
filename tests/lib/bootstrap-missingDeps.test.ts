@@ -28,7 +28,10 @@ vi.mock('../../src/lib/paths.js', async () => {
   };
 });
 
-const BUILT_INS_STUB: ToolDefinition[] = [
+// Tools the user has declared in their bootstrap.toml. Pre-v3 these were
+// registry built-ins; v3 removed the registry, so the same fixtures live as
+// user `[[tool]]` blocks loaded via loadBootstrapConfigMock.
+const USER_TOOLS: ToolDefinition[] = [
   {
     id: 'neovim',
     description: 'hyperextensible Vim-based editor',
@@ -58,24 +61,16 @@ const BUILT_INS_STUB: ToolDefinition[] = [
   },
 ];
 
-vi.mock('../../src/lib/bootstrap/registry/index.js', () => ({
-  BUILT_IN_TOOLS: BUILT_INS_STUB,
-  mergeWithRegistry: (config: { tool: ToolDefinition[] }) => [
-    ...config.tool,
-    ...BUILT_INS_STUB,
-  ],
-}));
-
 const importFindMissingDeps = async () =>
   (await import('../../src/lib/bootstrap/missingDeps.js')).findMissingDeps;
 
 describe('findMissingDeps', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    pathExistsMock.mockResolvedValue(false);
+    pathExistsMock.mockResolvedValue(true);
     readFileMock.mockRejectedValue(new Error('ENOENT'));
     loadBootstrapConfigMock.mockResolvedValue({
-      tool: [],
+      tool: USER_TOOLS,
       bundles: {},
       registry: { disabled: [] },
     });
@@ -178,14 +173,14 @@ describe('findMissingDeps', () => {
     expect(result.map((d) => d.id).sort()).toEqual(['neovim', 'yazi']);
   });
 
-  it('treats a missing bootstrap.toml as empty user catalog (registry still active)', async () => {
+  it('returns empty when bootstrap.toml is absent (no user tools, no registry fallback in v3)', async () => {
     pathExistsMock.mockResolvedValue(false);
     runCheckMock.mockResolvedValue(false);
 
     const findMissingDeps = await importFindMissingDeps();
     const result = await findMissingDeps('/tuck', ['/test-home/.config/nvim/init.lua']);
 
-    expect(result.map((d) => d.id)).toEqual(['neovim']);
+    expect(result).toEqual([]);
     expect(loadBootstrapConfigMock).not.toHaveBeenCalled();
   });
 
