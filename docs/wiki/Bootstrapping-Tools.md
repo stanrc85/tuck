@@ -109,7 +109,7 @@ Pre-v3 this field opted specific built-ins out of the registry overlay. v3 remov
 
 ## Restore-time uncovered-references warning
 
-When `tuck restore` lays down dotfiles, it scans the restored shell rc files and config paths for references to a static well-known set of tools (the same 12 ids from the legacy v2 registry: `bat`, `eza`, `fd`, `fzf`, `neovim`, `neovim-plugins`, `pet`, `ripgrep`, `tealdeer`, `yazi`, `zimfw`, `zsh`). If your dotfiles reference one of those tools and your `bootstrap.toml` has no `[[tool]]` block providing it, restore prints a warning:
+When `tuck restore` lays down dotfiles, it scans the restored shell rc files and config paths for references to a static well-known set of common shell tools — the legacy v2 registry plus modern ecosystem essentials (`zoxide`, `starship`, `atuin`, `mise`, `direnv`, `gh`, `lazygit`, `bottom`, `helix`, `tmux`, `zellij`, `pyenv`). The full canonical list lives at [`src/lib/bootstrap/wellKnownTools.ts`](https://github.com/stanrc85/tuck/blob/main/src/lib/bootstrap/wellKnownTools.ts) — open a PR there to add more entries. If your dotfiles reference one of those tools and your `bootstrap.toml` has no `[[tool]]` block providing it, restore prints a warning:
 
 ```
 ⚠ Detected 2 tools referenced by restored dotfiles with no covering bootstrap.toml entry:

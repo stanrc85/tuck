@@ -167,4 +167,126 @@ export const WELL_KNOWN_TOOLS: readonly WellKnownTool[] = Object.freeze([
     ],
     installType: 'manual',
   },
+
+  // Modern shell-ecosystem tools beyond the legacy v2 registry. Each entry
+  // pairs a low-false-positive detection pattern (rcReferences for canonical
+  // shell-init lines, paths for canonical config locations) with a brew
+  // formula. Tokens with substring-collision risk (`gh` inside `github`,
+  // `mise` inside `promise`, `btm`/`hx` too short generally) drop the
+  // rcReferences entry and rely on path-based detection only.
+  {
+    id: 'zoxide',
+    description: 'smarter cd with frecency',
+    binary: 'zoxide',
+    brewFormula: 'zoxide',
+    rcReferences: ['zoxide'],
+    paths: [],
+    installType: 'brew',
+  },
+  {
+    id: 'starship',
+    description: 'cross-shell prompt',
+    binary: 'starship',
+    brewFormula: 'starship',
+    rcReferences: ['starship'],
+    paths: ['~/.config/starship.toml'],
+    installType: 'brew',
+  },
+  {
+    id: 'atuin',
+    description: 'shell history with sync',
+    binary: 'atuin',
+    brewFormula: 'atuin',
+    rcReferences: ['atuin'],
+    paths: ['~/.config/atuin/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'mise',
+    description: 'polyglot runtime version manager',
+    binary: 'mise',
+    brewFormula: 'mise',
+    // Plain `mise` would substring-match `promise`/`compromise`. Use the
+    // canonical shell-init patterns instead.
+    rcReferences: ['mise activate', 'mise/shims'],
+    paths: ['~/.config/mise/**', '~/.tool-versions'],
+    installType: 'brew',
+  },
+  {
+    id: 'direnv',
+    description: 'per-directory environment loader',
+    binary: 'direnv',
+    brewFormula: 'direnv',
+    rcReferences: ['direnv'],
+    paths: ['~/.config/direnv/**', '~/.envrc'],
+    installType: 'brew',
+  },
+  {
+    id: 'gh',
+    description: 'GitHub CLI',
+    binary: 'gh',
+    brewFormula: 'gh',
+    // `gh` is too short to substring-scan rc files reliably — rely on the
+    // ~/.config/gh path. Coverage check still works against `brew install gh`
+    // in user tools because that uses word-boundary regex.
+    rcReferences: [],
+    paths: ['~/.config/gh/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'lazygit',
+    description: 'terminal UI for git',
+    binary: 'lazygit',
+    brewFormula: 'lazygit',
+    rcReferences: ['lazygit'],
+    paths: ['~/.config/lazygit/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'bottom',
+    description: 'system monitor (btm)',
+    binary: 'btm',
+    brewFormula: 'bottom',
+    // `btm` and `bottom` are both ambiguous in shell rc files; use path-only.
+    rcReferences: [],
+    paths: ['~/.config/bottom/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'helix',
+    description: 'modal text editor (hx)',
+    binary: 'hx',
+    brewFormula: 'helix',
+    // `hx` too short for content scan; use path-only.
+    rcReferences: [],
+    paths: ['~/.config/helix/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'tmux',
+    description: 'terminal multiplexer',
+    binary: 'tmux',
+    brewFormula: 'tmux',
+    rcReferences: ['tmux'],
+    paths: ['~/.tmux.conf', '~/.config/tmux/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'zellij',
+    description: 'modern terminal multiplexer',
+    binary: 'zellij',
+    brewFormula: 'zellij',
+    rcReferences: ['zellij'],
+    paths: ['~/.config/zellij/**'],
+    installType: 'brew',
+  },
+  {
+    id: 'pyenv',
+    description: 'Python version manager',
+    binary: 'pyenv',
+    brewFormula: 'pyenv',
+    rcReferences: ['pyenv'],
+    paths: ['~/.pyenv/**'],
+    installType: 'brew',
+  },
 ]);

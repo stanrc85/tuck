@@ -164,6 +164,41 @@ describe('findUncoveredReferences', () => {
     expect(fzf?.brewFormula).toBe('fzf');
   });
 
+  it('detects modern shell-ecosystem tools beyond the legacy 12 (zoxide, starship, mise, …)', async () => {
+    // Smoke test for the post-v2 well-known additions. zoxide's rcReferences
+    // is plain `zoxide`; starship's is `starship`; mise's is `mise activate`.
+    readFileMock.mockResolvedValueOnce(`
+eval "$(zoxide init zsh)"
+eval "$(starship init zsh)"
+eval "$(mise activate zsh)"
+`);
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    const ids = result.map((u) => u.id);
+    expect(ids).toContain('zoxide');
+    expect(ids).toContain('starship');
+    expect(ids).toContain('mise');
+    // All three should be brew-installable.
+    for (const u of result.filter((u) => ['zoxide', 'starship', 'mise'].includes(u.id))) {
+      expect(u.installType).toBe('brew');
+      expect(u.brewFormula).toBeTruthy();
+    }
+  });
+
+  it('does NOT false-flag mise on the substring "promise"', async () => {
+    // mise's rcReferences is `mise activate` / `mise/shims` (not plain `mise`)
+    // specifically to avoid promise/compromise substring matches.
+    readFileMock.mockResolvedValueOnce(`
+# I promise this isn't a mise reference
+alias verify="echo no compromise"
+`);
+    const findUncoveredReferences = await importFindUncovered();
+
+    const result = await findUncoveredReferences('/tuck', ['/test-home/.zshrc']);
+    expect(result.map((u) => u.id)).not.toContain('mise');
+  });
+
   it('only scans rc-shaped paths for content (ignores .toml mentions)', async () => {
     // Token "fzf" inside a .toml file shouldn't trigger a match. Only
     // shell-rc-shaped basenames or extensions are scanned.
