@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [2.26.7](https://github.com/stanrc85/tuck/compare/v2.26.6...v2.26.7) (2026-04-30)
 
 
 ### Bug Fixes
 
 * **ui:** route abort/cancel outros through outro.warning for accurate signal ([983048a](https://github.com/stanrc85/tuck/commit/983048a49fe40a9fc4828d5d3be6c39aacc195ba))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [2.26.6](https://github.com/stanrc85/tuck/compare/v2.26.5...v2.26.6) (2026-04-28)
 
