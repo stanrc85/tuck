@@ -255,6 +255,30 @@ describe('runUpdate', () => {
       expect(result.dotfilesChanged).toBe(false);
     });
 
+    it('surfaces TuckError suggestions when a phase throws (e.g. sudo not cached)', async () => {
+      const { runRestore } = await import('../../src/commands/restore.js');
+      const { BootstrapError } = await import('../../src/errors.js');
+      const { getHeadSha } = await import('../../src/lib/git.js');
+      // Force restore to run by simulating a HEAD change.
+      (getHeadSha as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce('sha-before')
+        .mockResolvedValueOnce('sha-after');
+      (runRestore as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new BootstrapError(
+          'Tool "brew-cli-utils" needs sudo, but no cached credentials are available under --yes',
+          ['Run `sudo -v` first to cache your password, then retry']
+        )
+      );
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await runUpdate({ self: false });
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      logSpy.mockRestore();
+
+      expect(output).toContain('Suggestions:');
+      expect(output).toContain('sudo -v');
+    });
+
     it('swallows pull GitError and keeps going with subsequent phases', async () => {
       const { pull } = await import('../../src/lib/git.js');
       const { runBootstrapUpdate } = await import('../../src/commands/bootstrap-update.js');

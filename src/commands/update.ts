@@ -87,6 +87,18 @@ export interface UpdateResult {
 
 const RESUME_ENV = 'TUCK_UPDATE_RESUMED';
 
+/**
+ * Mirror handleError's suggestion rendering so per-phase failures in the
+ * umbrella surface the actionable hints attached to a TuckError. Phases
+ * use logger.warning + continue, so we can't rely on the top-level
+ * handleError path.
+ */
+const logErrorSuggestions = (error: unknown): void => {
+  if (!(error instanceof TuckError) || !error.suggestions?.length) return;
+  logger.dim('  Suggestions:');
+  error.suggestions.forEach((s) => logger.dim(`    → ${s}`));
+};
+
 export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResult> => {
   const tuckDir = getTuckDir();
 
@@ -179,6 +191,7 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
       logger.warning(
         `Restore failed: ${error instanceof Error ? error.message : String(error)}`
       );
+      logErrorSuggestions(error);
     }
   } else if (options.restore === false) {
     logger.dim('[3/4] Restore skipped (--no-restore)');
@@ -199,6 +212,7 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
       logger.warning(
         `Tool updates failed: ${error instanceof Error ? error.message : String(error)}`
       );
+      logErrorSuggestions(error);
     }
   } else {
     logger.dim('[4/4] Tool updates skipped (--no-tools)');
