@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [3.3.1](https://github.com/stanrc85/tuck/compare/v3.3.0...v3.3.1) (2026-05-01)
 
 
 ### Bug Fixes
 
 * **update:** surface TuckError suggestions when a phase fails ([4c5cf85](https://github.com/stanrc85/tuck/commit/4c5cf85c5f3f5631c128026034a39ac431050fdf))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.3.0](https://github.com/stanrc85/tuck/compare/v3.2.0...v3.3.0) (2026-04-30)
 
