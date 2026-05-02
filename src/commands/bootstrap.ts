@@ -3,8 +3,7 @@ import { basename, join } from 'path';
 import { spawn } from 'child_process';
 import { prompts, isInteractive } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
-import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
-import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
+import { loadBootstrapConfig, emptyBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { detectTool } from '../lib/bootstrap/detect.js';
 import {
   detectPlatformVars,
@@ -93,7 +92,7 @@ export const runBootstrap = async (
   // that points at a missing path is a user typo — still errors loudly.
   let config;
   if (!explicitFile && !(await pathExists(configPath))) {
-    config = bootstrapConfigSchema.parse({});
+    config = emptyBootstrapConfig();
   } else {
     config = await loadBootstrapConfig(configPath);
   }

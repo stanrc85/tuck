@@ -4,9 +4,11 @@ import { ZodError } from 'zod';
 import {
   bootstrapConfigSchema,
   type BootstrapConfig,
+  type RawToolDefinition,
 } from '../../schemas/bootstrap.schema.js';
 import { BootstrapError } from '../../errors.js';
 import { pathExists } from '../paths.js';
+import { synthesizeTool } from './installerSynth.js';
 
 /**
  * Parse and validate `bootstrap.toml` content.
@@ -51,8 +53,17 @@ export const parseBootstrapConfig = (content: string, sourcePath?: string): Boot
     );
   }
 
-  const config = result.data;
-  assertUniqueToolIds(config, fileLabel);
+  const rawConfig = result.data;
+  assertUniqueToolIds(rawConfig.tool, fileLabel);
+
+  // Expand `installer` + `packages` shorthand into install/check/update
+  // strings before any downstream consumer sees the catalog. After this
+  // pass every tool has `install` populated as a string (raw-script tools
+  // pass through; installer-shorthand tools get auto-generated scripts).
+  const config: BootstrapConfig = {
+    ...rawConfig,
+    tool: rawConfig.tool.map(synthesizeTool),
+  };
 
   return config;
 };
@@ -83,6 +94,19 @@ export const loadBootstrapConfig = async (filePath: string): Promise<BootstrapCo
 };
 
 /**
+ * Empty `BootstrapConfig` with all schema defaults applied. Use as the
+ * fallback when `bootstrap.toml` doesn't exist on disk (callers commonly
+ * still want a typed config so downstream code can iterate `config.tool`
+ * unconditionally). Wraps `bootstrapConfigSchema.parse({})` and casts to
+ * the post-synthesis `BootstrapConfig` shape — safe because the tool
+ * array is empty and synthesis is a no-op for empty input.
+ */
+export const emptyBootstrapConfig = (): BootstrapConfig => ({
+  ...bootstrapConfigSchema.parse({}),
+  tool: [],
+});
+
+/**
  * Zod's default `.message` concatenates every issue into one string with
  * newlines. That's readable in isolation but hard to scan when it's nested
  * inside another error message. Flatten to `fieldPath: reason`, joined
@@ -97,10 +121,10 @@ const formatZodError = (error: ZodError): string => {
     .join('; ');
 };
 
-const assertUniqueToolIds = (config: BootstrapConfig, fileLabel: string): void => {
+const assertUniqueToolIds = (tools: RawToolDefinition[], fileLabel: string): void => {
   const seen = new Set<string>();
   const duplicates = new Set<string>();
-  for (const tool of config.tool) {
+  for (const tool of tools) {
     if (seen.has(tool.id)) {
       duplicates.add(tool.id);
     }

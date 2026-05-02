@@ -3,8 +3,7 @@ import { join } from 'path';
 import { prompts, logger, isInteractive } from '../ui/index.js';
 import { c } from '../ui/theme.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
-import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
-import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
+import { loadBootstrapConfig, emptyBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { writeBootstrapToml } from '../lib/bootstrap/tomlWriter.js';
 import {
   addToBundle,
@@ -48,7 +47,7 @@ const loadConfigOrEmpty = async (
         'Double-check --file points at the right location',
       ]);
     }
-    return { config: bootstrapConfigSchema.parse({}), existed: false };
+    return { config: emptyBootstrapConfig(), existed: false };
   }
   return { config: await loadBootstrapConfig(configPath), existed: true };
 };

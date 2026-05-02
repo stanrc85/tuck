@@ -65,36 +65,15 @@ id = "dev-cli-utils"
 description = "common CLI tools (fzf/eza/bat/fd/ripgrep/neovim/yazi/pet/tealdeer/zoxide)"
 category = "shell"
 requires = ["system-prereqs"]
-# rg + zoxide + neovim is a reasonable signal set — if all three are
-# present the bulk install succeeded.
-check = "command -v rg >/dev/null && command -v zoxide >/dev/null && command -v nvim >/dev/null"
-install = """
-set -e
-sudo apt-get install -y \\
-  fzf \\
-  eza \\
-  bat \\
-  fd-find \\
-  ripgrep \\
-  neovim \\
-  yazi \\
-  pet \\
-  tealdeer \\
-  zoxide \\
-  fastfetch \\
-  dtrx \\
-  lnav \\
-  ffmpeg \\
-  7zip \\
-  jq \\
-  poppler-utils \\
-  imagemagick \\
-  build-essential
-"""
-update = """
-sudo apt-get install -y --only-upgrade \\
-  fzf eza bat fd-find ripgrep neovim yazi pet tealdeer zoxide fastfetch dtrx lnav ffmpeg 7zip jq poppler-utils imagemagick build-essential
-"""
+# `installer` + `packages` shorthand — tuck synthesizes install/check/update
+# from this list. Adding or removing a tool is a single-line diff. See the
+# Bootstrapping-Tools wiki page for the full schema.
+installer = "apt"
+packages = [
+  "fzf", "eza", "bat", "fd-find", "ripgrep", "neovim", "yazi", "pet",
+  "tealdeer", "zoxide", "fastfetch", "dtrx", "lnav", "ffmpeg", "7zip",
+  "jq", "poppler-utils", "imagemagick", "build-essential",
+]
 detect = { paths = [], rcReferences = ["fzf", "eza", "rg", "nvim", "zoxide init"] }
 
 

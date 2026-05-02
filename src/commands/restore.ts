@@ -35,8 +35,7 @@ import {
   type UncoveredReference,
 } from '../lib/bootstrap/uncoveredReferences.js';
 import { attemptBrewInstall } from '../lib/bootstrap/brewInstall.js';
-import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
-import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
+import { loadBootstrapConfig, emptyBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { runBootstrap } from './bootstrap.js';
 
 /**
@@ -650,7 +649,7 @@ const maybeRunBootstrapForGroups = async (
   const configPath = join(tuckDir, 'bootstrap.toml');
   const config = (await pathExists(configPath))
     ? await loadBootstrapConfig(configPath)
-    : bootstrapConfigSchema.parse({});
+    : emptyBootstrapConfig();
   const bundleNames = new Set(Object.keys(config.bundles));
 
   for (const groupName of groups) {

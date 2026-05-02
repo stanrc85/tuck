@@ -2,8 +2,7 @@ import { Command } from 'commander';
 import { join } from 'path';
 import { prompts, isInteractive } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
-import { loadBootstrapConfig } from '../lib/bootstrap/parser.js';
-import { bootstrapConfigSchema } from '../schemas/bootstrap.schema.js';
+import { loadBootstrapConfig, emptyBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { detectPlatformVars } from '../lib/bootstrap/interpolator.js';
 import {
   executeBootstrap,
@@ -92,7 +91,7 @@ export const runBootstrapUpdate = async (
 
   let config;
   if (!explicitFile && !(await pathExists(configPath))) {
-    config = bootstrapConfigSchema.parse({});
+    config = emptyBootstrapConfig();
   } else {
     config = await loadBootstrapConfig(configPath);
   }

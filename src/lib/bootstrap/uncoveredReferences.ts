@@ -1,8 +1,7 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { expandPath, pathExists } from '../paths.js';
-import { loadBootstrapConfig } from './parser.js';
-import { bootstrapConfigSchema } from '../../schemas/bootstrap.schema.js';
+import { loadBootstrapConfig, emptyBootstrapConfig } from './parser.js';
 import { matchesAssociatedConfig } from './associatedConfig.js';
 import { containsToken, isShellRcLikePath } from './rcDetection.js';
 import { WELL_KNOWN_TOOLS, type WellKnownTool } from './wellKnownTools.js';
@@ -49,7 +48,7 @@ export const findUncoveredReferences = async (
   const configPath = join(tuckDir, 'bootstrap.toml');
   const config = (await pathExists(configPath))
     ? await loadBootstrapConfig(configPath)
-    : bootstrapConfigSchema.parse({});
+    : emptyBootstrapConfig();
 
   const rcShaped = restoredFilePaths.filter(isShellRcLikePath);
   const rcContents = await Promise.all(

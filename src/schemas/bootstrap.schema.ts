@@ -36,26 +36,83 @@ export const toolDetectSchema = z
   })
   .default({});
 
-export const toolDefinitionSchema = z.object({
-  /** Stable identifier used by `requires`, `bundles`, and the state file. */
-  id: toolIdSchema,
-  /** One-line human-readable description shown in the picker. */
-  description: z.string().min(1),
-  /** Optional grouping key for picker section headers (e.g. "shell"). */
-  category: z.string().optional(),
-  /** Version string interpolated into `install`/`update` as `${VERSION}`. */
-  version: z.string().optional(),
-  /** Other tool IDs that must be installed before this one. */
-  requires: z.array(toolIdSchema).default([]),
-  /** Shell command — exit 0 means "installed at the right version". */
-  check: z.string().optional(),
-  /** Shell command that installs the tool. Required. */
-  install: z.string().min(1),
-  /**
-   * Shell command run by `tuck bootstrap update`. `@install` (or omitted)
-   * means "re-run install", which is the common case for most tools.
-   */
-  update: z.string().optional(),
+/**
+ * One entry in `packages = [...]` when `installer` is set. Strings are
+ * shorthand for `{ name: <string> }` (formula/package name == binary name).
+ * Use the object form only when the name probed for `check` differs from
+ * the install name (brew formula `neovim` → binary `nvim`, etc.). `bin` is
+ * brew-only — apt checks via `dpkg -s <name>` so the binary name is not
+ * relevant.
+ */
+export const packageSpecSchema = z.union([
+  z.string().min(1),
+  z
+    .object({
+      name: z.string().min(1),
+      bin: z.string().min(1).optional(),
+    })
+    .strict(),
+]);
+
+export const toolDefinitionSchema = z
+  .object({
+    /** Stable identifier used by `requires`, `bundles`, and the state file. */
+    id: toolIdSchema,
+    /** One-line human-readable description shown in the picker. */
+    description: z.string().min(1),
+    /** Optional grouping key for picker section headers (e.g. "shell"). */
+    category: z.string().optional(),
+    /** Version string interpolated into `install`/`update` as `${VERSION}`. */
+    version: z.string().optional(),
+    /** Other tool IDs that must be installed before this one. */
+    requires: z.array(toolIdSchema).default([]),
+    /** Shell command — exit 0 means "installed at the right version". */
+    check: z.string().optional(),
+    /**
+     * Shell command that installs the tool. Required UNLESS `installer` is
+     * set, in which case tuck synthesizes install/check/update from
+     * `packages` and the script is auto-generated. See `packageSpecSchema`.
+     */
+    install: z.string().min(1).optional(),
+    /**
+     * Shell command run by `tuck bootstrap update`. `@install` (or omitted)
+     * means "re-run install", which is the common case for most tools.
+     */
+    update: z.string().optional(),
+    /**
+     * Opt-in shorthand: when set, tuck synthesizes `install`/`check`/`update`
+     * from the `packages` list at parse time. Lets you maintain a single
+     * array of formulas/packages instead of editing three shell snippets in
+     * lockstep. Pairs with `packages`, `postInstall`, `postUpdate`.
+     *
+     *   - `'brew'` — Linux Homebrew. Install runs `brew install <names>`,
+     *     update runs `brew update && brew upgrade <names> || true`, check
+     *     probes `/home/linuxbrew/.linuxbrew/bin/<bin>` for each entry.
+     *   - `'apt'`  — Debian/Ubuntu apt. Install runs `apt-get install -y
+     *     <names>`, update runs `apt-get install -y --only-upgrade <names>`,
+     *     check probes `dpkg -s <name>` for each entry.
+     *
+     * When `installer` is set, raw `install`/`check`/`update` must NOT be
+     * set (pick one mode per block).
+     */
+    installer: z.enum(['brew', 'apt']).optional(),
+    /**
+     * Package list consumed by `installer`. Strings are shorthand for
+     * `{ name }`; use the object form when binary differs from package name
+     * (brew only — apt ignores `bin`).
+     */
+    packages: z.array(packageSpecSchema).optional(),
+    /**
+     * Optional shell appended to the synthesized `install` script. Use for
+     * post-install hooks (symlinks, cache rebuilds, one-shot DB updates).
+     * Only legal when `installer` is set.
+     */
+    postInstall: z.string().optional(),
+    /**
+     * Optional shell appended to the synthesized `update` script. Same rules
+     * as `postInstall`.
+     */
+    postUpdate: z.string().optional(),
   /**
    * Who owns the update path.
    *   - unset / `'self'` (default): `tuck bootstrap update` runs `update`
@@ -89,7 +146,85 @@ export const toolDefinitionSchema = z.object({
    * Optional; tools that don't declare this never trigger the prompt.
    */
   associatedConfig: z.array(z.string()).default([]),
-});
+  })
+  .superRefine((tool, ctx) => {
+    const usingInstaller = tool.installer !== undefined;
+    const usingRawScripts = tool.install !== undefined;
+
+    if (usingInstaller && usingRawScripts) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `tool "${tool.id}": pick one mode — set either \`installer\`+\`packages\` OR raw \`install\`/\`check\`/\`update\`, not both`,
+        path: ['installer'],
+      });
+    }
+
+    if (!usingInstaller && !usingRawScripts) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `tool "${tool.id}": missing \`install\` (or use \`installer\` + \`packages\` shorthand)`,
+        path: ['install'],
+      });
+    }
+
+    if (usingInstaller) {
+      if (tool.packages === undefined || tool.packages.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `tool "${tool.id}": \`installer\` requires a non-empty \`packages\` list`,
+          path: ['packages'],
+        });
+      }
+      if (tool.check !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `tool "${tool.id}": \`check\` is auto-generated when \`installer\` is set — remove it`,
+          path: ['check'],
+        });
+      }
+      if (tool.update !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `tool "${tool.id}": \`update\` is auto-generated when \`installer\` is set — remove it (use \`postUpdate\` for extras)`,
+          path: ['update'],
+        });
+      }
+      if (tool.installer === 'apt' && tool.packages) {
+        for (let i = 0; i < tool.packages.length; i++) {
+          const spec = tool.packages[i];
+          if (typeof spec === 'object' && spec.bin !== undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `tool "${tool.id}": \`bin\` is brew-only (apt checks via \`dpkg -s\`) — remove from packages[${i}]`,
+              path: ['packages', i, 'bin'],
+            });
+          }
+        }
+      }
+    } else {
+      if (tool.packages !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `tool "${tool.id}": \`packages\` only valid when \`installer\` is set`,
+          path: ['packages'],
+        });
+      }
+      if (tool.postInstall !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `tool "${tool.id}": \`postInstall\` only valid when \`installer\` is set (append to \`install\` directly)`,
+          path: ['postInstall'],
+        });
+      }
+      if (tool.postUpdate !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `tool "${tool.id}": \`postUpdate\` only valid when \`installer\` is set (append to \`update\` directly)`,
+          path: ['postUpdate'],
+        });
+      }
+    }
+  });
 
 export const bootstrapConfigSchema = z.object({
   /**
@@ -137,6 +272,26 @@ export const bootstrapConfigSchema = z.object({
 });
 
 export type ToolDetect = z.output<typeof toolDetectSchema>;
-export type ToolDefinition = z.output<typeof toolDefinitionSchema>;
-export type BootstrapConfig = z.output<typeof bootstrapConfigSchema>;
+export type PackageSpec = z.output<typeof packageSpecSchema>;
+
+/**
+ * Raw tool shape straight from Zod — `install` may be undefined if the
+ * block uses the `installer` + `packages` shorthand. Used internally by
+ * the parser/synthesizer.
+ */
+export type RawToolDefinition = z.output<typeof toolDefinitionSchema>;
+
+/**
+ * Public tool shape, post-synthesis. The parser guarantees `install` is
+ * populated (raw scripts pass through; `installer` shorthand is expanded
+ * by `synthesizeTool` before reaching any consumer). Treat this as the
+ * canonical type — runner, resolver, state, etc. all consume it.
+ */
+export type ToolDefinition = Omit<RawToolDefinition, 'install'> & {
+  install: string;
+};
+
+export type BootstrapConfig = Omit<z.output<typeof bootstrapConfigSchema>, 'tool'> & {
+  tool: ToolDefinition[];
+};
 export type BootstrapConfigInput = z.input<typeof bootstrapConfigSchema>;

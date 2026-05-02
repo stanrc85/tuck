@@ -83,12 +83,73 @@ minimal   = ["ripgrep", "fzf"]
 | `version`           | string                    | Interpolated as `${VERSION}` in install/update/check                    |
 | `requires`          | string[]                  | Other tool ids that must be installed first (transitive)                |
 | `check`             | string (shell)            | Exit 0 = already installed, skip install. Exit non-zero = proceed.      |
-| `install`           | string (shell, required)  | Install command. Runs in `sh` (or `pwsh` on Windows).                   |
-| `update`            | string (shell) or `@install` | Update command. `@install` or omitted → re-run `install`.            |
+| `install`           | string (shell)            | Install command. Required unless `installer` is set. Runs in `sh` (or `pwsh` on Windows). |
+| `update`            | string (shell) or `@install` | Update command. `@install` or omitted → re-run `install`. Disallowed when `installer` is set (auto-generated). |
 | `updateVia`         | `"self"` \| `"system"` \| `"manual"`    | `"system"` defers to OS package manager, `"manual"` defers to manual user invocation (see [below](#updatevia-system)). Default `"self"`. |
+| `installer`         | `"brew"` \| `"apt"`       | Opt-in shorthand: tuck synthesizes `install`/`check`/`update` from `packages` (see [below](#installer--packages-shorthand)). Mutually exclusive with raw `install`/`check`/`update`. |
+| `packages`          | array of strings or `{name, bin?}` tables | Package list consumed by `installer`. Strings are sugar for `{name: <s>}`. Use the object form for brew when the binary differs from the formula (`{name = "neovim", bin = "nvim"}`). |
+| `postInstall`       | string (shell)            | Appended after the synthesized `install` script. Use for symlinks, cache rebuilds, one-shot DB updates. Only valid with `installer`. |
+| `postUpdate`        | string (shell)            | Appended after the synthesized `update` script. Only valid with `installer`. |
 | `detect.paths`      | string[]                  | Glob paths that, if present, mark the tool as "detected" in the picker  |
 | `detect.rcReferences` | string[]                 | Substrings to look for in tracked shell dotfiles (rc/alias/function refs) |
 | `associatedConfig`  | string[]                  | Globs of config paths this tool owns. Used by `tuck restore` to offer a post-restore install prompt when those paths get written but the tool isn't installed. |
+
+### `installer` + `packages` shorthand
+
+When a single `[[tool]]` block manages a long list of brew formulas or apt packages, hand-editing the `install`/`check`/`update` strings in lockstep gets old fast. Set `installer = "brew"` (or `"apt"`) and list the packages once — tuck synthesizes the three scripts at parse time.
+
+```toml
+[[tool]]
+id = "brew-cli-utils"
+description = "CLIs managed by Homebrew"
+requires = ["homebrew"]
+installer = "brew"
+packages = [
+  "fzf", "yazi", "bat", "fd", "fastfetch", "jq", "lnav", "eza", "pet", "glow",
+  { name = "neovim",   bin = "nvim" },     # formula name ≠ binary name
+  { name = "ripgrep",  bin = "rg" },
+  { name = "tealdeer", bin = "tldr" },
+]
+postInstall = """
+sudo ln -sf /home/linuxbrew/.linuxbrew/bin/nvim /usr/local/bin/nvim
+/home/linuxbrew/.linuxbrew/bin/tldr --update || true
+"""
+postUpdate = """
+/home/linuxbrew/.linuxbrew/bin/tldr --update || true
+"""
+```
+
+This expands to (roughly):
+
+- `check` — a `for bin in <bins>; do test -x "/home/linuxbrew/.linuxbrew/bin/$bin" || exit 1; done` loop.
+- `install` — `set -e; "$BREW" install <names>; <postInstall>`.
+- `update` — `set -e; "$BREW" update; "$BREW" upgrade <names> || true; <postUpdate>` (the `|| true` is baked in so one bad formula doesn't fail the whole batch).
+
+For apt:
+
+```toml
+[[tool]]
+id = "dev-utilities"
+description = "CLI utility packages (apt-managed)"
+requires = ["system-prereqs"]
+installer = "apt"
+packages = ["dtrx", "ffmpeg", "7zip", "poppler-utils", "imagemagick", "build-essential"]
+updateVia = "system"
+```
+
+apt expands to:
+
+- `check` — `for pkg in <names>; do dpkg -s "$pkg" >/dev/null 2>&1 || exit 1; done` (stricter than `command -v` — works for non-binary packages like `build-essential`).
+- `install` — `set -e; sudo apt-get install -y <names>; <postInstall>`.
+- `update` — `sudo apt-get install -y --only-upgrade <names>; <postUpdate>`.
+
+**Rules:**
+
+- `installer` is mutually exclusive with raw `install`/`check`/`update`. Pick one mode per block.
+- `packages` is required and must be non-empty when `installer` is set.
+- `bin` is brew-only — apt checks via package name, not binary.
+- Brew paths are hardcoded to `/home/linuxbrew/.linuxbrew/bin` (Linuxbrew). Drop down to a raw `install` block if you need macOS or Apple-Silicon brew prefixes.
+- Need something the synthesizer doesn't generate (e.g., conditional formula install, complex pre-checks)? Don't use `installer` — write the raw `install`/`check`/`update` scripts yourself. The two modes coexist; only the block you opt into uses synthesis.
 
 ### Bundles
 

@@ -1,8 +1,7 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { expandPath, pathExists } from '../paths.js';
-import { loadBootstrapConfig } from './parser.js';
-import { bootstrapConfigSchema } from '../../schemas/bootstrap.schema.js';
+import { loadBootstrapConfig, emptyBootstrapConfig } from './parser.js';
 import { runCheck } from './runner.js';
 import { containsToken, isShellRcLikePath } from './rcDetection.js';
 import { detectPlatformVars, type BootstrapVars } from './interpolator.js';
@@ -39,7 +38,7 @@ export const findMissingDeps = async (
   const configPath = join(tuckDir, 'bootstrap.toml');
   const config = (await pathExists(configPath))
     ? await loadBootstrapConfig(configPath)
-    : bootstrapConfigSchema.parse({});
+    : emptyBootstrapConfig();
 
   const catalog = config.tool;
   if (catalog.length === 0) return [];

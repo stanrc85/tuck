@@ -5,9 +5,13 @@ const loadBootstrapConfigMock = vi.fn();
 const pathExistsMock = vi.fn();
 const readFileMock = vi.fn();
 
-vi.mock('../../src/lib/bootstrap/parser.js', () => ({
-  loadBootstrapConfig: loadBootstrapConfigMock,
-}));
+vi.mock('../../src/lib/bootstrap/parser.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/bootstrap/parser.js')>();
+  return {
+    ...actual,
+    loadBootstrapConfig: loadBootstrapConfigMock,
+  };
+});
 
 vi.mock('fs/promises', () => ({
   readFile: readFileMock,
