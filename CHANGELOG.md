@@ -1,3 +1,10 @@
+# [3.4.0](https://github.com/stanrc85/tuck/compare/v3.3.1...v3.4.0) (2026-05-02)
+
+
+### Features
+
+* **bootstrap:** add installer + packages shorthand for brew/apt blocks ([e3eb301](https://github.com/stanrc85/tuck/commit/e3eb301a360dceba751043971bfb6108c5cc3b0b))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.3.1](https://github.com/stanrc85/tuck/compare/v3.3.0...v3.3.1) (2026-05-01)
