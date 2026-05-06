@@ -727,6 +727,53 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
+  it('drops partial trailing lines at close in default mode (brew "en" leak repro)', async () => {
+    // Brew sometimes leaves a stray fragment on stderr at process exit —
+    // typically the tail of a \r-overwriting locale or progress message.
+    // Forwarding it disrupts the spinner's repositioning. Default-mode
+    // close should drop the partial; the log file still has it.
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          '==> Auto-updated Homebrew!\n',
+          'en', // partial — no trailing newline before close
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx, logged } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).not.toMatch(/\ben\b/);
+      // Partial still captured in the log so users can audit if needed.
+      expect(logged.some((l) => l.includes('en'))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('still forwards a partial trailing line in verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['final-fragment'],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(true);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).toContain('final-fragment');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('returns a non-zero exit code through the tee path', async () => {
     const { spawn } = makeStreamSpawnMock([
       {

@@ -340,7 +340,17 @@ const spawnWithTee = (
     };
     const flushStderrBuffer = (): void => {
       if (stderrBuffer.length === 0) return;
-      if (!isStderrNoise(stderrBuffer) && !outputCtx.verbose) {
+      // Default mode: drop trailing partial lines unconditionally. They
+      // are overwhelmingly tail fragments of \r-overwriting progress
+      // (e.g. brew leaves a stray "en" from a locale-warning chunk it
+      // never finished writing). Forwarding them garbles the per-tool
+      // spinner because clack's spinner.stop repositions the cursor
+      // assuming its line is still adjacent to the previous write.
+      // Real warnings/errors from apt/brew/npm always terminate with
+      // a newline, so they're already forwarded by the per-line loop in
+      // handleStderrChunk. Verbose mode forwards stderr raw, so this
+      // branch only runs in default-quiet mode.
+      if (outputCtx.verbose) {
         process.stderr.write(stderrBuffer);
       }
       stderrBuffer = '';
