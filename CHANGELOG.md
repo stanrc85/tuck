@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [3.6.3](https://github.com/stanrc85/tuck/compare/v3.6.2...v3.6.3) (2026-05-06)
 
 
@@ -5,8 +7,6 @@
 
 * **bootstrap:** pre-cache sudo before interactive installs to avoid silent hangs ([13a169d](https://github.com/stanrc85/tuck/commit/13a169de94c5392e082b6301b0085a8d266efb2b))
 * **output:** drop partial trailing stderr at process exit in default mode ([1dbc9c8](https://github.com/stanrc85/tuck/commit/1dbc9c86308804657bceaf50f565c7d38dda18a7))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.6.2](https://github.com/stanrc85/tuck/compare/v3.6.1...v3.6.2) (2026-05-06)
 
