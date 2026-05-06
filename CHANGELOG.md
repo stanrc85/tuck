@@ -1,3 +1,10 @@
+## [3.6.5](https://github.com/stanrc85/tuck/compare/v3.6.4...v3.6.5) (2026-05-06)
+
+
+### Bug Fixes
+
+* **bootstrap:** tighten prompt detection and keep sudo alive during long installs ([3b763e1](https://github.com/stanrc85/tuck/commit/3b763e19df98b01b85b8ea7436da56f5c6da6db0))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.6.4](https://github.com/stanrc85/tuck/compare/v3.6.3...v3.6.4) (2026-05-06)
