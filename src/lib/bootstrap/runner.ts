@@ -190,32 +190,97 @@ const executeToolScript = async (
   log(`$ ${SHELL} ${SHELL_FLAG} '${summarize(script)}'`);
   const spawnFn = options.spawnImpl ?? spawn;
 
+  // Long-running installs (nvim --headless plugin install, brew bottling
+  // big formulae) can exceed sudo's default 15-minute timestamp window.
+  // If the script uses sudo, keep the cache warm by refreshing every few
+  // minutes via `sudo -n -v` for the duration of the spawn. -n means no
+  // prompt; if the cache somehow lapsed AND the user can't refresh
+  // silently, the ping is a no-op and the script's sudo call hits the
+  // normal hang. The keep-alive only fires when we already pre-cached
+  // (autoYes path or interactive pre-cache succeeded), so the user has
+  // already entered their password once.
+  const sudoKeepAlive = scriptUsesSudo(script)
+    ? startSudoKeepAlive(spawnFn)
+    : null;
+
   if (options.outputCtx) {
-    return spawnWithTee(spawnFn, SHELL, [SHELL_FLAG, script], {
-      cwd: options.cwd,
-      toolId,
-      phase,
-      outputCtx: options.outputCtx,
-      onInteractivePrompt: options.onInteractivePrompt,
-    });
+    try {
+      return await spawnWithTee(spawnFn, SHELL, [SHELL_FLAG, script], {
+        cwd: options.cwd,
+        toolId,
+        phase,
+        outputCtx: options.outputCtx,
+        onInteractivePrompt: options.onInteractivePrompt,
+      });
+    } finally {
+      sudoKeepAlive?.stop();
+    }
   }
 
-  return spawnAndWait(spawnFn, SHELL, [SHELL_FLAG, script], {
-    cwd: options.cwd,
-    stdio: 'inherit',
-  });
+  try {
+    return await spawnAndWait(spawnFn, SHELL, [SHELL_FLAG, script], {
+      cwd: options.cwd,
+      stdio: 'inherit',
+    });
+  } finally {
+    sudoKeepAlive?.stop();
+  }
 };
 
 /**
- * Heuristic: a stderr line that ends in `:` (no trailing newline) usually
- * means a child process is waiting on stdin — sudo's `[sudo] password
- * for ...:`, brew's `Password:`, generic CLI prompts. Catches the common
- * cases without trying to enumerate every i18n form. False positives just
- * cost a single redundant spinner pause; false negatives cost a
- * mid-spinner prompt that's harder to read.
+ * Background sudo timestamp refresher. Pings `sudo -n -v` every
+ * KEEP_ALIVE_INTERVAL_MS so a long-running install can't lapse the
+ * default 15-minute sudo cache. `-n` means non-interactive: if the cache
+ * is somehow gone, the ping fails silently and we don't trigger a
+ * surprise prompt.
+ *
+ * Returns a `stop()` handle the caller invokes in `finally` to cancel
+ * the interval whether the spawn succeeded or threw.
  */
-const SUDO_PROMPT_RE = /\[sudo\] password|^Password:\s*$|sudo: a password is required|sorry, try again/im;
-const GENERIC_PROMPT_RE = /[?:]\s*$/;
+const KEEP_ALIVE_INTERVAL_MS = 4 * 60 * 1000;
+
+const startSudoKeepAlive = (spawnFn: typeof spawn): { stop: () => void } => {
+  const handle = setInterval(() => {
+    // Fire-and-forget. Errors and non-zero exits are intentional no-ops
+    // — the next interval will retry, or the script's own sudo call will
+    // surface the failure.
+    try {
+      const child = spawnFn('sudo', ['-n', '-v'], {
+        stdio: ['ignore', 'ignore', 'ignore'],
+      });
+      child.on('error', () => {});
+    } catch {
+      // bash-not-found-class errors don't matter for a ping
+    }
+  }, KEEP_ALIVE_INTERVAL_MS);
+  // Don't keep the event loop alive just for the ping — if everything
+  // else has settled, the process should exit.
+  if (typeof handle.unref === 'function') {
+    handle.unref();
+  }
+  return {
+    stop: () => clearInterval(handle),
+  };
+};
+
+/**
+ * Pattern for "this output looks like it's waiting on user input." Used
+ * both to pause a running spinner (so the prompt isn't repainted) and as
+ * a heuristic for whether a partial-line buffer should be flushed eagerly.
+ *
+ * Deliberately specific — keywords required, not just `:` or `?` at the
+ * end of a line. brew emits plenty of status text ending in `:` (`==>
+ * Caveats:`, `Tap:`, `From:`) that are NOT prompts; treating them as
+ * prompts kills the spinner and produces a frozen-looking UI for the
+ * rest of the run, plus a glyph/color mismatch on the outcome line.
+ *
+ * False negatives (real prompt missed) cost: user has to run `--verbose`
+ * to see what's happening. Acceptable since most install scripts are
+ * non-interactive AND the sudo pre-cache (`ensureSudoCachedInteractive`)
+ * fires before the spawn for every script that contains literal `sudo`.
+ */
+const INTERACTIVE_PROMPT_RE =
+  /(?:\[sudo\]\s+password|^Password\s*:|sudo:\s+a password is required|sorry, try again|y\/n|y\/N|Y\/n|Y\/N|yes\/no|continue\?|proceed\?|\(yes\/no\))/im;
 
 /**
  * Stderr lines matching one of these patterns are routed to the log file
@@ -312,7 +377,7 @@ const spawnWithTee = (
     let promptPaused = false;
     const maybePauseForPrompt = (text: string): void => {
       if (promptPaused || outputCtx.verbose) return;
-      if (SUDO_PROMPT_RE.test(text) || GENERIC_PROMPT_RE.test(text.replace(/\s+$/, ''))) {
+      if (INTERACTIVE_PROMPT_RE.test(text)) {
         promptPaused = true;
         onInteractivePrompt?.();
       }
@@ -347,15 +412,16 @@ const spawnWithTee = (
           maybePauseForPrompt(line);
         }
       }
-      // Partial line (no trailing newline) that looks like a prompt — sudo
-      // writes "[sudo] password for alice: " without flushing a newline.
-      // Forward eagerly so the user can respond, then clear the buffer so
-      // we don't double-emit when the next chunk arrives.
-      if (stderrBuffer.length > 0 && /[?:]\s*$/.test(stderrBuffer)) {
-        process.stderr.write(stderrBuffer);
-        maybePauseForPrompt(stderrBuffer);
-        stderrBuffer = '';
-      }
+      // We deliberately DO NOT forward partial (no-newline) buffers here.
+      // The previous heuristic (flush anything ending in `:` or `?`)
+      // false-positived on benign brew status lines like
+      // `==> Caveats:` and killed the spinner mid-run. Real interactive
+      // prompts are handled two ways instead: (a) sudo pre-cache fires
+      // before the spawn for any script containing literal `sudo`, so
+      // the prompt lands on the user's TTY before the spinner starts;
+      // (b) verbose mode forwards stderr raw, exposing any other prompt
+      // a user might encounter. Partial buffers stay queued until the
+      // next chunk's newline, or get dropped at close.
     };
     const flushStderrBuffer = (): void => {
       if (stderrBuffer.length === 0) return;

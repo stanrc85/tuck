@@ -552,12 +552,12 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
-  it('fires onInteractivePrompt the first time a sudo prompt appears in non-verbose mode', async () => {
+  it('fires onInteractivePrompt when a complete prompt-keyword line appears in non-verbose mode', async () => {
     const { spawn } = makeStreamSpawnMock([
       {
         match: (cmd) => cmd === 'bash',
         exitCode: 0,
-        stderrChunks: ['[sudo] password for alice: '],
+        stderrChunks: ['[sudo] password for alice: \n'],
       },
     ]);
     const onPrompt = vi.fn();
@@ -576,12 +576,39 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
+  it('does not fire onInteractivePrompt for benign `:`-ending status lines like "==> Caveats:"', async () => {
+    // The previous regex fired on any line ending in `:`, killing the
+    // spinner mid-run on tools whose brew output included Caveats. Now
+    // requires explicit prompt keywords.
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['==> Caveats:\nFrom: https://example.com\n'],
+      },
+    ]);
+    const onPrompt = vi.fn();
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, {
+        spawnImpl: spawn,
+        log: () => {},
+        outputCtx: ctx,
+        onInteractivePrompt: onPrompt,
+      });
+      expect(onPrompt).not.toHaveBeenCalled();
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('does not fire onInteractivePrompt in verbose mode', async () => {
     const { spawn } = makeStreamSpawnMock([
       {
         match: (cmd) => cmd === 'bash',
         exitCode: 0,
-        stderrChunks: ['[sudo] password for alice: '],
+        stderrChunks: ['[sudo] password for alice: \n'],
       },
     ]);
     const onPrompt = vi.fn();
@@ -665,15 +692,17 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
-  it('forwards a partial-line sudo prompt even when noise lines arrived first', async () => {
+  it('does NOT forward partial (no-newline) buffers in default mode', async () => {
+    // Old behavior flushed any partial ending in `:` or `?`, which
+    // false-positived on benign brew output like `From: github.com`
+    // chunked mid-line. New behavior relies on the sudo pre-cache
+    // (ensureSudoCachedInteractive) for prompts that would otherwise
+    // arrive without newlines, and drops trailing partials at close.
     const { spawn } = makeStreamSpawnMock([
       {
         match: (cmd) => cmd === 'bash',
         exitCode: 0,
-        stderrChunks: [
-          'Warning: fzf 0.72.0 already installed\n',
-          '[sudo] password for alice: ',
-        ],
+        stderrChunks: ['Warning: fzf 0.72.0 already installed\n', 'From: '],
       },
     ]);
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -681,7 +710,7 @@ describe('outputCtx pipe-and-tee', () => {
       const { ctx } = makeFakeOutputCtx(false);
       await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
       const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
-      expect(joined).toContain('[sudo] password');
+      expect(joined).not.toContain('From: ');
       expect(joined).not.toContain('already installed');
     } finally {
       stderrSpy.mockRestore();
@@ -936,5 +965,52 @@ describe('outputCtx pipe-and-tee', () => {
     } finally {
       stderrSpy.mockRestore();
     }
+  });
+});
+
+describe('sudo keep-alive', () => {
+  // The keep-alive pings `sudo -n -v` every 4 minutes for any script
+  // containing literal `sudo`. Long-running installs (nvim --headless
+  // plugin install, brew bottling big formulae) can otherwise lapse the
+  // default 15-minute sudo timestamp window and prompt mid-script.
+  // We can't easily exercise the interval inside our microtask-based
+  // spawn mock, so the assertion is integration-style: confirm that the
+  // setInterval handle is created/torn down around the spawn lifecycle.
+
+  it('does not spawn extra sudo pings during a fast-completing non-sudo script', async () => {
+    const { spawn, calls } = makeSpawnMock([
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    await runInstall(
+      tool({ install: 'brew install pet' }),
+      vars,
+      { spawnImpl: spawn, autoYes: false, log: () => {} }
+    );
+    // Without sudo in the script, no pre-cache + no keep-alive interval,
+    // so the only spawn is the bash invocation itself.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.cmd).toBe('bash');
+  });
+
+  it('does not double-tap sudo for fast sudo scripts (interval never fires)', async () => {
+    // The keep-alive interval is 4 minutes. Our microtask-resolved bash
+    // mock completes in microseconds, so the interval shouldn't fire
+    // before the finally block clears it. Asserts there's only the
+    // pre-cache + bash spawn.
+    const { spawn, calls } = makeSpawnMock([
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-n' && args[1] === 'true',
+        exitCode: 0,
+      },
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    await runInstall(
+      tool({ install: 'sudo apt install -y pet' }),
+      vars,
+      { spawnImpl: spawn, autoYes: true, log: () => {} }
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.cmd).toBe('sudo');
+    expect(calls[1]?.cmd).toBe('bash');
   });
 });
