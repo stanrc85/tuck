@@ -1,3 +1,10 @@
+## [3.4.1](https://github.com/stanrc85/tuck/compare/v3.4.0...v3.4.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **restore:** propagate deletions inside tracked directories ([03c568c](https://github.com/stanrc85/tuck/commit/03c568c3077a065a1a69caa1174fa63f9c453118))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.4.0](https://github.com/stanrc85/tuck/compare/v3.3.1...v3.4.0) (2026-05-02)
