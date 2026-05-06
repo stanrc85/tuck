@@ -19,7 +19,6 @@ export interface RemoteConfig {
 
 export interface TuckConfig {
   repository: {
-    path: string;
     defaultBranch: string;
     autoCommit: boolean;
     autoPush: boolean;

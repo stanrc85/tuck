@@ -69,7 +69,6 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
     cachedConfig = {
       ...defaultConfig,
       ...localConfig,
-      repository: { ...defaultConfig.repository, path: dir },
       hooks: {
         ...defaultConfig.hooks,
         ...localConfig.hooks,
@@ -100,7 +99,6 @@ export const loadConfig = async (tuckDir?: string): Promise<TuckConfigOutput> =>
       repository: {
         ...defaultConfig.repository,
         ...result.data.repository,
-        path: dir,
       },
       files: {
         ...defaultConfig.files,
@@ -278,7 +276,7 @@ export const resetConfig = async (tuckDir?: string): Promise<void> => {
   const dir = tuckDir || getTuckDir();
   const configPath = getConfigPath(dir);
 
-  const resetTo = { ...defaultConfig, repository: { ...defaultConfig.repository, path: dir } };
+  const resetTo = { ...defaultConfig };
 
   try {
     await writeFile(configPath, JSON.stringify(resetTo, null, 2) + '\n', 'utf-8');

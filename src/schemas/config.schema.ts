@@ -34,7 +34,6 @@ export const categoryConfigSchema = z.object({
 export const tuckConfigSchema = z.object({
   repository: z
     .object({
-      path: z.string(),
       defaultBranch: z.string().default('main'),
       autoCommit: z.boolean().default(true),
       autoPush: z.boolean().default(false),

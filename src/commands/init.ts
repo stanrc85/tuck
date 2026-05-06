@@ -283,7 +283,6 @@ const initFromScratch = async (
     await saveConfig(
       {
         ...defaultConfig,
-        repository: { ...defaultConfig.repository, path: tuckDir },
         remote: options.remoteConfig || defaultConfig.remote,
       },
       tuckDir
@@ -992,13 +991,7 @@ const importExistingRepo = async (
 
     const hostname = (await import('os')).hostname();
     await createManifest(tuckDir, hostname);
-    await saveConfig(
-      {
-        ...defaultConfig,
-        repository: { ...defaultConfig.repository, path: tuckDir },
-      },
-      tuckDir
-    );
+    await saveConfig({ ...defaultConfig }, tuckDir);
 
     // Create directory structure for categories (if not already present)
     await createDirectoryStructure(tuckDir);
@@ -1118,13 +1111,7 @@ const importExistingRepo = async (
 
   const hostname = (await import('os')).hostname();
   await createManifest(tuckDir, hostname);
-  await saveConfig(
-    {
-      ...defaultConfig,
-      repository: { ...defaultConfig.repository, path: tuckDir },
-    },
-    tuckDir
-  );
+  await saveConfig({ ...defaultConfig }, tuckDir);
   await createDefaultFiles(tuckDir, hostname);
 
   // Set up remote
@@ -1160,13 +1147,7 @@ const initFromRemote = async (tuckDir: string, remoteUrl: string): Promise<void>
   // Verify config exists
   if (!(await pathExists(getConfigPath(tuckDir)))) {
     prompts.log.warning('No config found in cloned repository. Creating default config...');
-    await saveConfig(
-      {
-        ...defaultConfig,
-        repository: { ...defaultConfig.repository, path: tuckDir },
-      },
-      tuckDir
-    );
+    await saveConfig({ ...defaultConfig }, tuckDir);
   }
 };
 

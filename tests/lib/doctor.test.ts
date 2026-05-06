@@ -520,7 +520,7 @@ describe('doctor checks', () => {
       // after JSON.stringify also omits it. Assert the pass branch fires either way.
       vol.writeFileSync(
         join(TEST_TUCK_DIR, '.tuckrc.json'),
-        JSON.stringify({ repository: { path: TEST_TUCK_DIR }, defaultGroups: [] })
+        JSON.stringify({ defaultGroups: [] })
       );
       clearConfigCache();
 
@@ -534,7 +534,7 @@ describe('doctor checks', () => {
       await initTestTuck();
       vol.writeFileSync(
         join(TEST_TUCK_DIR, '.tuckrc.json'),
-        JSON.stringify({ repository: { path: TEST_TUCK_DIR }, defaultGroups: ['kali'] })
+        JSON.stringify({ defaultGroups: ['kali'] })
       );
       clearConfigCache();
 
@@ -574,7 +574,6 @@ describe('doctor checks', () => {
       vol.writeFileSync(
         join(TEST_TUCK_DIR, '.tuckrc.json'),
         JSON.stringify({
-          repository: { path: TEST_TUCK_DIR },
           defaultGroups: ['kali', 'work'],
         })
       );
