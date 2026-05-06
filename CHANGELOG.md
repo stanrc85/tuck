@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [3.6.1](https://github.com/stanrc85/tuck/compare/v3.6.0...v3.6.1) (2026-05-06)
 
 
 ### Bug Fixes
 
 * **output:** drop benign brew "already installed" noise from default-mode stderr ([a6bc8b5](https://github.com/stanrc85/tuck/commit/a6bc8b5740cd38999bd6f6b7852cf1939288c83d))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.6.0](https://github.com/stanrc85/tuck/compare/v3.5.0...v3.6.0) (2026-05-06)
 
