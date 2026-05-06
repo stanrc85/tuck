@@ -152,7 +152,20 @@ const executeToolScript = async (
   script: string,
   options: RunOptions
 ): Promise<RunResult> => {
-  const log = options.log ?? ((line) => console.log(line));
+  // Default log destination depends on whether the caller threaded an
+  // OutputContext through. With one, command-echo lines belong in the log
+  // file (and the terminal only when verbose) so the per-tool spinner
+  // isn't visually clobbered by `$ bash -c '...'` lines. Without one,
+  // fall back to the legacy `console.log` for backwards compatibility.
+  const defaultLog = options.outputCtx
+    ? (line: string) => {
+        options.outputCtx!.log('cmd', line);
+        if (options.outputCtx!.verbose) {
+          console.log(line);
+        }
+      }
+    : (line: string) => console.log(line);
+  const log = options.log ?? defaultLog;
 
   if (options.dryRun) {
     log(`[dry-run] ${toolId} ${phase}: ${summarize(script)}`);
@@ -199,17 +212,31 @@ const GENERIC_PROMPT_RE = /[?:]\s*$/;
  * entries sparingly; a missing entry just means the user sees the line in
  * default mode, which is the safe failure shape.
  *
- *   1. `Warning: <pkg> <version> already installed` — brew's noise when
- *      `brew install` runs against a tool that's already at this version.
- *      Common in `installer = "brew"` shorthand blocks where the
- *      synthesized install runs `brew install pkg1 pkg2 ...` and most
- *      packages are already there.
- *   2. `<formula> is already installed and up-to-date` — brew's noise on
- *      `brew upgrade` for already-current formulae.
+ * Brew families:
+ *   - `Warning: <pkg> <version> already installed` — `brew install` over
+ *     an already-current formula.
+ *   - `<formula> is already installed and up-to-date` — `brew upgrade`
+ *     noise.
+ *   - `Warning: Not upgrading <pkg>, the latest version is already
+ *     installed` — `brew upgrade` against a single up-to-date formula.
+ *   - `==> Updating Homebrew...` / `==> Auto-updated Homebrew!` /
+ *     `==> Auto-updating Homebrew...` — brew's auto-update banner that
+ *     fires on every `brew install`/`upgrade` invocation. Other `==> `
+ *     lines (e.g. `==> Caveats`, `==> Pouring`) are deliberately NOT
+ *     filtered — those are install-time content the user should see.
+ *   - `Successfully updated cache.` — brew's auto-update cache result.
+ *
+ * Be conservative: NEVER pattern-match `==> ` broadly — `==> Caveats`
+ * carries critical post-install info that has to remain visible.
  */
 const STDERR_NOISE_PATTERNS: readonly RegExp[] = [
   /^Warning: \S+ \S+ already installed\b/i,
   /^\S+ is already installed and up[- ]to[- ]date\b/i,
+  /^Warning: Not upgrading \S+,?\s+the latest version is already installed\b/i,
+  /^==> Updating Homebrew\.{0,3}\s*$/i,
+  /^==> Auto-updating Homebrew\.{0,3}\s*$/i,
+  /^==> Auto-updated Homebrew!\s*$/i,
+  /^Successfully updated cache\.\s*$/i,
 ];
 
 const isStderrNoise = (line: string): boolean => {

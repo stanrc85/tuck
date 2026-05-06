@@ -594,6 +594,120 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
+  it('drops brew "Updating Homebrew" / "Auto-updated" / "Successfully updated cache" noise', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          '==> Updating Homebrew...\n',
+          '==> Auto-updated Homebrew!\n',
+          'Successfully updated cache.\n',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx, logged } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).not.toContain('Updating Homebrew');
+      expect(joined).not.toContain('Auto-updated Homebrew');
+      expect(joined).not.toContain('Successfully updated cache');
+      // Log captures it all — auditable after the fact.
+      expect(logged.some((l) => l.includes('Updating Homebrew'))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('drops brew "Not upgrading <pkg>, the latest version is already installed" noise', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          'Warning: Not upgrading font-roboto-mono-nerd-font, the latest version is already installed\n',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).not.toContain('Not upgrading');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('preserves brew Caveats and other meaningful "==> " lines', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          '==> Updating Homebrew...\n',
+          '==> Caveats\n',
+          'foo: this is important post-install info\n',
+          '==> Pouring foo--1.0.0.bottle.tar.gz\n',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).toContain('==> Caveats');
+      expect(joined).toContain('==> Pouring');
+      expect(joined).toContain('important post-install info');
+      expect(joined).not.toContain('Updating Homebrew');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('routes the `$ bash -c` command echo to the log file in default mode (not the terminal)', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const { ctx, logged } = makeFakeOutputCtx(false);
+      await runInstall(
+        tool({ install: 'echo hello' }),
+        vars,
+        { spawnImpl: spawn, outputCtx: ctx } // no log override
+      );
+      const consoleCalls = consoleSpy.mock.calls.map((args) => String(args[0]));
+      expect(consoleCalls.some((s) => s.includes('bash'))).toBe(false);
+      expect(logged.some((l) => l.includes('bash'))).toBe(true);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('still echoes the `$ bash -c` command to the terminal in verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const { ctx } = makeFakeOutputCtx(true);
+      await runInstall(
+        tool({ install: 'echo hello' }),
+        vars,
+        { spawnImpl: spawn, outputCtx: ctx }
+      );
+      const consoleCalls = consoleSpy.mock.calls.map((args) => String(args[0]));
+      expect(consoleCalls.some((s) => s.includes('bash'))).toBe(true);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('reassembles a noise line that arrives in two chunks', async () => {
     const { spawn } = makeStreamSpawnMock([
       {
