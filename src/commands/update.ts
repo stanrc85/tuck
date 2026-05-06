@@ -73,6 +73,13 @@ export interface UpdateOptions {
   spawnImpl?: typeof spawn;
   /** Test hook: override process.env TUCK_UPDATE_RESUMED gate. */
   resumed?: boolean;
+  /**
+   * Forwarded to the nested restore + bootstrap-update phases. Default-
+   * mode output is per-phase summaries; verbose streams the full
+   * subprocess transcripts to the terminal. Each phase still writes a
+   * separate log under `<tuckDir>/logs/` regardless.
+   */
+  verbose?: boolean;
 }
 
 export interface UpdateResult {
@@ -185,7 +192,12 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
       // is `true` so the umbrella's one-shot refresh includes auto-installing
       // any missing tools whose configs just got restored — user consented to
       // a full sweep, auto-installing missing deps is within that consent.
-      await runRestore({ all: true, trustHooks: true, installDeps: true });
+      await runRestore({
+        all: true,
+        trustHooks: true,
+        installDeps: true,
+        verbose: options.verbose === true,
+      });
       result.restoreRan = true;
     } catch (error) {
       logger.warning(
@@ -206,7 +218,11 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
     logger.blank();
     logger.info('[4/4] Updating installed tools…');
     try {
-      await runBootstrapUpdate({ all: true, yes: options.yes === true });
+      await runBootstrapUpdate({
+        all: true,
+        yes: options.yes === true,
+        verbose: options.verbose === true,
+      });
       result.toolsRan = true;
     } catch (error) {
       logger.warning(
@@ -311,6 +327,7 @@ const buildResumeArgs = (options: UpdateOptions): string[] => {
   if (options.yes) args.push('--yes');
   if (options.mirror) args.push('--mirror');
   if (options.allowDivergent) args.push('--allow-divergent');
+  if (options.verbose) args.push('--verbose');
   return args;
 };
 
@@ -364,6 +381,7 @@ export const updateCommand = new Command('update')
   .option('-y, --yes', 'Skip confirmations in each phase')
   .option('--mirror', 'Reset to upstream (destroys local commits) instead of rebasing')
   .option('--allow-divergent', 'Bypass the divergence safety check (required with --mirror when ahead of upstream)')
+  .option('-v, --verbose', 'Stream every restore/update subprocess line to the terminal (full transcripts always go to ~/.tuck/logs/)')
   .action(async (options: UpdateOptions) => {
     // assertMigrated guards manifest shape — matches pull/restore. Let
     // MigrationRequiredError bubble (handled by the global error handler)

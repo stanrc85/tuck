@@ -281,13 +281,18 @@ const restoreFilesInternal = async (
     });
 
     if (pruneResult && pruneResult.pruned.length > 0) {
+      // Always surface deletions — the user needs to know files were removed
+      // from their home directory even in default-quiet mode.
       const sample = pruneResult.pruned.slice(0, 3).join(', ');
       const tail = pruneResult.pruned.length > 3 ? '…' : '';
       prompts.log.info(
         `Pruned ${formatCount(pruneResult.pruned.length, 'stale entry', 'stale entries')} from ${file.source}: ${sample}${tail}`
       );
     }
-    if (pruneResult && pruneResult.exempted.length > 0) {
+    if (options.verbose && pruneResult && pruneResult.exempted.length > 0) {
+      // Purely informational ("we kept these because of .tuckignore"); hidden
+      // in default mode where the per-file restore line already conveys
+      // success.
       prompts.log.info(
         `Kept ${formatCount(pruneResult.exempted.length, '.tuckignore-exempt entry', '.tuckignore-exempt entries')} inside ${file.source}`
       );
@@ -397,9 +402,10 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
     symlink: useSymlink as boolean,
     backup: true,
     noSecrets: options.noSecrets,
+    verbose: options.verbose === true,
   });
 
-  displaySecretSummary(result);
+  displaySecretSummary(result, options.verbose === true);
 
   prompts.outro(`Restored ${formatCount(result.restoredCount, 'file')}`);
   return result.restoredPaths;
@@ -407,8 +413,11 @@ const runInteractiveRestore = async (tuckDir: string, options: RestoreOptions = 
 
 /**
  * Display secret restoration summary. Caller assumes a clack frame is open.
+ * In default mode the unresolved-placeholder *count* warning fires (so users
+ * know secrets are missing) but the per-placeholder preview only lands under
+ * `--verbose` — the count + the `tuck secrets set` hint is enough signal.
  */
-const displaySecretSummary = (result: RestoreResult): void => {
+const displaySecretSummary = (result: RestoreResult, verbose = false): void => {
   if (result.secretsRestored > 0) {
     prompts.log.success(`Restored ${formatCount(result.secretsRestored, 'secret')}`);
   }
@@ -416,11 +425,13 @@ const displaySecretSummary = (result: RestoreResult): void => {
     prompts.log.warning(
       `${formatCount(result.unresolvedPlaceholders.length, 'unresolved placeholder')}:`
     );
-    const previewLines = result.unresolvedPlaceholders.slice(0, 5).map((p) => `  {{${p}}}`);
-    if (result.unresolvedPlaceholders.length > 5) {
-      previewLines.push(`  ... and ${result.unresolvedPlaceholders.length - 5} more`);
+    if (verbose) {
+      const previewLines = result.unresolvedPlaceholders.slice(0, 5).map((p) => `  {{${p}}}`);
+      if (result.unresolvedPlaceholders.length > 5) {
+        previewLines.push(`  ... and ${result.unresolvedPlaceholders.length - 5} more`);
+      }
+      prompts.log.message(c.dim(previewLines.join('\n')));
     }
-    prompts.log.message(c.dim(previewLines.join('\n')));
     prompts.log.message(c.dim("Use `tuck secrets set <NAME>` to add missing secrets"));
   }
 };
@@ -555,7 +566,7 @@ const maybePromptForMissingDeps = async (
     logMissingDepsList(missing);
   }
 
-  await runBootstrap({ tools: toolsArg, yes: true });
+  await runBootstrap({ tools: toolsArg, yes: true, verbose: options.verbose === true });
 };
 
 /**
@@ -708,7 +719,11 @@ const maybeRunBootstrapForGroups = async (
       );
       continue;
     }
-    await runBootstrap({ bundle: groupName, yes: options.yes });
+    await runBootstrap({
+      bundle: groupName,
+      yes: options.yes,
+      verbose: options.verbose === true,
+    });
   }
 };
 
@@ -744,7 +759,7 @@ export const runRestore = async (options: RestoreOptions): Promise<void> => {
     } else {
       const result = await restoreFilesInternal(tuckDir, files, options);
       restoredPaths = result.restoredPaths;
-      displaySecretSummary(result);
+      displaySecretSummary(result, options.verbose === true);
       prompts.outro(`Restored ${formatCount(result.restoredCount, 'file')}`);
     }
   } else {
@@ -801,7 +816,7 @@ const runRestoreCommand = async (paths: string[], options: RestoreOptions): Prom
   if (options.dryRun) {
     prompts.outro(`Would restore ${formatCount(files.length, 'file')}`);
   } else {
-    displaySecretSummary(result);
+    displaySecretSummary(result, options.verbose === true);
     prompts.outro(`Restored ${formatCount(result.restoredCount, 'file')}`);
     await maybePromptForGroupAssignment(tuckDir, options);
     await maybeRunBootstrapForGroups(tuckDir, options);
@@ -847,6 +862,7 @@ export const restoreCommand = new Command('restore')
     'After restore, run `tuck bootstrap --bundle <g>` for each -g whose name matches a bundle (groups without a matching bundle soft-skip)'
   )
   .option('-y, --yes', 'Skip confirmations (forwarded to bootstrap when --bootstrap is set)')
+  .option('-v, --verbose', 'Stream nested bootstrap subprocess output to the terminal (full transcript always goes to ~/.tuck/logs/)')
   .action(async (paths: string[], options: RestoreOptions) => {
     await runRestoreCommand(paths, options);
   });

@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { basename, join } from 'path';
 import { spawn } from 'child_process';
-import { prompts, isInteractive } from '../ui/index.js';
+import { colors as c } from '../ui/theme.js';
+import { prompts, isInteractive, createSpinner, type SpinnerInstance } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig, emptyBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { detectTool } from '../lib/bootstrap/detect.js';
@@ -18,6 +19,7 @@ import {
 import { loadBootstrapState } from '../lib/bootstrap/state.js';
 import { runCheck } from '../lib/bootstrap/runner.js';
 import { runPreflightAndMaybeAbort } from '../lib/bootstrap/preflight.js';
+import { createOutputContext, type OutputContext } from '../lib/output.js';
 import type { BootstrapConfig, ToolDefinition } from '../schemas/bootstrap.schema.js';
 import { BootstrapError, NonInteractivePromptError } from '../errors.js';
 import { bootstrapUpdateCommand } from './bootstrap-update.js';
@@ -42,6 +44,12 @@ export interface BootstrapOptions {
   noDetect?: boolean;
   /** Skip the preflight environment probes (CI escape hatch). */
   skipPreflight?: boolean;
+  /**
+   * Stream every install/update subprocess line to the terminal. Default-
+   * mode output is per-tool spinners + a summary; the full transcript
+   * always lands in `<tuckDir>/logs/bootstrap-<timestamp>.log` regardless.
+   */
+  verbose?: boolean;
 }
 
 export const bootstrapCommand = new Command('bootstrap')
@@ -55,6 +63,7 @@ export const bootstrapCommand = new Command('bootstrap')
   .option('-y, --yes', 'Skip confirmations and enable sudo pre-check under --yes')
   .option('--no-detect', 'In the picker, ignore detection signals and show a flat list')
   .option('--skip-preflight', 'Skip clock/disk/network/sudo preflight probes (CI escape hatch)')
+  .option('-v, --verbose', 'Stream every install/update line to the terminal (full transcript always goes to ~/.tuck/logs/)')
   .action(async (options: BootstrapOptions) => {
     await runBootstrap(options);
   })
@@ -133,18 +142,96 @@ export const runBootstrap = async (
   const vars = detectPlatformVars();
   const force = parseIdList(options.rerun);
 
-  const outcomes = await executeBootstrap({
-    plan,
-    vars,
-    force: new Set(force),
-    runOptions: {
-      autoYes: options.yes === true,
-    },
-    onToolDone: (o) => logToolOutcome(o),
+  const outputCtx = await createOutputContext({
+    command: 'bootstrap',
     tuckDir,
+    verbose: options.verbose === true,
   });
 
-  printSummary(outcomes.outcomes, outcomes.counts);
+  // Per-tool spinner shared between onToolStart / onToolDone /
+  // onInteractivePrompt. Held in a wrapper object — TS narrows a bare
+  // `let` to never inside callbacks because it can't reason about closure
+  // re-entry, but a property access on a typed wrapper sidesteps that.
+  const spinnerRef: { current: SpinnerInstance | null } = { current: null };
+  const finalizeOnSpinner = (sp: SpinnerInstance, o: ToolOutcome): void => {
+    switch (o.status) {
+      case 'installed':
+        sp.succeed(`installed ${o.id}`);
+        break;
+      case 'updated':
+        sp.succeed(`updated ${o.id}`);
+        break;
+      case 'failed': {
+        const detail = o.detail ? o.detail : `exit ${o.exitCode ?? 'unknown'}`;
+        sp.fail(`${o.id} failed (${detail})`);
+        break;
+      }
+      case 'skipped-already-installed':
+        sp.info(`${o.id} already installed`);
+        break;
+      case 'skipped-dep-failed':
+        sp.warn(`${o.id} skipped (dependency failed)`);
+        break;
+    }
+  };
+
+  let outcomes;
+  try {
+    outcomes = await executeBootstrap({
+      plan,
+      vars,
+      force: new Set(force),
+      runOptions: {
+        autoYes: options.yes === true,
+        outputCtx,
+        onInteractivePrompt: () => {
+          // Kill the spinner so the sudo prompt isn't repainted over by the
+          // animation. We don't try to revive the spinner once sudo has
+          // accepted the password — the install simply continues without
+          // animation, and onToolDone reports the final outcome.
+          if (spinnerRef.current) {
+            spinnerRef.current.stop();
+            spinnerRef.current = null;
+          }
+        },
+      },
+      onToolStart: (tool) => {
+        if (options.verbose === true) {
+          // Verbose users get the full subprocess transcript on screen —
+          // a spinner above it would just clip frames into the noise.
+          prompts.log.step(
+            `${tool.id} — running ${
+              parseIdList(options.rerun).includes(tool.id) ? 'install (forced)' : 'install'
+            }`
+          );
+          return;
+        }
+        spinnerRef.current = createSpinner();
+        spinnerRef.current.start(`Installing ${tool.id}…`);
+      },
+      onToolDone: (o) => {
+        if (spinnerRef.current) {
+          finalizeOnSpinner(spinnerRef.current, o);
+          spinnerRef.current = null;
+        } else {
+          // Either: (a) we're in verbose mode (no spinner was started),
+          // (b) the tool was skipped before onToolStart fired, or (c) the
+          // spinner was paused for an interactive prompt. All three fall
+          // back to the plain log line so the user still sees the outcome.
+          logToolOutcome(o);
+        }
+      },
+      tuckDir,
+    });
+  } finally {
+    if (spinnerRef.current) {
+      spinnerRef.current.stop();
+      spinnerRef.current = null;
+    }
+    await outputCtx.close();
+  }
+
+  printSummary(outcomes.outcomes, outcomes.counts, outputCtx);
 
   // Fire the chsh prompt before the failure throw so a partial-failure run
   // doesn't silently rob the user of the login-shell fallback. The prompt
@@ -158,7 +245,10 @@ export const runBootstrap = async (
     // parse the summary. Leave process.exit to the outer error handler.
     throw new BootstrapError(
       `${outcomes.counts.failed} tool(s) failed to install`,
-      ['Review the output above', 'Re-run `tuck bootstrap` after fixing the underlying issue']
+      [
+        `Review the run log: ${outputCtx.logPath}`,
+        'Re-run `tuck bootstrap` after fixing the underlying issue',
+      ]
     );
   }
   prompts.outro('Bootstrap complete');
@@ -406,7 +496,8 @@ const logToolOutcome = (outcome: ToolOutcome): void => {
 
 const printSummary = (
   outcomes: ToolOutcome[],
-  counts: { installed: number; failed: number; skipped: number }
+  counts: { installed: number; failed: number; skipped: number },
+  outputCtx?: OutputContext
 ): void => {
   const installed = outcomes.filter((o) => o.status === 'installed').map((o) => o.id);
   const failed = outcomes.filter((o) => o.status === 'failed').map((o) => o.id);
@@ -417,6 +508,9 @@ const printSummary = (
     `skipped:   ${counts.skipped}${skipped.length > 0 ? ` (${skipped.join(', ')})` : ''}`,
     `failed:    ${counts.failed}${failed.length > 0 ? ` (${failed.join(', ')})` : ''}`,
   ];
+  if (outputCtx) {
+    lines.push('', c.muted(`Run log: ${outputCtx.logPath}`));
+  }
   prompts.log.message(lines.join('\n'));
 };
 

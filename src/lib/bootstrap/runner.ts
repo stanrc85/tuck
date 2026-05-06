@@ -2,6 +2,7 @@ import { spawn, type SpawnOptions, type ChildProcess } from 'child_process';
 import { BootstrapError } from '../../errors.js';
 import { interpolate, type BootstrapVars } from './interpolator.js';
 import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
+import type { OutputContext } from '../output.js';
 
 /**
  * Executes `check`/`install`/`update` scripts for a single tool. Orchestration
@@ -15,10 +16,17 @@ import type { ToolDefinition } from '../../schemas/bootstrap.schema.js';
  *    trying to parse them ourselves would be a nightmare. We assume bash
  *    is available; if it isn't, the spawn errors cleanly.
  *
- * 2. `install`/`update` inherit stdio so the user sees curl/apt output
- *    live and can type their sudo password at the prompt. `check` pipes
- *    its streams away — a "is pet installed?" probe shouldn't splatter
- *    `pet --version` on the user's terminal.
+ * 2. `install`/`update` capture stdout+stderr via pipe when `outputCtx`
+ *    is supplied so a log file always gets the full transcript:
+ *      - stdout → log file always; terminal only when `verbose`.
+ *      - stderr → log file + terminal always, so sudo prompts and error
+ *        text reach the user even in default-quiet mode.
+ *      - stdin stays inherited so sudo can read the password from the
+ *        user's TTY directly.
+ *    Without `outputCtx` the runner falls back to `stdio: 'inherit'` so
+ *    callers without a context get the legacy behavior unchanged.
+ *    `check` always discards its streams — a "is pet installed?" probe
+ *    shouldn't splatter `pet --version` on the user's terminal.
  *
  * 3. `--yes` + `sudo` handling: rather than scanning stderr for the
  *    "Password:" prompt (brittle, i18n-fragile), we pre-check with
@@ -54,6 +62,21 @@ export interface RunOptions {
    * get printed before execution. Defaults to console.log.
    */
   log?: (line: string) => void;
+  /**
+   * Per-run output context. When supplied, install/update scripts run
+   * with piped stdio so their full transcript lands in the log file and
+   * terminal output is gated by `outputCtx.verbose`. Without it, the
+   * runner inherits stdio (legacy behavior).
+   */
+  outputCtx?: OutputContext;
+  /**
+   * Optional hook fired the first time the runner detects what looks
+   * like an interactive prompt (sudo password, [Y/n], etc.) on the
+   * subprocess's stderr in non-verbose mode. Lets the caller pause a
+   * running spinner so the prompt isn't visually clobbered. Only fired
+   * when `outputCtx` is supplied AND `outputCtx.verbose` is false.
+   */
+  onInteractivePrompt?: () => void;
 }
 
 export interface RunResult {
@@ -142,9 +165,122 @@ const executeToolScript = async (
 
   log(`$ ${SHELL} ${SHELL_FLAG} '${summarize(script)}'`);
   const spawnFn = options.spawnImpl ?? spawn;
+
+  if (options.outputCtx) {
+    return spawnWithTee(spawnFn, SHELL, [SHELL_FLAG, script], {
+      cwd: options.cwd,
+      toolId,
+      phase,
+      outputCtx: options.outputCtx,
+      onInteractivePrompt: options.onInteractivePrompt,
+    });
+  }
+
   return spawnAndWait(spawnFn, SHELL, [SHELL_FLAG, script], {
     cwd: options.cwd,
     stdio: 'inherit',
+  });
+};
+
+/**
+ * Heuristic: a stderr line that ends in `:` (no trailing newline) usually
+ * means a child process is waiting on stdin — sudo's `[sudo] password
+ * for ...:`, brew's `Password:`, generic CLI prompts. Catches the common
+ * cases without trying to enumerate every i18n form. False positives just
+ * cost a single redundant spinner pause; false negatives cost a
+ * mid-spinner prompt that's harder to read.
+ */
+const SUDO_PROMPT_RE = /\[sudo\] password|^Password:\s*$|sudo: a password is required|sorry, try again/im;
+const GENERIC_PROMPT_RE = /[?:]\s*$/;
+
+interface TeeSpawnOptions {
+  cwd?: string;
+  toolId: string;
+  phase: 'install' | 'update';
+  outputCtx: OutputContext;
+  onInteractivePrompt?: () => void;
+}
+
+/**
+ * Spawn a child with piped stdout/stderr and tee both streams: stdout
+ * lands in the log file (and the terminal only when verbose); stderr
+ * lands in the log file AND the terminal so sudo prompts and error text
+ * always reach the user. Stdin stays inherited so the user can type
+ * passwords directly into the child.
+ *
+ * Triggers `onInteractivePrompt` on the FIRST stderr chunk that looks
+ * like an interactive prompt, in non-verbose mode only — the caller uses
+ * this to pause a running spinner so the prompt isn't visually clobbered.
+ */
+const spawnWithTee = (
+  spawnFn: typeof spawn,
+  cmd: string,
+  args: string[],
+  opts: TeeSpawnOptions
+): Promise<RunResult> => {
+  const { outputCtx, toolId, phase, onInteractivePrompt } = opts;
+  const label = `${toolId}/${phase}`;
+
+  return new Promise((resolve, reject) => {
+    let child: ChildProcess;
+    try {
+      child = spawnFn(cmd, args, {
+        cwd: opts.cwd,
+        stdio: ['inherit', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(
+        new BootstrapError(
+          `Failed to launch ${cmd}: ${error instanceof Error ? error.message : String(error)}`,
+          [`Ensure \`${cmd}\` is installed and on your PATH`]
+        )
+      );
+      return;
+    }
+
+    let promptPaused = false;
+    const maybePauseForPrompt = (text: string): void => {
+      if (promptPaused || outputCtx.verbose) return;
+      if (SUDO_PROMPT_RE.test(text) || GENERIC_PROMPT_RE.test(text.replace(/\s+$/, ''))) {
+        promptPaused = true;
+        onInteractivePrompt?.();
+      }
+    };
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      outputCtx.log(label, text);
+      if (outputCtx.verbose) {
+        process.stdout.write(text);
+      }
+    });
+
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      outputCtx.log(label, text);
+      maybePauseForPrompt(text);
+      // Always forward stderr to the terminal — that's where sudo prompts,
+      // brew warnings, and apt errors show up. In verbose mode the user
+      // already opted into the noise; in default mode a quiet success path
+      // produces no stderr, so this stays unobtrusive in practice.
+      process.stderr.write(text);
+    });
+
+    child.on('error', (err) => {
+      reject(
+        new BootstrapError(`Failed to launch ${cmd}: ${err.message}`, [
+          `Ensure \`${cmd}\` is installed and on your PATH`,
+        ])
+      );
+    });
+
+    child.on('close', (code, signal) => {
+      resolve({
+        ok: code === 0,
+        exitCode: code,
+        signal: signal as NodeJS.Signals | null,
+      });
+    });
   });
 };
 

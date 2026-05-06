@@ -112,6 +112,13 @@ export interface ExecuteOptions {
   force?: Set<string>;
   /** Forwarded to `runCheck` / `runInstall` / `runUpdate`. */
   runOptions?: RunOptions;
+  /**
+   * Fired immediately before a tool's install/update script runs. NOT
+   * fired for tools that get skipped (dep-failure, already-installed via
+   * `check`). Lets the caller spin a per-tool "Installing X..." indicator
+   * that gets resolved by the matching `onToolDone` invocation.
+   */
+  onToolStart?: (tool: ToolDefinition) => void;
   /** Fired after each tool completes — for live progress UI. */
   onToolDone?: (outcome: ToolOutcome) => void;
   /**
@@ -167,6 +174,7 @@ export const executeBootstrap = async (
     vars,
     force = new Set<string>(),
     runOptions,
+    onToolStart,
     onToolDone,
     persist = true,
     tuckDir,
@@ -198,6 +206,10 @@ export const executeBootstrap = async (
         continue;
       }
     }
+
+    // Tool will actually run — fire onToolStart so callers can spin up a
+    // live progress indicator that the matching onToolDone resolves.
+    onToolStart?.(tool);
 
     const result =
       phase === 'update'

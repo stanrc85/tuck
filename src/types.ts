@@ -214,6 +214,12 @@ export interface RestoreOptions {
    * hook confirmations — use `trustHooks` for those.
    */
   yes?: boolean;
+  /**
+   * Stream subprocess output (any nested bootstrap call) to the terminal.
+   * Default-mode restore output stays compact regardless; the full
+   * transcript always lands in `<tuckDir>/logs/restore-<timestamp>.log`.
+   */
+  verbose?: boolean;
 }
 
 export interface StatusOptions {

@@ -9,6 +9,7 @@ import {
 } from '../../src/lib/bootstrap/runner.js';
 import type { ToolDefinition } from '../../src/schemas/bootstrap.schema.js';
 import type { BootstrapVars } from '../../src/lib/bootstrap/interpolator.js';
+import type { OutputContext } from '../../src/lib/output.js';
 import { BootstrapError } from '../../src/errors.js';
 
 const vars: BootstrapVars = {
@@ -277,5 +278,254 @@ describe('autoYes sudo pre-check', () => {
     );
     expect(calls).toHaveLength(1);
     expect(calls[0]?.cmd).toBe('bash');
+  });
+});
+
+/**
+ * Spawn mock for the pipe-tee path. Each rule names what it'll write on
+ * stdout/stderr (split into chunks to mimic streaming) and what exit code
+ * to deliver. The fake child exposes Readable streams so the runner's
+ * `child.stdout?.on('data', ...)` listener fires as it would for a real
+ * subprocess.
+ */
+interface StreamSpawnRule {
+  match: (cmd: string, args: readonly string[]) => boolean;
+  stdoutChunks?: string[];
+  stderrChunks?: string[];
+  exitCode: number;
+  signal?: NodeJS.Signals | null;
+}
+
+const makeStreamSpawnMock = (
+  rules: StreamSpawnRule[]
+): { spawn: typeof spawnFn; calls: Array<{ cmd: string; stdio: unknown }> } => {
+  const calls: Array<{ cmd: string; stdio: unknown }> = [];
+  const impl = (cmd: string, args: readonly string[], opts?: { stdio?: unknown }) => {
+    calls.push({ cmd, stdio: opts?.stdio });
+    const rule = rules.find((r) => r.match(cmd, args));
+    if (!rule) {
+      throw new Error(`unexpected spawn call: ${cmd} ${args.join(' ')}`);
+    }
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+    };
+    child.stdout = stdout;
+    child.stderr = stderr;
+    queueMicrotask(() => {
+      // Listeners are attached synchronously in the runner before any
+      // microtask runs, so emitting 'data' here reliably reaches them.
+      for (const chunk of rule.stdoutChunks ?? []) {
+        stdout.emit('data', Buffer.from(chunk));
+      }
+      for (const chunk of rule.stderrChunks ?? []) {
+        stderr.emit('data', Buffer.from(chunk));
+      }
+      child.emit('close', rule.exitCode, rule.signal ?? null);
+    });
+    return child;
+  };
+  return { spawn: impl as unknown as typeof spawnFn, calls };
+};
+
+const makeFakeOutputCtx = (verbose: boolean): {
+  ctx: OutputContext;
+  logged: string[];
+  closed: () => boolean;
+} => {
+  const logged: string[] = [];
+  let closed = false;
+  return {
+    logged,
+    closed: () => closed,
+    ctx: {
+      verbose,
+      logPath: '/test-home/.tuck/logs/fake.log',
+      // The runner only ever calls `outputCtx.log` — the underlying file
+      // stream isn't touched directly. A no-op WriteStream-shaped stub is
+      // enough for unit tests.
+      logFile: { write: () => true } as unknown as OutputContext['logFile'],
+      log: (label, line) => {
+        logged.push(`[${label}] ${line.replace(/\r?\n$/, '')}`);
+      },
+      close: async () => {
+        closed = true;
+      },
+    },
+  };
+};
+
+describe('outputCtx pipe-and-tee', () => {
+  it('uses piped stdio when outputCtx is supplied', async () => {
+    const { spawn, calls } = makeStreamSpawnMock([
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    const { ctx } = makeFakeOutputCtx(false);
+    await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+    expect(calls[0]?.stdio).toEqual(['inherit', 'pipe', 'pipe']);
+  });
+
+  it('falls back to inherit stdio when outputCtx is omitted', async () => {
+    const { spawn, calls } = makeStreamSpawnMock([
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {} });
+    expect(calls[0]?.stdio).toBe('inherit');
+  });
+
+  it('writes both stdout and stderr to the log', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stdoutChunks: ['Reading package lists...\n'],
+        stderrChunks: ['W: warning text\n'],
+      },
+    ]);
+    const { ctx, logged } = makeFakeOutputCtx(false);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      expect(logged.some((l) => l.includes('Reading package lists'))).toBe(true);
+      expect(logged.some((l) => l.includes('W: warning text'))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('forwards stdout to terminal only in verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stdoutChunks: ['stdout line\n'],
+      },
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const stdoutCalls = stdoutSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('stdout line')
+      );
+      expect(stdoutCalls).toHaveLength(0);
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
+  it('forwards stdout to terminal in verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stdoutChunks: ['verbose stdout line\n'],
+      },
+    ]);
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(true);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const stdoutCalls = stdoutSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('verbose stdout line')
+      );
+      expect(stdoutCalls.length).toBeGreaterThan(0);
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
+  it('always forwards stderr to terminal so prompts and errors are visible', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['error or warning text\n'],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const stderrCalls = stderrSpy.mock.calls.filter((args) =>
+        String(args[0]).includes('error or warning text')
+      );
+      expect(stderrCalls.length).toBeGreaterThan(0);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('fires onInteractivePrompt the first time a sudo prompt appears in non-verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['[sudo] password for alice: '],
+      },
+    ]);
+    const onPrompt = vi.fn();
+    const { ctx } = makeFakeOutputCtx(false);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runInstall(tool(), vars, {
+        spawnImpl: spawn,
+        log: () => {},
+        outputCtx: ctx,
+        onInteractivePrompt: onPrompt,
+      });
+      expect(onPrompt).toHaveBeenCalledTimes(1);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('does not fire onInteractivePrompt in verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['[sudo] password for alice: '],
+      },
+    ]);
+    const onPrompt = vi.fn();
+    const { ctx } = makeFakeOutputCtx(true);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await runInstall(tool(), vars, {
+        spawnImpl: spawn,
+        log: () => {},
+        outputCtx: ctx,
+        onInteractivePrompt: onPrompt,
+      });
+      expect(onPrompt).not.toHaveBeenCalled();
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('returns a non-zero exit code through the tee path', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 17,
+        stderrChunks: ['boom\n'],
+      },
+    ]);
+    const { ctx } = makeFakeOutputCtx(false);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const result = await runInstall(tool(), vars, {
+        spawnImpl: spawn,
+        log: () => {},
+        outputCtx: ctx,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.exitCode).toBe(17);
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 });

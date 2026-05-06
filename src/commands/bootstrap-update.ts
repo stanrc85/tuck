@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { join } from 'path';
-import { prompts, isInteractive } from '../ui/index.js';
+import { colors as c } from '../ui/theme.js';
+import { prompts, isInteractive, createSpinner, type SpinnerInstance } from '../ui/index.js';
 import { getTuckDir, pathExists } from '../lib/paths.js';
 import { loadBootstrapConfig, emptyBootstrapConfig } from '../lib/bootstrap/parser.js';
 import { detectPlatformVars } from '../lib/bootstrap/interpolator.js';
@@ -20,6 +21,7 @@ import type { ToolDefinition } from '../schemas/bootstrap.schema.js';
 import { BootstrapError, NonInteractivePromptError } from '../errors.js';
 import { compareVersions } from '../lib/updater.js';
 import { runPreflightAndMaybeAbort } from '../lib/bootstrap/preflight.js';
+import { createOutputContext, type OutputContext } from '../lib/output.js';
 
 export interface BootstrapUpdateOptions {
   /** Override location of `bootstrap.toml`. Defaults to `<tuckDir>/bootstrap.toml`. */
@@ -36,6 +38,12 @@ export interface BootstrapUpdateOptions {
   yes?: boolean;
   /** Skip the preflight environment probes (CI escape hatch). */
   skipPreflight?: boolean;
+  /**
+   * Stream every update subprocess line to the terminal. Default-mode
+   * output is per-tool spinners + a summary; the full transcript always
+   * lands in `<tuckDir>/logs/bootstrap-update-<timestamp>.log`.
+   */
+  verbose?: boolean;
 }
 
 export interface RunBootstrapUpdateResult {
@@ -75,6 +83,7 @@ export const bootstrapUpdateCommand = new Command('update')
   .option('--dry-run', 'Print the plan without executing')
   .option('-y, --yes', 'Skip confirmations and enable sudo pre-check under --yes')
   .option('--skip-preflight', 'Skip clock/disk/network/sudo preflight probes (CI escape hatch)')
+  .option('-v, --verbose', 'Stream every update line to the terminal (full transcript always goes to ~/.tuck/logs/)')
   .action(async (options: BootstrapUpdateOptions) => {
     await runBootstrapUpdate(options);
   });
@@ -208,20 +217,85 @@ export const runBootstrapUpdate = async (
   }
 
   const vars = detectPlatformVars();
-  const result = await executeBootstrap({
-    plan,
-    vars,
-    runOptions: { autoYes: options.yes === true },
-    onToolDone: (o) => logUpdateOutcome(o),
+  const outputCtx = await createOutputContext({
+    command: 'bootstrap-update',
     tuckDir,
-    phase: 'update',
+    verbose: options.verbose === true,
   });
 
-  printUpdateSummary(result.outcomes, result.counts);
+  const spinnerRef: { current: SpinnerInstance | null } = { current: null };
+  const finalizeOnSpinner = (sp: SpinnerInstance, o: ToolOutcome): void => {
+    switch (o.status) {
+      case 'updated':
+        sp.succeed(`updated ${o.id}`);
+        break;
+      case 'installed':
+        sp.succeed(`re-ran install for ${o.id}`);
+        break;
+      case 'failed': {
+        const detail = o.detail ? o.detail : `exit ${o.exitCode ?? 'unknown'}`;
+        sp.fail(`${o.id} failed (${detail})`);
+        break;
+      }
+      case 'skipped-dep-failed':
+        sp.warn(`${o.id} skipped (dependency failed)`);
+        break;
+      case 'skipped-already-installed':
+        sp.info(`${o.id} skipped`);
+        break;
+    }
+  };
+
+  let result;
+  try {
+    result = await executeBootstrap({
+      plan,
+      vars,
+      runOptions: {
+        autoYes: options.yes === true,
+        outputCtx,
+        onInteractivePrompt: () => {
+          if (spinnerRef.current) {
+            spinnerRef.current.stop();
+            spinnerRef.current = null;
+          }
+        },
+      },
+      onToolStart: (tool) => {
+        if (options.verbose === true) {
+          prompts.log.step(`${tool.id} — running update`);
+          return;
+        }
+        spinnerRef.current = createSpinner();
+        spinnerRef.current.start(`Updating ${tool.id}…`);
+      },
+      onToolDone: (o) => {
+        if (spinnerRef.current) {
+          finalizeOnSpinner(spinnerRef.current, o);
+          spinnerRef.current = null;
+        } else {
+          logUpdateOutcome(o);
+        }
+      },
+      tuckDir,
+      phase: 'update',
+    });
+  } finally {
+    if (spinnerRef.current) {
+      spinnerRef.current.stop();
+      spinnerRef.current = null;
+    }
+    await outputCtx.close();
+  }
+
+  printUpdateSummary(result.outcomes, result.counts, outputCtx);
   if (result.counts.failed > 0) {
     throw new BootstrapError(
       `${result.counts.failed} tool(s) failed to update`,
-      ['Review the output above', 'Re-run `tuck bootstrap update` after fixing the underlying issue']
+      [
+        `Review the run log: ${outputCtx.logPath}`,
+        'Re-run `tuck bootstrap update` after fixing the underlying issue',
+      ]
     );
   }
   prompts.outro('Update complete');
@@ -503,7 +577,8 @@ const logUpdateOutcome = (outcome: ToolOutcome): void => {
 
 const printUpdateSummary = (
   outcomes: ToolOutcome[],
-  counts: { installed: number; updated: number; failed: number; skipped: number }
+  counts: { installed: number; updated: number; failed: number; skipped: number },
+  outputCtx?: OutputContext
 ): void => {
   const updated = outcomes.filter((o) => o.status === 'updated').map((o) => o.id);
   const failed = outcomes.filter((o) => o.status === 'failed').map((o) => o.id);
@@ -514,6 +589,9 @@ const printUpdateSummary = (
     `skipped: ${counts.skipped}${skipped.length > 0 ? ` (${skipped.join(', ')})` : ''}`,
     `failed:  ${counts.failed}${failed.length > 0 ? ` (${failed.join(', ')})` : ''}`,
   ];
+  if (outputCtx) {
+    lines.push('', c.muted(`Run log: ${outputCtx.logPath}`));
+  }
   prompts.log.message(lines.join('\n'));
 };
 

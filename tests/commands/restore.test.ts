@@ -529,6 +529,7 @@ describe('restore command behavior', () => {
       expect(runBootstrapMock).toHaveBeenCalledWith({
         tools: 'neovim,yazi',
         yes: true,
+        verbose: false,
       });
     });
 
@@ -560,7 +561,11 @@ describe('restore command behavior', () => {
       await runRestore({ all: true, noHooks: true, noSecrets: true });
 
       expect(confirmMock).toHaveBeenCalledTimes(1);
-      expect(runBootstrapMock).toHaveBeenCalledWith({ tools: 'neovim', yes: true });
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        tools: 'neovim',
+        yes: true,
+        verbose: false,
+      });
     });
 
     it('undefined installDeps + TTY + No skips with advisory', async () => {
@@ -685,7 +690,11 @@ describe('restore command behavior', () => {
         group: ['kubuntu'],
       });
 
-      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: undefined });
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        bundle: 'kubuntu',
+        yes: undefined,
+        verbose: false,
+      });
     });
 
     it('forwards options.yes to runBootstrap (non-interactive fresh-host)', async () => {
@@ -707,7 +716,11 @@ describe('restore command behavior', () => {
         group: ['kubuntu'],
       });
 
-      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: true });
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        bundle: 'kubuntu',
+        yes: true,
+        verbose: false,
+      });
     });
 
     it('soft-skips a group without a matching bundle (no runBootstrap call)', async () => {
@@ -750,7 +763,11 @@ describe('restore command behavior', () => {
       });
 
       expect(runBootstrapMock).toHaveBeenCalledTimes(1);
-      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: undefined });
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        bundle: 'kubuntu',
+        yes: undefined,
+        verbose: false,
+      });
     });
 
     it('multi-group full match: runs runBootstrap sequentially for each bundle', async () => {
@@ -772,8 +789,16 @@ describe('restore command behavior', () => {
       });
 
       expect(runBootstrapMock).toHaveBeenCalledTimes(2);
-      expect(runBootstrapMock).toHaveBeenNthCalledWith(1, { bundle: 'kubuntu', yes: undefined });
-      expect(runBootstrapMock).toHaveBeenNthCalledWith(2, { bundle: 'kali', yes: undefined });
+      expect(runBootstrapMock).toHaveBeenNthCalledWith(1, {
+        bundle: 'kubuntu',
+        yes: undefined,
+        verbose: false,
+      });
+      expect(runBootstrapMock).toHaveBeenNthCalledWith(2, {
+        bundle: 'kali',
+        yes: undefined,
+        verbose: false,
+      });
     });
 
     it('falls back to defaultGroups when no -g is passed', async () => {
@@ -797,7 +822,11 @@ describe('restore command behavior', () => {
         bootstrap: true,
       });
 
-      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: undefined });
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        bundle: 'kubuntu',
+        yes: undefined,
+        verbose: false,
+      });
     });
 
     it('does NOT run bootstrap on --dry-run', async () => {
@@ -864,7 +893,11 @@ describe('restore command behavior', () => {
       });
 
       expect(confirmMock).not.toHaveBeenCalled();
-      expect(runBootstrapMock).toHaveBeenCalledWith({ bundle: 'kubuntu', yes: true });
+      expect(runBootstrapMock).toHaveBeenCalledWith({
+        bundle: 'kubuntu',
+        yes: true,
+        verbose: false,
+      });
     });
   });
 });
