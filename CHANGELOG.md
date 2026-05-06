@@ -1,3 +1,10 @@
+# [3.5.0](https://github.com/stanrc85/tuck/compare/v3.4.1...v3.5.0) (2026-05-06)
+
+
+### Features
+
+* **bootstrap:** add preflight environment checks ([5bc0a94](https://github.com/stanrc85/tuck/commit/5bc0a946219aa251b297eee5d167e040295ebe2d))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.4.1](https://github.com/stanrc85/tuck/compare/v3.4.0...v3.4.1) (2026-05-06)
