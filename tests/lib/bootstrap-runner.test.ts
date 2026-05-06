@@ -821,6 +821,53 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
+  it('drops orphan short alpha tokens like a lone "en" between noise lines', async () => {
+    // brew occasionally fragments \r-overwriting progress into orphan
+    // 1-2 char tokens that arrive as their own newline-terminated lines.
+    // These are never meaningful — log only.
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          '==> Auto-updated Homebrew!\nen\nSuccessfully updated cache.\n',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx, logged } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).not.toMatch(/^en\s*$/m);
+      // Log still has it for audit.
+      expect(logged.some((l) => l.includes('en'))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('preserves real multi-character lines (3+ chars) even when alpha-only', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['done\nfoo\nbar\n'],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).toContain('done');
+      expect(joined).toContain('foo');
+      expect(joined).toContain('bar');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('drops partial trailing lines at close in default mode (brew "en" leak repro)', async () => {
     // Brew sometimes leaves a stray fragment on stderr at process exit —
     // typically the tail of a \r-overwriting locale or progress message.

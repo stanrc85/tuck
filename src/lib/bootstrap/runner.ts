@@ -248,6 +248,14 @@ const STDERR_NOISE_PATTERNS: readonly RegExp[] = [
   /^==> Auto-updating Homebrew\.{0,3}\s*$/i,
   /^==> Auto-updated Homebrew!\s*$/i,
   /^Successfully updated cache\.\s*$/i,
+  // Very short alpha-only lines (1–2 chars). Brew's progress output
+  // occasionally fragments into orphan tokens like a lone "en" landing
+  // between two noise lines — almost certainly the tail of a
+  // \r-overwriting status message that didn't terminate cleanly. Real
+  // 1–2 char outputs from package managers are vanishingly rare; if a
+  // user hits a case where a meaningful one gets hidden, narrow the
+  // regex (e.g. require it to be flanked by other noise).
+  /^[a-z]{1,2}\s*$/i,
 ];
 
 const isStderrNoise = (line: string): boolean => {
