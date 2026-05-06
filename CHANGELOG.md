@@ -1,3 +1,10 @@
+## [3.6.2](https://github.com/stanrc85/tuck/compare/v3.6.1...v3.6.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* **output:** hide bash -c command echo and brew progress banners in default mode ([24c445d](https://github.com/stanrc85/tuck/commit/24c445dd7b3ff13901e91f2ef3819e0b8ce0c3ee))
+
 <img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.6.1](https://github.com/stanrc85/tuck/compare/v3.6.0...v3.6.1) (2026-05-06)
