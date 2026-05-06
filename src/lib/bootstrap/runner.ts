@@ -193,6 +193,31 @@ const executeToolScript = async (
 const SUDO_PROMPT_RE = /\[sudo\] password|^Password:\s*$|sudo: a password is required|sorry, try again/im;
 const GENERIC_PROMPT_RE = /[?:]\s*$/;
 
+/**
+ * Stderr lines matching one of these patterns are routed to the log file
+ * only — they're known-benign noise that buries useful output. Add new
+ * entries sparingly; a missing entry just means the user sees the line in
+ * default mode, which is the safe failure shape.
+ *
+ *   1. `Warning: <pkg> <version> already installed` — brew's noise when
+ *      `brew install` runs against a tool that's already at this version.
+ *      Common in `installer = "brew"` shorthand blocks where the
+ *      synthesized install runs `brew install pkg1 pkg2 ...` and most
+ *      packages are already there.
+ *   2. `<formula> is already installed and up-to-date` — brew's noise on
+ *      `brew upgrade` for already-current formulae.
+ */
+const STDERR_NOISE_PATTERNS: readonly RegExp[] = [
+  /^Warning: \S+ \S+ already installed\b/i,
+  /^\S+ is already installed and up[- ]to[- ]date\b/i,
+];
+
+const isStderrNoise = (line: string): boolean => {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  return STDERR_NOISE_PATTERNS.some((re) => re.test(trimmed));
+};
+
 interface TeeSpawnOptions {
   cwd?: string;
   toolId: string;
@@ -255,18 +280,53 @@ const spawnWithTee = (
       }
     });
 
+    // Buffered line filter for non-verbose mode. We split stderr on
+    // newline and drop lines matching a known-noise pattern; everything
+    // else (including partial lines that look like prompts) gets through.
+    // Verbose mode skips the filter entirely — the user opted into the
+    // raw stream.
+    let stderrBuffer = '';
+    const handleStderrChunk = (text: string): void => {
+      if (outputCtx.verbose) {
+        process.stderr.write(text);
+        return;
+      }
+      stderrBuffer += text;
+      let nlIdx;
+      while ((nlIdx = stderrBuffer.indexOf('\n')) !== -1) {
+        const line = stderrBuffer.slice(0, nlIdx);
+        stderrBuffer = stderrBuffer.slice(nlIdx + 1);
+        if (!isStderrNoise(line)) {
+          process.stderr.write(line + '\n');
+          maybePauseForPrompt(line);
+        }
+      }
+      // Partial line (no trailing newline) that looks like a prompt — sudo
+      // writes "[sudo] password for alice: " without flushing a newline.
+      // Forward eagerly so the user can respond, then clear the buffer so
+      // we don't double-emit when the next chunk arrives.
+      if (stderrBuffer.length > 0 && /[?:]\s*$/.test(stderrBuffer)) {
+        process.stderr.write(stderrBuffer);
+        maybePauseForPrompt(stderrBuffer);
+        stderrBuffer = '';
+      }
+    };
+    const flushStderrBuffer = (): void => {
+      if (stderrBuffer.length === 0) return;
+      if (!isStderrNoise(stderrBuffer) && !outputCtx.verbose) {
+        process.stderr.write(stderrBuffer);
+      }
+      stderrBuffer = '';
+    };
+
     child.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
       outputCtx.log(label, text);
-      maybePauseForPrompt(text);
-      // Always forward stderr to the terminal — that's where sudo prompts,
-      // brew warnings, and apt errors show up. In verbose mode the user
-      // already opted into the noise; in default mode a quiet success path
-      // produces no stderr, so this stays unobtrusive in practice.
-      process.stderr.write(text);
+      handleStderrChunk(text);
     });
 
     child.on('error', (err) => {
+      flushStderrBuffer();
       reject(
         new BootstrapError(`Failed to launch ${cmd}: ${err.message}`, [
           `Ensure \`${cmd}\` is installed and on your PATH`,
@@ -275,6 +335,7 @@ const spawnWithTee = (
     });
 
     child.on('close', (code, signal) => {
+      flushStderrBuffer();
       resolve({
         ok: code === 0,
         exitCode: code,

@@ -506,6 +506,113 @@ describe('outputCtx pipe-and-tee', () => {
     }
   });
 
+  it('drops brew "already installed" warnings from terminal stderr in default mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          'Warning: fzf 0.72.0 already installed\n',
+          'Warning: bat 0.26.1 already installed\n',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx, logged } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const calls = stderrSpy.mock.calls.map((args) => String(args[0]));
+      expect(calls.some((s) => s.includes('already installed'))).toBe(false);
+      // ...but the log file still records them so users can audit if needed.
+      expect(logged.some((l) => l.includes('fzf 0.72.0 already installed'))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('keeps "already installed" warnings on terminal in verbose mode', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['Warning: fzf 0.72.0 already installed\n'],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(true);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const calls = stderrSpy.mock.calls.map((args) => String(args[0]));
+      expect(calls.some((s) => s.includes('already installed'))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('still forwards real warnings interleaved with noise lines', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          'Warning: fzf 0.72.0 already installed\nError: tap not found\nWarning: bat 0.26.1 already installed\n',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).toContain('Error: tap not found');
+      expect(joined).not.toContain('already installed');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('forwards a partial-line sudo prompt even when noise lines arrived first', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: [
+          'Warning: fzf 0.72.0 already installed\n',
+          '[sudo] password for alice: ',
+        ],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).toContain('[sudo] password');
+      expect(joined).not.toContain('already installed');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reassembles a noise line that arrives in two chunks', async () => {
+    const { spawn } = makeStreamSpawnMock([
+      {
+        match: (cmd) => cmd === 'bash',
+        exitCode: 0,
+        stderrChunks: ['Warning: fzf 0.72.0 already inst', 'alled\n'],
+      },
+    ]);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const { ctx } = makeFakeOutputCtx(false);
+      await runInstall(tool(), vars, { spawnImpl: spawn, log: () => {}, outputCtx: ctx });
+      const joined = stderrSpy.mock.calls.map((args) => String(args[0])).join('');
+      expect(joined).not.toContain('already installed');
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
   it('returns a non-zero exit code through the tee path', async () => {
     const { spawn } = makeStreamSpawnMock([
       {
