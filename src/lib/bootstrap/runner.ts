@@ -172,8 +172,19 @@ const executeToolScript = async (
     return { ok: true, exitCode: 0, signal: null };
   }
 
-  if (options.autoYes && scriptUsesSudo(script)) {
-    await assertSudoCached(options.spawnImpl ?? spawn, toolId);
+  if (scriptUsesSudo(script)) {
+    if (options.autoYes) {
+      await assertSudoCached(options.spawnImpl ?? spawn, toolId);
+    } else {
+      // Interactive: pre-cache sudo creds BEFORE the spawn. Without this,
+      // the install's `sudo` call would prompt via /dev/tty while the
+      // spinner is repainting on the same TTY, overwriting the prompt
+      // frames-by-frame and hanging the run with no visible cue. Running
+      // `sudo -v` with inherited stdio gets the prompt to the user
+      // cleanly; the cache is then warm for subsequent sudo calls inside
+      // the install script.
+      await ensureSudoCachedInteractive(options);
+    }
   }
 
   log(`$ ${SHELL} ${SHELL_FLAG} '${summarize(script)}'`);
@@ -404,6 +415,37 @@ const assertSudoCached = async (
         'Or drop --yes and answer the prompt interactively',
       ]
     );
+  }
+};
+
+/**
+ * Interactive counterpart to `assertSudoCached`: probe the cache, and if
+ * cold, run `sudo -v` with inherited stdio so the password prompt lands
+ * on the user's TTY without the spinner clobbering it. If the caller
+ * supplied `onInteractivePrompt` (the spinner-pause hook), fire it before
+ * the prompt so clack's animation steps out of the way.
+ *
+ * Throws `BootstrapError` only on hard sudo failure (wrong password,
+ * account lockout, exit != 0). The caller's outcome aggregation treats
+ * the throw as a fail-fast signal — better than letting the install
+ * proceed and hang on a prompt the user can't see.
+ */
+const ensureSudoCachedInteractive = async (options: RunOptions): Promise<void> => {
+  const spawnFn = options.spawnImpl ?? spawn;
+  const probe = await spawnAndWait(spawnFn, 'sudo', ['-n', 'true'], {
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
+  if (probe.ok) return;
+
+  // Cold cache. Step the spinner aside so the prompt is visible.
+  options.onInteractivePrompt?.();
+
+  const auth = await spawnAndWait(spawnFn, 'sudo', ['-v'], { stdio: 'inherit' });
+  if (!auth.ok) {
+    throw new BootstrapError('sudo authentication failed', [
+      'Check your password and account status (e.g. lockout, sudoers entry)',
+      'Re-run `tuck bootstrap update` after fixing',
+    ]);
   }
 };
 

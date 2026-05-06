@@ -266,13 +266,107 @@ describe('autoYes sudo pre-check', () => {
     expect(calls[0]?.cmd).toBe('bash');
   });
 
-  it('skips the pre-check when autoYes is false (interactive mode)', async () => {
-    // Interactive users type their password when sudo prompts — no pre-check needed.
+  it('runs `sudo -n` then `sudo -v` interactively when autoYes is false and cache is cold', async () => {
+    // Interactive runs pre-cache sudo creds via `sudo -v` — the install
+    // would otherwise hang on /dev/tty against the spinner. Probe `sudo -n`
+    // first; if that fails, prompt with `sudo -v`.
+    const sudoCalls: string[][] = [];
+    const { spawn, calls } = makeSpawnMock([
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-n',
+        exitCode: 1, // cache cold
+        onCall: (_, args) => sudoCalls.push(['-n', ...args.slice(1)]),
+      },
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-v',
+        exitCode: 0, // user typed correct password
+        onCall: (_, args) => sudoCalls.push(['-v', ...args.slice(1)]),
+      },
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    await runInstall(
+      tool({ install: 'sudo apt install -y pet' }),
+      vars,
+      { spawnImpl: spawn, autoYes: false, log: () => {} }
+    );
+    expect(calls).toHaveLength(3);
+    expect(calls[0]?.cmd).toBe('sudo');
+    expect(calls[0]?.args).toEqual(['-n', 'true']);
+    expect(calls[1]?.cmd).toBe('sudo');
+    expect(calls[1]?.args).toEqual(['-v']);
+    expect(calls[2]?.cmd).toBe('bash');
+  });
+
+  it('skips `sudo -v` when the cache is already warm (interactive)', async () => {
+    const { spawn, calls } = makeSpawnMock([
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-n',
+        exitCode: 0, // cache warm
+      },
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    await runInstall(
+      tool({ install: 'sudo apt install -y pet' }),
+      vars,
+      { spawnImpl: spawn, autoYes: false, log: () => {} }
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.args).toEqual(['-n', 'true']);
+    expect(calls[1]?.cmd).toBe('bash');
+  });
+
+  it('fires onInteractivePrompt before the `sudo -v` prompt so the spinner steps aside', async () => {
+    const { spawn } = makeSpawnMock([
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-n',
+        exitCode: 1,
+      },
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-v',
+        exitCode: 0,
+      },
+      { match: (cmd) => cmd === 'bash', exitCode: 0 },
+    ]);
+    const onPrompt = vi.fn();
+    await runInstall(
+      tool({ install: 'sudo apt install -y pet' }),
+      vars,
+      {
+        spawnImpl: spawn,
+        autoYes: false,
+        log: () => {},
+        onInteractivePrompt: onPrompt,
+      }
+    );
+    expect(onPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws BootstrapError when interactive `sudo -v` fails (wrong password, lockout)', async () => {
+    const { spawn } = makeSpawnMock([
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-n',
+        exitCode: 1,
+      },
+      {
+        match: (cmd, args) => cmd === 'sudo' && args[0] === '-v',
+        exitCode: 1, // user typed the wrong password three times
+      },
+    ]);
+    await expect(
+      runInstall(
+        tool({ install: 'sudo apt install -y pet' }),
+        vars,
+        { spawnImpl: spawn, autoYes: false, log: () => {} }
+      )
+    ).rejects.toBeInstanceOf(BootstrapError);
+  });
+
+  it('does not pre-cache sudo for non-sudo scripts (interactive)', async () => {
     const { spawn, calls } = makeSpawnMock([
       { match: (cmd) => cmd === 'bash', exitCode: 0 },
     ]);
     await runInstall(
-      tool({ install: 'sudo apt install pet' }),
+      tool({ install: 'brew install pet' }),
       vars,
       { spawnImpl: spawn, autoYes: false, log: () => {} }
     );
