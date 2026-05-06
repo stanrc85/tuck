@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [3.6.0](https://github.com/stanrc85/tuck/compare/v3.5.0...v3.6.0) (2026-05-06)
 
 
 ### Features
 
 * **output:** quiet default mode with --verbose escape and per-run log file ([ec42d01](https://github.com/stanrc85/tuck/commit/ec42d01c632df81be866b1d8effafaacff27b6a4))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 # [3.5.0](https://github.com/stanrc85/tuck/compare/v3.4.1...v3.5.0) (2026-05-06)
 
