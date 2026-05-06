@@ -17,6 +17,7 @@ import {
 } from '../lib/bootstrap/orchestrator.js';
 import { loadBootstrapState } from '../lib/bootstrap/state.js';
 import { runCheck } from '../lib/bootstrap/runner.js';
+import { runPreflightAndMaybeAbort } from '../lib/bootstrap/preflight.js';
 import type { BootstrapConfig, ToolDefinition } from '../schemas/bootstrap.schema.js';
 import { BootstrapError, NonInteractivePromptError } from '../errors.js';
 import { bootstrapUpdateCommand } from './bootstrap-update.js';
@@ -39,6 +40,8 @@ export interface BootstrapOptions {
   yes?: boolean;
   /** In the picker, show a flat alphabetical list and ignore detection signals. */
   noDetect?: boolean;
+  /** Skip the preflight environment probes (CI escape hatch). */
+  skipPreflight?: boolean;
 }
 
 export const bootstrapCommand = new Command('bootstrap')
@@ -51,6 +54,7 @@ export const bootstrapCommand = new Command('bootstrap')
   .option('--dry-run', 'Print the planned tools without executing')
   .option('-y, --yes', 'Skip confirmations and enable sudo pre-check under --yes')
   .option('--no-detect', 'In the picker, ignore detection signals and show a flat list')
+  .option('--skip-preflight', 'Skip clock/disk/network/sudo preflight probes (CI escape hatch)')
   .action(async (options: BootstrapOptions) => {
     await runBootstrap(options);
   })
@@ -117,6 +121,13 @@ export const runBootstrap = async (
     printDryRun(plan);
     prompts.outro('Dry run — no tools were installed');
     return { plan, counts: null, dryRun: true };
+  }
+
+  if (!options.skipPreflight) {
+    const aborted = await runPreflightAndMaybeAbort(plan.ordered);
+    if (aborted) {
+      return { plan, counts: null, dryRun: false };
+    }
   }
 
   const vars = detectPlatformVars();
@@ -420,3 +431,4 @@ const parseIdList = (raw?: string): string[] => {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 };
+

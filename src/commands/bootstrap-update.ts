@@ -19,6 +19,7 @@ import { resolveInstallOrder } from '../lib/bootstrap/resolver.js';
 import type { ToolDefinition } from '../schemas/bootstrap.schema.js';
 import { BootstrapError, NonInteractivePromptError } from '../errors.js';
 import { compareVersions } from '../lib/updater.js';
+import { runPreflightAndMaybeAbort } from '../lib/bootstrap/preflight.js';
 
 export interface BootstrapUpdateOptions {
   /** Override location of `bootstrap.toml`. Defaults to `<tuckDir>/bootstrap.toml`. */
@@ -33,6 +34,8 @@ export interface BootstrapUpdateOptions {
   dryRun?: boolean;
   /** Skip confirmation prompts and enable sudo pre-check. */
   yes?: boolean;
+  /** Skip the preflight environment probes (CI escape hatch). */
+  skipPreflight?: boolean;
 }
 
 export interface RunBootstrapUpdateResult {
@@ -71,6 +74,7 @@ export const bootstrapUpdateCommand = new Command('update')
   .option('--check', 'Report pending updates without running them (exit 1 if any)')
   .option('--dry-run', 'Print the plan without executing')
   .option('-y, --yes', 'Skip confirmations and enable sudo pre-check under --yes')
+  .option('--skip-preflight', 'Skip clock/disk/network/sudo preflight probes (CI escape hatch)')
   .action(async (options: BootstrapUpdateOptions) => {
     await runBootstrapUpdate(options);
   });
@@ -194,6 +198,13 @@ export const runBootstrapUpdate = async (
     }
     prompts.outro('Dry run — no tools were updated');
     return { plan, counts: null, dryRun: true };
+  }
+
+  if (!options.skipPreflight) {
+    const aborted = await runPreflightAndMaybeAbort(ordered);
+    if (aborted) {
+      return { plan, counts: null, dryRun: false };
+    }
   }
 
   const vars = detectPlatformVars();
