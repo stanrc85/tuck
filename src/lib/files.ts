@@ -4,7 +4,13 @@ import { copy, ensureDir } from 'fs-extra';
 import { join, dirname, basename } from 'path';
 import { constants } from 'fs';
 import { FileNotFoundError, PermissionError } from '../errors.js';
-import { expandPath, pathExists, isDirectory, validateSafeDestinationPath } from './paths.js';
+import {
+  expandPath,
+  collapsePath,
+  pathExists,
+  isDirectory,
+  validateSafeDestinationPath,
+} from './paths.js';
 import { IS_WINDOWS } from './platform.js';
 
 export interface FileInfo {
@@ -158,6 +164,103 @@ export const getDirectoryFiles = async (dirpath: string): Promise<string[]> => {
 export const getDirectoryFileCount = async (dirpath: string): Promise<number> => {
   const files = await getDirectoryFiles(dirpath);
   return files.length;
+};
+
+// Names that copyFileOrDir's filter skips when copying a tracked directory.
+// pruneOrphansForRestore mirrors this list so the same set of names is
+// invisible to both copy and prune (otherwise pruner would flag .DS_Store
+// or stray .git dirs as orphans even though copy never wrote them).
+const COPY_SKIP_NAMES = ['.git', 'node_modules', '.cache', '__pycache__', '.DS_Store'];
+
+export interface RestorePruneResult {
+  /** Collapsed-path entries removed (or that would be removed in dry-run). */
+  pruned: string[];
+  /** Collapsed-path entries kept because they (or a parent) match `.tuckignore`. */
+  exempted: string[];
+}
+
+/**
+ * Walk `destination` and remove files/subdirs that no longer exist in
+ * `source`. Mirrors v2.26.6's sync-side directory-deletion fix in the
+ * reverse direction: `tuck restore` was using `fs-extra.copy` (additive,
+ * never removes stale dest entries), so a file removed from a tracked
+ * directory in the repo would linger forever on dest hosts.
+ *
+ * Safety net: paths in `tuckIgnore` (collapsed `~/`-prefixed paths from
+ * `.tuckignore`) are exempt from pruning. A directory in the ignore set
+ * protects everything beneath it via prefix-match.
+ *
+ * Caller is responsible for invoking `copyFileOrDir` after this returns —
+ * pruner only handles the deletion side. The skip-name set matches
+ * `copyFileOrDir`'s internal filter so prune and copy stay symmetric.
+ */
+export const pruneOrphansForRestore = async (
+  source: string,
+  destination: string,
+  tuckIgnore: Set<string>,
+  options: { dryRun?: boolean } = {}
+): Promise<RestorePruneResult> => {
+  const result: RestorePruneResult = { pruned: [], exempted: [] };
+
+  const expandedSource = expandPath(source);
+  const expandedDest = expandPath(destination);
+
+  if (!(await pathExists(expandedDest))) return result;
+  if (!(await isDirectory(expandedSource))) return result;
+  if (!(await isDirectory(expandedDest))) return result;
+
+  const isProtected = (collapsedPath: string): boolean => {
+    if (tuckIgnore.has(collapsedPath)) return true;
+    for (const ignored of tuckIgnore) {
+      if (collapsedPath.startsWith(ignored + '/')) return true;
+    }
+    return false;
+  };
+
+  const walk = async (srcDir: string, destDir: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(destDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (COPY_SKIP_NAMES.includes(entry.name)) continue;
+
+      const destEntry = join(destDir, entry.name);
+      const srcEntry = join(srcDir, entry.name);
+      const collapsedDest = collapsePath(destEntry);
+
+      const sourceExists = await pathExists(srcEntry);
+
+      if (!sourceExists) {
+        if (isProtected(collapsedDest)) {
+          result.exempted.push(collapsedDest);
+          continue;
+        }
+        if (!options.dryRun) {
+          try {
+            await rm(destEntry, { recursive: true, force: true });
+          } catch {
+            // Permission/transient error — skip, don't abort the whole restore.
+            continue;
+          }
+        }
+        result.pruned.push(collapsedDest);
+        continue;
+      }
+
+      // Source exists. Descend only when both sides are dirs; type-flips
+      // are handled by the upcoming copyFileOrDir overwrite.
+      if (entry.isDirectory() && (await isDirectory(srcEntry))) {
+        await walk(srcEntry, destEntry);
+      }
+    }
+  };
+
+  await walk(expandedSource, expandedDest);
+  return result;
 };
 
 export const copyFileOrDir = async (

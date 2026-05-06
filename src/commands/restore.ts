@@ -8,6 +8,7 @@ import {
   expandPath,
   pathExists,
   collapsePath,
+  isDirectory,
   validateSafeSourcePath,
   validateSafeManifestDestination,
   validatePathWithinRoot,
@@ -21,7 +22,13 @@ import {
   getAllGroups,
 } from '../lib/manifest.js';
 import { loadConfig, saveLocalConfig } from '../lib/config.js';
-import { copyFileOrDir, createSymlink } from '../lib/files.js';
+import {
+  copyFileOrDir,
+  createSymlink,
+  pruneOrphansForRestore,
+  type RestorePruneResult,
+} from '../lib/files.js';
+import { loadTuckignore } from '../lib/tuckignore.js';
 import { resolveGroupFilter } from '../lib/groupFilter.js';
 import { createSnapshot, pruneSnapshotsFromConfig } from '../lib/timemachine.js';
 import { runPreRestoreHook, runPostRestoreHook, type HookOptions } from '../lib/hooks.js';
@@ -210,6 +217,10 @@ const restoreFilesInternal = async (
   let restoredCount = 0;
   const restoredPaths: string[] = [];
 
+  // Loaded once and passed into every per-file prune call; restores can
+  // touch many files and re-reading .tuckignore each iteration is wasted IO.
+  const tuckIgnoreSet = await loadTuckignore(tuckDir);
+
   for (const file of files) {
     validateSafeSourcePath(file.source);
     validatePathWithinRoot(file.destination, tuckDir, 'restore source');
@@ -223,8 +234,21 @@ const restoreFilesInternal = async (
 
     // Dry run - just show what would happen
     if (options.dryRun) {
+      let pruneSuffix = '';
+      if (file.existsAtTarget && !useSymlink && (await isDirectory(file.destination))) {
+        const dryPrune = await pruneOrphansForRestore(
+          file.destination,
+          targetPath,
+          tuckIgnoreSet,
+          { dryRun: true }
+        );
+        if (dryPrune.pruned.length > 0) {
+          pruneSuffix = `, would prune ${formatCount(dryPrune.pruned.length, 'stale entry', 'stale entries')}`;
+        }
+      }
+
       if (file.existsAtTarget) {
-        prompts.log.warning(`${file.source} (would overwrite)`);
+        prompts.log.warning(`${file.source} (would overwrite${pruneSuffix})`);
       } else {
         prompts.log.success(`${file.source} (would create)`);
       }
@@ -232,10 +256,22 @@ const restoreFilesInternal = async (
     }
 
     // Restore file
+    let pruneResult: RestorePruneResult | undefined;
     await withSpinner(`Restoring ${file.source}...`, async () => {
       if (useSymlink) {
         await createSymlink(file.destination, targetPath, { overwrite: true });
       } else {
+        // Mirror v2.26.6's sync-side fix in the restore direction: when
+        // a tracked entry is a directory, prune dest entries that no
+        // longer exist in source before copying. .tuckignore protects
+        // host-local files inside the tracked dir.
+        if (await isDirectory(file.destination)) {
+          pruneResult = await pruneOrphansForRestore(
+            file.destination,
+            targetPath,
+            tuckIgnoreSet
+          );
+        }
         await copyFileOrDir(file.destination, targetPath, { overwrite: true });
       }
 
@@ -243,6 +279,19 @@ const restoreFilesInternal = async (
       await fixSSHPermissions(file.source);
       await fixGPGPermissions(file.source);
     });
+
+    if (pruneResult && pruneResult.pruned.length > 0) {
+      const sample = pruneResult.pruned.slice(0, 3).join(', ');
+      const tail = pruneResult.pruned.length > 3 ? '…' : '';
+      prompts.log.info(
+        `Pruned ${formatCount(pruneResult.pruned.length, 'stale entry', 'stale entries')} from ${file.source}: ${sample}${tail}`
+      );
+    }
+    if (pruneResult && pruneResult.exempted.length > 0) {
+      prompts.log.info(
+        `Kept ${formatCount(pruneResult.exempted.length, '.tuckignore-exempt entry', '.tuckignore-exempt entries')} inside ${file.source}`
+      );
+    }
 
     restoredCount++;
     restoredPaths.push(targetPath);

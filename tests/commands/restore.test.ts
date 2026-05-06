@@ -98,6 +98,7 @@ vi.mock('../../src/lib/paths.js', () => ({
   expandPath: vi.fn((p: string) => p.replace(/^~\//, '/test-home/')),
   pathExists: pathExistsMock,
   collapsePath: vi.fn((p: string) => p),
+  isDirectory: vi.fn(() => false),
   validateSafeSourcePath: validateSafeSourcePathMock,
   validateSafeManifestDestination: validateSafeManifestDestinationMock,
   validatePathWithinRoot: validatePathWithinRootMock,
@@ -123,6 +124,11 @@ vi.mock('../../src/lib/config.js', () => ({
 vi.mock('../../src/lib/files.js', () => ({
   copyFileOrDir: copyFileOrDirMock,
   createSymlink: createSymlinkMock,
+  pruneOrphansForRestore: vi.fn().mockResolvedValue({ pruned: [], exempted: [] }),
+}));
+
+vi.mock('../../src/lib/tuckignore.js', () => ({
+  loadTuckignore: vi.fn().mockResolvedValue(new Set<string>()),
 }));
 
 vi.mock('../../src/lib/hooks.js', () => ({
