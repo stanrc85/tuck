@@ -1,11 +1,11 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 ## [3.6.4](https://github.com/stanrc85/tuck/compare/v3.6.3...v3.6.4) (2026-05-06)
 
 
 ### Bug Fixes
 
 * **output:** filter orphan short alpha tokens like a stray "en" between noise lines ([76d7a1b](https://github.com/stanrc85/tuck/commit/76d7a1b07c30d37a196b3cd90fa4878a247ef4a8))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.6.3](https://github.com/stanrc85/tuck/compare/v3.6.2...v3.6.3) (2026-05-06)
 
