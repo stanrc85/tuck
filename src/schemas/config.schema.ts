@@ -13,16 +13,17 @@ export const providerModeSchema = z.enum(['github', 'gitlab', 'local', 'custom']
 /** Remote configuration schema */
 export const remoteConfigSchema = z
   .object({
-    /** Provider mode (github, gitlab, local, custom) */
-    mode: providerModeSchema.default('local'),
-    /** Custom remote URL (for custom mode or manual override) */
-    url: z.string().optional(),
-    /** Provider instance URL (for self-hosted GitLab, etc.) */
-    providerUrl: z.string().optional(),
-    /** Cached username from provider */
-    username: z.string().optional(),
-    /** Repository name (without owner) */
-    repoName: z.string().optional(),
+    mode: providerModeSchema.default('local').describe('Provider'),
+    url: z
+      .string()
+      .optional()
+      .describe('Custom git URL (for `custom` mode, or manual override)'),
+    providerUrl: z
+      .string()
+      .optional()
+      .describe('Provider instance URL (e.g. self-hosted GitLab)'),
+    username: z.string().optional().describe('Cached username from the provider'),
+    repoName: z.string().optional().describe('Repo name without owner'),
   })
   .default({ mode: 'local' });
 
@@ -34,117 +35,150 @@ export const categoryConfigSchema = z.object({
 export const tuckConfigSchema = z.object({
   repository: z
     .object({
-      defaultBranch: z.string().default('main'),
-      autoCommit: z.boolean().default(true),
-      autoPush: z.boolean().default(false),
+      defaultBranch: z
+        .string()
+        .default('main')
+        .describe('Default git branch for the `~/.tuck/` repo'),
+      autoCommit: z
+        .boolean()
+        .default(true)
+        .describe('Whether `tuck sync` auto-commits detected changes'),
+      autoPush: z
+        .boolean()
+        .default(false)
+        .describe('Whether `tuck sync` auto-pushes after committing'),
     })
     .partial()
     .default({}),
 
   files: z
     .object({
-      strategy: fileStrategySchema.default('copy'),
-      backupOnRestore: z.boolean().default(true),
+      strategy: fileStrategySchema
+        .default('copy')
+        .describe('How tracked files are mirrored. See [File strategies](#file-strategies).'),
+      backupOnRestore: z
+        .boolean()
+        .default(true)
+        .describe(
+          'Snapshot tracked files before `tuck restore` / `tuck apply` overwrites them. Strongly recommended.'
+        ),
     })
     .partial()
     .default({}),
 
-  categories: z.record(categoryConfigSchema).optional().default({}),
+  categories: z
+    .record(categoryConfigSchema)
+    .optional()
+    .default({})
+    .describe(
+      'Custom categories layered on top of the built-in set (`shell`, `git`, `editors`, `terminal`, `ssh`, `misc`).'
+    ),
 
-  ignore: z.array(z.string()).optional().default([]),
+  ignore: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('Paths that `tuck scan` and `tuck add` skip automatically.'),
 
-  /**
-   * Default host-groups applied to newly tracked files when `-g/--group` is
-   * not specified. Set by `tuck migrate` and editable via `tuck config`.
-   * Empty array means every `tuck add` must specify `-g` explicitly.
-   */
-  defaultGroups: z.array(z.string()).optional().default([]),
+  defaultGroups: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe(
+      'Host-groups applied to newly tracked files when `-g`/`--group` is not specified. Set by `tuck migrate` and editable via `tuck config`. Usually lives in `.tuckrc.local.json` (per-host).'
+    ),
 
-  /**
-   * Host-groups that should be treated as read-only (consumer) roles.
-   * Any host whose `defaultGroups` intersects this list refuses write
-   * commands (`sync`, `push`, `add`, `remove`) with a HostReadOnlyError.
-   *
-   * Lives in the shared `.tuckrc.json` so every clone agrees on which
-   * groups are consumer-only. Typical setup: producer host uses group
-   * `kubuntu`; consumer kali VMs use group `kali`; set
-   * `readOnlyGroups: ["kali"]` in shared config. Hosts with no
-   * `defaultGroups` assigned aren't gated (role is ambiguous, no reason
-   * to block). Override per invocation with `--force-write` or
-   * `TUCK_FORCE_WRITE=true`.
-   */
-  readOnlyGroups: z.array(z.string()).optional().default([]),
+  readOnlyGroups: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe(
+      'Host-groups treated as read-only (consumer) roles. Any host whose `defaultGroups` intersects this list refuses write commands (`sync`, `push`, `add`, `remove`) with `HostReadOnlyError`. Override per invocation with `--force-write` or `TUCK_FORCE_WRITE=true`.'
+    ),
 
   hooks: z
     .object({
-      preSync: z.string().optional(),
-      postSync: z.string().optional(),
-      preRestore: z.string().optional(),
-      postRestore: z.string().optional(),
+      preSync: z.string().optional().describe('Runs before `tuck sync`'),
+      postSync: z.string().optional().describe('Runs after `tuck sync`'),
+      preRestore: z.string().optional().describe('Runs before `tuck restore`'),
+      postRestore: z.string().optional().describe('Runs after `tuck restore`'),
     })
     .partial()
-    .default({}),
+    .default({})
+    .describe(
+      'Shell commands run around sync/restore. Each runs in the `~/.tuck/` cwd. See [Hooks](./Hooks).'
+    ),
 
-  /**
-   * Validation policy. `preSync: true` runs `tuck validate` on every tracked
-   * file before a sync, surfacing parse errors and lint findings inline.
-   * Warn-only: validation errors are reported but do not block the sync.
-   * Users who want hard-blocking can wire `tuck validate` into a `preSync`
-   * hook instead.
-   */
   validation: z
     .object({
-      preSync: z.boolean().default(false),
+      preSync: z
+        .boolean()
+        .default(false)
+        .describe(
+          'When `true`, run `tuck validate` against every tracked file at the start of `tuck sync` (warn-only — does not block).'
+        ),
     })
     .partial()
-    .default({}),
+    .default({})
+    .describe(
+      'Validation policy. Opt-in only; default keeps `tuck sync` paying zero validation cost.'
+    ),
 
   encryption: z
     .object({
-      /** Master switch for encryption features */
-      enabled: z.boolean().default(false),
-      /** Enable encryption for backups */
-      backupsEnabled: z.boolean().default(false),
-      /** GPG key for encryption (optional) */
-      gpgKey: z.string().optional(),
-      /** Files to encrypt */
-      files: z.array(z.string()).default([]),
-      /** Internal: Salt for password verification (hex encoded) */
+      enabled: z.boolean().default(false).describe('Master switch for encryption features'),
+      backupsEnabled: z.boolean().default(false).describe('Enable encryption for backups'),
+      gpgKey: z.string().optional().describe('GPG key identifier (must be in your keyring)'),
+      files: z.array(z.string()).default([]).describe('Tracked files to encrypt'),
       _verificationSalt: z.string().optional(),
-      /** Internal: Hash for password verification */
       _verificationHash: z.string().optional(),
     })
     .partial()
-    .default({}),
+    .default({})
+    .describe(
+      'Optional GPG-based encryption for specific tracked files and/or backup snapshots. Defaults off.'
+    ),
 
   ui: z
     .object({
-      colors: z.boolean().default(true),
-      emoji: z.boolean().default(true),
-      verbose: z.boolean().default(false),
+      colors: z.boolean().default(true).describe('ANSI colors in output'),
+      emoji: z.boolean().default(true).describe('Unicode emoji / icons in prompts'),
+      verbose: z.boolean().default(false).describe('Enable debug-level logging'),
     })
     .partial()
-    .default({}),
+    .default({})
+    .describe(
+      'Terminal UX toggles. The `NO_COLOR=1` env var is also honored regardless of `colors`.'
+    ),
 
-  /**
-   * Retention policy for Time Machine snapshots (created by apply, restore,
-   * sync, remove --delete, clean). Pruning runs after each new snapshot.
-   * Set a value to `0` or omit to disable that dimension.
-   */
   snapshots: z
     .object({
-      /** Keep at most this many snapshots. Default: 50. */
-      maxCount: z.number().int().nonnegative().default(50),
-      /** Delete snapshots older than this many days. Default: 30. */
-      maxAgeDays: z.number().int().nonnegative().default(30),
+      maxCount: z
+        .number()
+        .int()
+        .nonnegative()
+        .default(50)
+        .describe('Keep at most this many snapshots. `0` disables the count dimension.'),
+      maxAgeDays: z
+        .number()
+        .int()
+        .nonnegative()
+        .default(30)
+        .describe('Delete snapshots older than this. `0` disables the age dimension.'),
     })
     .partial()
-    .default({}),
+    .default({})
+    .describe(
+      'Retention policy for Time Machine snapshots. Pruning runs after each new snapshot. Both `0` = no pruning.'
+    ),
 
-  security: securityConfigSchema,
+  security: securityConfigSchema.describe(
+    'Secret-scanning policy. Full reference in [Security & Secrets](./Security-and-Secrets).'
+  ),
 
-  /** Remote/provider configuration */
-  remote: remoteConfigSchema,
+  remote: remoteConfigSchema.describe(
+    'Provider configuration. See [Git Providers](./Git-Providers) for per-provider setup.'
+  ),
 });
 
 export type TuckConfigInput = z.input<typeof tuckConfigSchema>;
@@ -174,12 +208,10 @@ export type RemoteConfigOutput = z.output<typeof remoteConfigSchema>;
  */
 export const tuckLocalConfigSchema = z
   .object({
-    defaultGroups: z.array(z.string()).optional(),
-    /**
-     * Per-host hook overrides. Each named hook in this block replaces the
-     * shared `.tuckrc.json` hook of the same name; unset hooks fall through
-     * to shared. See `loadConfig` for the per-type merge semantics.
-     */
+    defaultGroups: z
+      .array(z.string())
+      .optional()
+      .describe('Per-host group tags auto-applied when `-g` is omitted'),
     hooks: z
       .object({
         preSync: z.string().optional(),
@@ -189,17 +221,16 @@ export const tuckLocalConfigSchema = z
       })
       .partial()
       .strict()
-      .optional(),
-    /**
-     * When true, this host trusts every configured hook and skips the
-     * "Execute this hook?" confirmation prompt — equivalent to passing
-     * `--trust-hooks` on every invocation. LOCAL-ONLY by design: putting
-     * this in shared `.tuckrc.json` would let a malicious commit bypass
-     * the per-execution guard for every downstream clone. The shared
-     * `tuckConfigSchema` does not include this field; `.strict()` there
-     * rejects it on shared writes.
-     */
-    trustHooks: z.boolean().optional(),
+      .optional()
+      .describe(
+        'Per-host hook overrides. Each hook type merged independently with the shared hook of the same name.'
+      ),
+    trustHooks: z
+      .boolean()
+      .optional()
+      .describe(
+        'When `true`, this host trusts every configured hook and skips the per-execution confirmation prompt. Local-only by design — see [Why `trustHooks` is local-only](#why-trusthooks-is-local-only).'
+      ),
   })
   .strict();
 

@@ -67,49 +67,55 @@ export const backendsConfigSchema = z.object({
  */
 export const securityConfigSchema = z
   .object({
-    // Enable/disable secret scanning
-    scanSecrets: z.boolean().default(true),
-
-    // Block operations when secrets are detected (vs just warn)
-    blockOnSecrets: z.boolean().default(true),
-
-    // Minimum severity level to report
-    minSeverity: z.enum(['critical', 'high', 'medium', 'low']).default('high'),
-
-    // Scanner to use: 'builtin' or external tools
-    scanner: z.enum(['builtin', 'gitleaks', 'trufflehog']).default('builtin'),
-
-    // Path to gitleaks binary (if using gitleaks scanner)
-    gitleaksPath: z.string().optional(),
-
-    // Path to trufflehog binary (if using trufflehog scanner)
-    trufflehogPath: z.string().optional(),
-
-    // Custom patterns to add to the built-in patterns
-    customPatterns: z.array(customPatternSchema).default([]),
-
-    // Pattern IDs to exclude from scanning
-    excludePatterns: z.array(z.string()).default([]),
-
-    // File patterns to exclude from scanning (glob patterns)
-    excludeFiles: z.array(z.string()).default([]),
-
-    // Maximum file size to scan (in bytes)
-    maxFileSize: z.number().default(10 * 1024 * 1024), // 10MB
-
-    // ========== Password Manager Backend Configuration ==========
-
-    /** Which backend to use for secret resolution */
-    secretBackend: backendNameSchema.default('local'),
-
-    /** Backend-specific configuration */
-    backends: backendsConfigSchema.optional(),
-
-    /** Cache secrets in memory during session */
-    cacheSecrets: z.boolean().default(true),
-
-    /** Path to secrets mappings file (relative to tuck dir) */
-    secretMappings: z.string().default('secrets.mappings.json'),
+    scanSecrets: z.boolean().default(true).describe('Enable secret scanning'),
+    blockOnSecrets: z
+      .boolean()
+      .default(true)
+      .describe('Block operations when secrets are detected (vs. just warn)'),
+    minSeverity: z
+      .enum(['critical', 'high', 'medium', 'low'])
+      .default('high')
+      .describe('Minimum severity level to report'),
+    scanner: z
+      .enum(['builtin', 'gitleaks', 'trufflehog'])
+      .default('builtin')
+      .describe('Scanner backend'),
+    gitleaksPath: z
+      .string()
+      .optional()
+      .describe('Path to gitleaks binary (when `scanner` is `gitleaks`)'),
+    trufflehogPath: z
+      .string()
+      .optional()
+      .describe('Path to trufflehog binary (when `scanner` is `trufflehog`)'),
+    customPatterns: z
+      .array(customPatternSchema)
+      .default([])
+      .describe('Additional secret patterns layered on top of the built-in set'),
+    excludePatterns: z
+      .array(z.string())
+      .default([])
+      .describe('Pattern IDs to exclude from scanning'),
+    excludeFiles: z
+      .array(z.string())
+      .default([])
+      .describe('Glob patterns for files to skip during scanning'),
+    maxFileSize: z
+      .number()
+      .default(10 * 1024 * 1024)
+      .describe('Maximum file size to scan, in bytes'),
+    secretBackend: backendNameSchema
+      .default('local')
+      .describe('Backend used to resolve secret values at restore time'),
+    backends: backendsConfigSchema.optional().describe('Backend-specific configuration'),
+    cacheSecrets: z
+      .boolean()
+      .default(true)
+      .describe('Cache resolved secrets in memory during a session'),
+    secretMappings: z
+      .string()
+      .default('secrets.mappings.json')
+      .describe('Path to the secrets mappings file (relative to the tuck dir)'),
   })
   .partial()
   .default({});

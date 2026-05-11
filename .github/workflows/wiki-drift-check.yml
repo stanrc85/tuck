@@ -59,11 +59,11 @@ jobs:
           matches() { grep -qE "$1" <<< "$changed"; }
 
           if matches '^src/commands/.+\.ts$' && ! matches '^docs/wiki/Command-Reference\.md$'; then
-            warnings+=("You changed \`src/commands/*.ts\` but did not touch \`docs/wiki/Command-Reference.md\`. New command, new flag, or changed behavior usually belongs there.")
+            warnings+=("You changed \`src/commands/*.ts\` but did not touch \`docs/wiki/Command-Reference.md\`. The synopsis + options sections are auto-generated — run \`pnpm docs:gen\` to refresh, and add hand-written examples / behavior notes around the marker blocks. CI's \`docs:check\` job will fail if you skip the regen.")
           fi
 
           if matches '^src/schemas/(config|manifest)\.schema\.ts$' && ! matches '^docs/wiki/Configuration-Reference\.md$'; then
-            warnings+=("You changed a config/manifest schema but did not touch \`docs/wiki/Configuration-Reference.md\`. New fields and renames generally need a doc update.")
+            warnings+=("You changed a config/manifest schema but did not touch \`docs/wiki/Configuration-Reference.md\`. The per-field tables are auto-generated — run \`pnpm docs:gen\` to refresh. CI's \`docs:check\` job will fail if you skip the regen.")
           fi
 
           archpair=false

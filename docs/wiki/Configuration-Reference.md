@@ -2,6 +2,10 @@
 
 Canonical schema for `.tuckrc.json` (shared) and `.tuckrc.local.json` (host-local). For the motivating story on why there are two files, see [Host Groups — Defaults](./Host-Groups#defaults--per-host-vs-shared-config).
 
+> The per-field reference sections below are generated from
+> [`src/schemas/config.schema.ts`](https://github.com/stanrc85/tuck/blob/main/src/schemas/config.schema.ts).
+> Run `pnpm docs:gen` after editing the schema; CI fails if the page is out of sync.
+
 ## Where config lives
 
 tuck loads config from three layers, in order:
@@ -27,6 +31,7 @@ All fields optional. Values shown are defaults.
 
 ### `repository`
 
+<!-- TUCK_GEN:start config.repository -->
 ```json
 {
   "repository": {
@@ -37,14 +42,16 @@ All fields optional. Values shown are defaults.
 }
 ```
 
-| Field           | Type    | Default  | Purpose                                                     |
-| --------------- | ------- | -------- | ----------------------------------------------------------- |
-| `defaultBranch` | string  | `"main"` | Default git branch for the `~/.tuck/` repo                  |
-| `autoCommit`    | boolean | `true`   | Whether `tuck sync` auto-commits detected changes           |
-| `autoPush`      | boolean | `false`  | Whether `tuck sync` auto-pushes after committing            |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `defaultBranch` | `string` | `"main"` | Default git branch for the `~/.tuck/` repo |
+| `autoCommit` | `boolean` | `true` | Whether `tuck sync` auto-commits detected changes |
+| `autoPush` | `boolean` | `false` | Whether `tuck sync` auto-pushes after committing |
+<!-- TUCK_GEN:end config.repository -->
 
 ### `files`
 
+<!-- TUCK_GEN:start config.files -->
 ```json
 {
   "files": {
@@ -54,33 +61,49 @@ All fields optional. Values shown are defaults.
 }
 ```
 
-| Field             | Type                    | Default  | Purpose                                                   |
-| ----------------- | ----------------------- | -------- | --------------------------------------------------------- |
-| `strategy`        | `"copy"` \| `"symlink"` | `"copy"` | How tracked files are mirrored. See [File strategies](#file-strategies). |
-| `backupOnRestore` | boolean                 | `true`   | Snapshot tracked files before `tuck restore` / `tuck apply` overwrites them. Strongly recommended. |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `strategy` | `"copy"` \| `"symlink"` | `"copy"` | How tracked files are mirrored. See [File strategies](#file-strategies). |
+| `backupOnRestore` | `boolean` | `true` | Snapshot tracked files before `tuck restore` / `tuck apply` overwrites them. Strongly recommended. |
+<!-- TUCK_GEN:end config.files -->
+
+See [File strategies](#file-strategies) for `copy` vs `symlink`.
 
 ### `defaultGroups`
 
+<!-- TUCK_GEN:start config.defaultGroups -->
 ```json
 {
-  "defaultGroups": ["work-laptop"]
+  "defaultGroups": []
 }
 ```
 
-Array of host-group names auto-applied when `-g` is omitted on any group-aware command. Usually lives in `.tuckrc.local.json` (per-host), NOT the shared file. See [Host Groups](./Host-Groups#defaults--per-host-vs-shared-config).
+**Type**: `string[]`. **Default**: `[]`.
+
+Host-groups applied to newly tracked files when `-g`/`--group` is not specified. Set by `tuck migrate` and editable via `tuck config`. Usually lives in `.tuckrc.local.json` (per-host).
+<!-- TUCK_GEN:end config.defaultGroups -->
+
+See [Host Groups](./Host-Groups#defaults--per-host-vs-shared-config) for the load-order + merge rules.
 
 ### `readOnlyGroups`
 
+<!-- TUCK_GEN:start config.readOnlyGroups -->
 ```json
 {
-  "readOnlyGroups": ["kali", "work-mac-loaner"]
+  "readOnlyGroups": []
 }
 ```
 
-Array of host-group names whose members refuse write-side commands (`sync`, `push`, `add`, `remove`) with `HostReadOnlyError`. See [Host Groups — Consumer-host mode](./Host-Groups#consumer-host-mode).
+**Type**: `string[]`. **Default**: `[]`.
+
+Host-groups treated as read-only (consumer) roles. Any host whose `defaultGroups` intersects this list refuses write commands (`sync`, `push`, `add`, `remove`) with `HostReadOnlyError`. Override per invocation with `--force-write` or `TUCK_FORCE_WRITE=true`.
+<!-- TUCK_GEN:end config.readOnlyGroups -->
+
+See [Host Groups — Consumer-host mode](./Host-Groups#consumer-host-mode).
 
 ### `snapshots`
 
+<!-- TUCK_GEN:start config.snapshots -->
 ```json
 {
   "snapshots": {
@@ -90,30 +113,40 @@ Array of host-group names whose members refuse write-side commands (`sync`, `pus
 }
 ```
 
-| Field         | Type    | Default | Purpose                                                          |
-| ------------- | ------- | ------- | ---------------------------------------------------------------- |
-| `maxCount`    | integer | `50`    | Keep at most this many snapshots. `0` disables the count dimension. |
-| `maxAgeDays`  | integer | `30`    | Delete snapshots older than this. `0` disables the age dimension. |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `maxCount` | `number` | `50` | Keep at most this many snapshots. `0` disables the count dimension. |
+| `maxAgeDays` | `number` | `30` | Delete snapshots older than this. `0` disables the age dimension. |
 
-Both disabled (both `0`) = no pruning. See [Time Machine & Undo](./Time-Machine-and-Undo).
+Retention policy for Time Machine snapshots. Pruning runs after each new snapshot. Both `0` = no pruning.
+<!-- TUCK_GEN:end config.snapshots -->
+
+See [Time Machine & Undo](./Time-Machine-and-Undo).
 
 ### `hooks`
 
+<!-- TUCK_GEN:start config.hooks -->
 ```json
 {
-  "hooks": {
-    "preSync":     "echo 'about to sync'",
-    "postSync":    "notify-send 'tuck: sync done'",
-    "preRestore":  "",
-    "postRestore": "source ~/.zshrc"
-  }
+  "hooks": {}
 }
 ```
 
-Four hook types. Each is a shell command (sh/bash on Unix, pwsh on Windows) run in the `~/.tuck/` cwd with a few env vars passed through. Full reference in [Hooks](./Hooks).
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `preSync` | `string` | — | Runs before `tuck sync` |
+| `postSync` | `string` | — | Runs after `tuck sync` |
+| `preRestore` | `string` | — | Runs before `tuck restore` |
+| `postRestore` | `string` | — | Runs after `tuck restore` |
+
+Shell commands run around sync/restore. Each runs in the `~/.tuck/` cwd. See [Hooks](./Hooks).
+<!-- TUCK_GEN:end config.hooks -->
+
+Each hook is sh/bash on Unix, pwsh on Windows, with a few env vars passed through. Full reference in [Hooks](./Hooks).
 
 ### `validation`
 
+<!-- TUCK_GEN:start config.validation -->
 ```json
 {
   "validation": {
@@ -122,39 +155,50 @@ Four hook types. Each is a shell command (sh/bash on Unix, pwsh on Windows) run 
 }
 ```
 
-| Field      | Type    | Default | Description |
-|------------|---------|---------|-------------|
-| `preSync`  | boolean | `false` | When `true`, run `tuck validate` against every tracked file at the start of `tuck sync`. Findings are reported inline; the sync continues regardless (warn-only). |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `preSync` | `boolean` | `false` | When `true`, run `tuck validate` against every tracked file at the start of `tuck sync` (warn-only — does not block). |
 
-Opt-in only. Default keeps `tuck sync` paying zero validation cost. When enabled, the sweep runs after secret-scanning and before any file writes — broken JSON / YAML / shell parses get surfaced before they land in your git history. Users who want hard-blocking can wire `tuck validate --format json` into a `hooks.preSync` hook instead (see [Hooks](./Hooks)). See also [tuck validate](./Command-Reference#tuck-validate).
+Validation policy. Opt-in only; default keeps `tuck sync` paying zero validation cost.
+<!-- TUCK_GEN:end config.validation -->
+
+When enabled, the sweep runs after secret-scanning and before any file writes — broken JSON / YAML / shell parses get surfaced before they land in your git history. Users who want hard-blocking can wire `tuck validate --format json` into a `hooks.preSync` hook instead (see [Hooks](./Hooks)). See also [tuck validate](./Command-Reference#tuck-validate).
 
 ### `ignore`
 
+<!-- TUCK_GEN:start config.ignore -->
 ```json
 {
-  "ignore": ["~/.cache", "~/.local/share"]
+  "ignore": []
 }
 ```
 
-Array of paths that `tuck scan` and `tuck add` skip automatically. Prefer the `.tuckignore` file (use `tuck ignore add <path>`) for path-based ignores — this config field is for programmatic setups. See [Command Reference — tuck ignore](./Command-Reference#tuck-ignore).
+**Type**: `string[]`. **Default**: `[]`.
+
+Paths that `tuck scan` and `tuck add` skip automatically.
+<!-- TUCK_GEN:end config.ignore -->
+
+Prefer the `.tuckignore` file (use `tuck ignore add <path>`) for path-based ignores — this config field is for programmatic setups. See [Command Reference — tuck ignore](./Command-Reference#tuck-ignore).
 
 ### `categories`
 
+<!-- TUCK_GEN:start config.categories -->
 ```json
 {
-  "categories": {
-    "custom": {
-      "patterns": ["~/.config/my-tool/*"],
-      "icon": "🔧"
-    }
-  }
+  "categories": {}
 }
 ```
 
-Dictionary mapping category name → `{ patterns, icon? }`. Adds custom categories on top of the built-in set (`shell`, `git`, `editors`, `terminal`, `ssh`, `misc`). `patterns` are globs matched against source paths during `tuck scan`.
+**Type**: `Record<string, object>`. **Default**: `{}`.
+
+Custom categories layered on top of the built-in set (`shell`, `git`, `editors`, `terminal`, `ssh`, `misc`).
+<!-- TUCK_GEN:end config.categories -->
+
+Map each category name → `{ patterns, icon? }`. `patterns` are globs matched against source paths during `tuck scan`.
 
 ### `ui`
 
+<!-- TUCK_GEN:start config.ui -->
 ```json
 {
   "ui": {
@@ -165,40 +209,40 @@ Dictionary mapping category name → `{ patterns, icon? }`. Adds custom categori
 }
 ```
 
-| Field     | Type    | Default | Purpose                                   |
-| --------- | ------- | ------- | ----------------------------------------- |
-| `colors`  | boolean | `true`  | ANSI colors in output                     |
-| `emoji`   | boolean | `true`  | Unicode emoji / icons in prompts          |
-| `verbose` | boolean | `false` | Enable debug-level logging                |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `colors` | `boolean` | `true` | ANSI colors in output |
+| `emoji` | `boolean` | `true` | Unicode emoji / icons in prompts |
+| `verbose` | `boolean` | `false` | Enable debug-level logging |
 
-chalk's `NO_COLOR=1` env var is also honored regardless of this setting.
+Terminal UX toggles. The `NO_COLOR=1` env var is also honored regardless of `colors`.
+<!-- TUCK_GEN:end config.ui -->
 
 ### `remote`
 
+<!-- TUCK_GEN:start config.remote -->
 ```json
 {
   "remote": {
-    "mode": "github",
-    "username": "you",
-    "repoName": "dotfiles",
-    "url": "git@github.com:you/dotfiles.git",
-    "providerUrl": "https://gitlab.mycompany.com"
+    "mode": "local"
   }
 }
 ```
 
-| Field         | Type                                          | Default    | Purpose                                                |
-| ------------- | --------------------------------------------- | ---------- | ------------------------------------------------------ |
-| `mode`        | `"github"` \| `"gitlab"` \| `"local"` \| `"custom"` | `"local"`  | Provider                                          |
-| `url`         | string                                        | (none)     | Custom git URL (for `custom` mode, or manual override) |
-| `providerUrl` | string                                        | (none)     | Provider instance URL (self-hosted GitLab)             |
-| `username`    | string                                        | (none)     | Cached username from the provider                      |
-| `repoName`    | string                                        | (none)     | Repo name without owner                                |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mode` | `"github"` \| `"gitlab"` \| `"local"` \| `"custom"` | `"local"` | Provider |
+| `url` | `string` | — | Custom git URL (for `custom` mode, or manual override) |
+| `providerUrl` | `string` | — | Provider instance URL (e.g. self-hosted GitLab) |
+| `username` | `string` | — | Cached username from the provider |
+| `repoName` | `string` | — | Repo name without owner |
 
-See [Git Providers](./Git-Providers) for per-provider setup.
+Provider configuration. See [Git Providers](./Git-Providers) for per-provider setup.
+<!-- TUCK_GEN:end config.remote -->
 
 ### `security`
 
+<!-- TUCK_GEN:start config.security -->
 ```json
 {
   "security": {
@@ -217,22 +261,50 @@ See [Git Providers](./Git-Providers) for per-provider setup.
 }
 ```
 
-Full reference in [Security & Secrets](./Security-and-Secrets).
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `scanSecrets` | `boolean` | `true` | Enable secret scanning |
+| `blockOnSecrets` | `boolean` | `true` | Block operations when secrets are detected (vs. just warn) |
+| `minSeverity` | `"critical"` \| `"high"` \| `"medium"` \| `"low"` | `"high"` | Minimum severity level to report |
+| `scanner` | `"builtin"` \| `"gitleaks"` \| `"trufflehog"` | `"builtin"` | Scanner backend |
+| `gitleaksPath` | `string` | — | Path to gitleaks binary (when `scanner` is `gitleaks`) |
+| `trufflehogPath` | `string` | — | Path to trufflehog binary (when `scanner` is `trufflehog`) |
+| `customPatterns` | `object[]` | `[]` | Additional secret patterns layered on top of the built-in set |
+| `excludePatterns` | `string[]` | `[]` | Pattern IDs to exclude from scanning |
+| `excludeFiles` | `string[]` | `[]` | Glob patterns for files to skip during scanning |
+| `maxFileSize` | `number` | `10485760` | Maximum file size to scan, in bytes |
+| `secretBackend` | `"local"` \| `"1password"` \| `"bitwarden"` \| `"pass"` \| `"auto"` | `"local"` | Backend used to resolve secret values at restore time |
+| `backends` | `object` | — | Backend-specific configuration |
+| `cacheSecrets` | `boolean` | `true` | Cache resolved secrets in memory during a session |
+| `secretMappings` | `string` | `"secrets.mappings.json"` | Path to the secrets mappings file (relative to the tuck dir) |
+
+Secret-scanning policy. Full reference in [Security & Secrets](./Security-and-Secrets).
+<!-- TUCK_GEN:end config.security -->
 
 ### `encryption`
 
+<!-- TUCK_GEN:start config.encryption -->
 ```json
 {
   "encryption": {
     "enabled": false,
     "backupsEnabled": false,
-    "gpgKey": "0xABCDEF12",
-    "files": ["~/.ssh/config"]
+    "files": []
   }
 }
 ```
 
-Optional GPG-based encryption for specific tracked files and/or backup snapshots. Defaults off. If you enable it, set `gpgKey` to a key identifier that's in your GPG keyring — tuck won't generate a key for you.
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `boolean` | `false` | Master switch for encryption features |
+| `backupsEnabled` | `boolean` | `false` | Enable encryption for backups |
+| `gpgKey` | `string` | — | GPG key identifier (must be in your keyring) |
+| `files` | `string[]` | `[]` | Tracked files to encrypt |
+
+Optional GPG-based encryption for specific tracked files and/or backup snapshots. Defaults off.
+<!-- TUCK_GEN:end config.encryption -->
+
+If you enable encryption, set `gpgKey` to a key identifier that's in your GPG keyring — tuck won't generate a key for you.
 
 ## Local `.tuckrc.local.json` schema
 
@@ -248,11 +320,13 @@ Strict — only these fields allowed. Anything else is a schema error.
 }
 ```
 
-| Field           | Type                | Purpose                                                          |
-| --------------- | ------------------- | ---------------------------------------------------------------- |
-| `defaultGroups` | string[]            | Per-host group tags auto-applied when `-g` is omitted            |
-| `hooks`         | { preSync?, postSync?, preRestore?, postRestore? } | Per-host hook overrides. Each hook type merged independently with the shared hook of the same name. |
-| `trustHooks`    | boolean             | When `true`, this host trusts every configured hook and skips the per-execution `Execute this hook?` prompt — equivalent to passing `--trust-hooks` on every invocation. **Local-only by design** (see security note below). |
+<!-- TUCK_GEN:start config.local -->
+| Field | Type | Description |
+|-------|------|-------------|
+| `defaultGroups` | `string[]` | Per-host group tags auto-applied when `-g` is omitted |
+| `hooks` | `object` | Per-host hook overrides. Each hook type merged independently with the shared hook of the same name. |
+| `trustHooks` | `boolean` | When `true`, this host trusts every configured hook and skips the per-execution confirmation prompt. Local-only by design — see [Why `trustHooks` is local-only](#why-trusthooks-is-local-only). |
+<!-- TUCK_GEN:end config.local -->
 
 The strict schema exists to stop "I thought I was editing the local file but really wrote to the shared one" leaks. If you try to add `repository.autoPush` to `.tuckrc.local.json`, it's rejected with a clear error — because auto-push behavior is a repo-wide policy, not per-host.
 
@@ -274,8 +348,6 @@ Set it only when:
 - The dotfiles repo is yours / from a trusted source
 
 To revoke: hand-edit `.tuckrc.local.json` and remove the `trustHooks` key (or wait for `tuck config unset --local trustHooks` once shipped).
-
-See [Host Groups — Defaults](./Host-Groups#defaults--per-host-vs-shared-config) for the load-order + merge rules.
 
 ## File strategies
 

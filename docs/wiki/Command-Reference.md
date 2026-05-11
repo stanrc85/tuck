@@ -2,6 +2,10 @@
 
 Every `tuck` command, with synopsis, flags, and worked examples. Use **Ctrl-F** to jump to a command. For the why-and-when, see the topic pages linked at the bottom of each entry.
 
+> Synopsis and option lists below are generated from the commander definitions
+> in [`src/commands/`](https://github.com/stanrc85/tuck/blob/main/src/commands).
+> Run `pnpm docs:gen` after editing flags; CI fails if the page is out of sync.
+
 ## Contents
 
 - **Essential**
@@ -50,15 +54,19 @@ Every `tuck` command, with synopsis, flags, and worked examples. Use **Ctrl-F** 
 
 Interactive single-command setup. Creates `~/.tuck/`, picks a git provider, scans for dotfiles, and does the first commit + push.
 
+<!-- TUCK_GEN:start cmd.init -->
 **Synopsis**
 
     tuck init [options]
 
 **Options**
 
-- `--from <url-or-slug>` — clone from an existing repo instead of starting fresh. Accepts GitHub slugs (`user/repo`), full URLs, or SSH URLs.
-- `-y, --yes` — accept the defaults at every prompt (useful for CI / automated installs).
-- `--skip-scan` — skip the dotfile auto-discovery step. You'll start with an empty tracked-set and add files manually.
+- `-d, --dir <path>` — Directory for tuck repository
+- `-r, --remote <url>` — Git remote URL to set up
+- `--bare` — Initialize without any default files
+- `--from <url>` — Clone from existing tuck repository
+- `--no-detect-os` — Skip the `/etc/os-release` detection prompt (Linux only)
+<!-- TUCK_GEN:end cmd.init -->
 
 **Examples**
 
@@ -69,8 +77,8 @@ Interactive single-command setup. Creates `~/.tuck/`, picks a git provider, scan
     tuck init --from github.com/you/dotfiles
     tuck restore --all
 
-    # Non-interactive defaults (local-only, scan all, no remote)
-    tuck init --yes
+    # Bare setup (no default files, configure remote later)
+    tuck init --bare
 
 **See also:** [Getting Started](./Getting-Started), [Git Providers](./Git-Providers)
 
@@ -80,18 +88,25 @@ Interactive single-command setup. Creates `~/.tuck/`, picks a git provider, scan
 
 The one-command loop for pushing changes: pull (rebase+autostash) → detect changes in tracked sources → commit → push.
 
+<!-- TUCK_GEN:start cmd.sync -->
 **Synopsis**
 
-    tuck sync [options]
+    tuck sync [message] [options]
 
 **Options**
 
-- `-g, --group <name>` — scope the sync to files tagged with this host-group (repeatable). Falls back to `config.defaultGroups` when omitted.
-- `-m, --message <msg>` — custom commit message. Default: `tuck sync: <N> files`.
-- `--list` — preview-only: print the scope + every file that would be synced + its group tags, then exit. No writes, no commit, no push.
-- `--no-push` — commit locally but skip the push. Useful when you want to stage several syncs and push once.
-- `--force-write` — bypass the consumer-host guard (`readOnlyGroups`). See [Host Groups](./Host-Groups#consumer-host-mode).
-- `--category <cat>` — scope to one category (`shell`, `git`, `editors`, `terminal`, `ssh`, `misc`).
+- `-m, --message <msg>` — Commit message
+- `--no-commit` — Stage changes but don't commit
+- `--no-push` — Commit but don't push to remote
+- `--no-pull` — Don't pull from remote first
+- `--no-scan` — Don't scan for new dotfiles
+- `--no-hooks` — Skip execution of pre/post sync hooks
+- `--trust-hooks` — Trust and run hooks without confirmation (use with caution)
+- `-g, --group <name>` — Filter by host-group (repeatable)
+- `--list` — Preview which tracked files would be synced, then exit (no writes)
+- `-f, --force` — Skip secret scanning (not recommended)
+- `--force-write` — Override the readOnlyGroups consumer-host guardrail
+<!-- TUCK_GEN:end cmd.sync -->
 
 **Examples**
 
@@ -126,21 +141,22 @@ The one-command loop for pushing changes: pull (rebase+autostash) → detect cha
 
 Show what's tracked, what's changed, and whether the repo is in sync with the remote.
 
+<!-- TUCK_GEN:start cmd.status -->
 **Synopsis**
 
     tuck status [options]
 
 **Options**
 
-- `-g, --group <name>` — scope the output to one host-group.
-- `--category <cat>` — scope to one category.
-- `-v, --verbose` — include unchanged files.
+- `--short` — Short format
+- `--json` — Output as JSON
+<!-- TUCK_GEN:end cmd.status -->
 
 **Examples**
 
     tuck status
-    tuck status -g work
-    tuck status --category shell
+    tuck status --short
+    tuck status --json
 
 **See also:** [tuck diff](#tuck-diff), [tuck sync](#tuck-sync)
 
@@ -152,15 +168,20 @@ Show what's tracked, what's changed, and whether the repo is in sync with the re
 
 Start tracking one or more files. Files are copied from their source path into `~/.tuck/files/<category>/` and an entry is added to the manifest.
 
+<!-- TUCK_GEN:start cmd.add -->
 **Synopsis**
 
-    tuck add <paths...> [options]
+    tuck add [paths...] [options]
 
 **Options**
 
-- `-g, --group <name>` — tag the added file(s) with this host-group (repeatable). Defaults to `config.defaultGroups`.
-- `--category <cat>` — override the auto-detected category.
-- `--symlink` — create a symlink from the source path to the repo copy instead of the default copy strategy. See [Configuration Reference](./Configuration-Reference#file-strategies).
+- `-c, --category <name>` — Category to organize under
+- `-n, --name <name>` — Custom name for the file in manifest
+- `-g, --group <name>` — Host-group to tag (repeatable: -g kubuntu -g work)
+- `--symlink` — Copy into tuck repo, then replace source path with a symlink
+- `-f, --force` — Skip secret scanning (not recommended)
+- `--force-write` — Override the readOnlyGroups consumer-host guardrail
+<!-- TUCK_GEN:end cmd.add -->
 
 **Examples**
 
@@ -176,16 +197,19 @@ Start tracking one or more files. Files are copied from their source path into `
 
 Stop tracking files. The source path on your host is **never** touched — only the repo copy and manifest entry are removed.
 
+<!-- TUCK_GEN:start cmd.remove -->
 **Synopsis**
 
-    tuck remove <paths...> [options]
+    tuck remove [paths...] [options]
 
 **Options**
 
-- `--delete` — also delete the file from `~/.tuck/files/`. Without this, the manifest entry is dropped but the repo copy stays.
-- `--push` — implies `--delete`. Commits the deletion and pushes to the remote in one shot.
-- `-m, --message <msg>` — custom commit message for the `--push` variant.
-- `--force-write` — bypass the consumer-host guard.
+- `--delete` — Also delete from tuck repository
+- `--keep-original` — Don't restore symlinks to regular files
+- `--push` — Untrack + delete from repo + commit + push (implies --delete)
+- `-m, --message <msg>` — Override the auto-generated commit message (with --push)
+- `--force-write` — Override the readOnlyGroups consumer-host guardrail
+<!-- TUCK_GEN:end cmd.remove -->
 
 **Examples**
 
@@ -214,14 +238,18 @@ Stop tracking files. The source path on your host is **never** touched — only 
 
 Discover dotfiles on your system without syncing. Prints a list of detected files by category.
 
+<!-- TUCK_GEN:start cmd.scan -->
 **Synopsis**
 
     tuck scan [options]
 
 **Options**
 
-- `--category <cat>` — scope to one category.
-- `--include-ignored` — include paths in `.tuckignore`.
+- `-a, --all` — Show all files including already tracked ones
+- `-c, --category <name>` — Filter by category (shell, git, editors, etc.)
+- `-q, --quick` — Quick scan - just show detected files without interactive selection
+- `--json` — Output results as JSON
+<!-- TUCK_GEN:end cmd.scan -->
 
 **Examples**
 
@@ -236,21 +264,24 @@ Discover dotfiles on your system without syncing. Prints a list of detected file
 
 List tracked files, grouped by category with group tags per file.
 
+<!-- TUCK_GEN:start cmd.list -->
 **Synopsis**
 
     tuck list [options]
 
 **Options**
 
-- `-g, --group <name>` — filter to one host-group (repeatable).
-- `--category <cat>` — filter to one category.
-- `--format <fmt>` — `table` (default), `json`, `paths` (one path per line for piping).
+- `-c, --category <name>` — Filter by category
+- `-g, --group <name>` — Filter by host-group (repeatable)
+- `--paths` — Show only paths
+- `--json` — Output as JSON
+<!-- TUCK_GEN:end cmd.list -->
 
 **Examples**
 
     tuck list
     tuck list -g kali
-    tuck list --format paths | fzf    # fuzzy-pick a tracked file
+    tuck list --paths | fzf    # fuzzy-pick a tracked file
 
 **See also:** [tuck status](#tuck-status)
 
@@ -260,19 +291,21 @@ List tracked files, grouped by category with group tags per file.
 
 Show differences between your system files and their repo copies. Useful before a sync to preview what would change.
 
+<!-- TUCK_GEN:start cmd.diff -->
 **Synopsis**
 
     tuck diff [paths...] [options]
 
 **Options**
 
-- `-s, --side-by-side` — render in two columns with syntax highlighting (auto-falls back to unified on terminals narrower than 80 cols).
-- `--stat` — git-style summary: `path | NN +++---` bar graph.
-- `--name-only` — print just the changed file paths.
-- `-g, --group <name>` — scope to a host-group.
-- `--category <cat>` — scope to a category.
-- `--staged` — show staged git changes in `~/.tuck/` instead of the system-vs-repo diff.
-- `--exit-code` — return exit code 1 if differences found (for scripting).
+- `--staged` — Show staged git changes
+- `--stat` — Show diffstat only
+- `--category <category>` — Filter by file category (shell, git, editors, terminal, ssh, misc)
+- `-g, --group <name>` — Filter by host-group (repeatable)
+- `--name-only` — Show only changed file names
+- `-s, --side-by-side` — Render diffs in two columns (auto-falls back on narrow terminals)
+- `--exit-code` — Return exit code 1 if differences found
+<!-- TUCK_GEN:end cmd.diff -->
 
 **Examples**
 
@@ -295,11 +328,13 @@ Show differences between your system files and their repo copies. Useful before 
 
 Manage `.tuckignore` — paths that `tuck scan` and `tuck add` skip automatically.
 
+<!-- TUCK_GEN:start cmd.ignore -->
 **Synopsis**
 
     tuck ignore add <paths...>
     tuck ignore rm <paths...>
     tuck ignore list
+<!-- TUCK_GEN:end cmd.ignore -->
 
 **Examples**
 
@@ -315,12 +350,14 @@ Manage `.tuckignore` — paths that `tuck scan` and `tuck add` skip automaticall
 
 Manage host-group tags on tracked files. Every tracked file belongs to at least one group.
 
+<!-- TUCK_GEN:start cmd.group -->
 **Synopsis**
 
-    tuck group add <group> <paths...>
-    tuck group rm <group> <paths...>
+    tuck group add <group> [paths...]
+    tuck group rm <group> [paths...]
     tuck group list
     tuck group show <group>
+<!-- TUCK_GEN:end cmd.group -->
 
 **Examples**
 
@@ -342,13 +379,16 @@ Manage host-group tags on tracked files. Every tracked file belongs to at least 
 
 One-time: tag every existing file with a host-group. Required after upgrading from a pre-2.0 manifest that didn't have groups.
 
+<!-- TUCK_GEN:start cmd.migrate -->
 **Synopsis**
 
     tuck migrate [options]
 
 **Options**
 
-- `-g, --group <name>` — the group to tag all existing files with (repeatable). Defaults to the hostname if omitted in interactive mode.
+- `-g, --group <name>` — Host-group to assign to untagged files (repeatable)
+- `-y, --yes` — Skip prompts (use hostname as default group)
+<!-- TUCK_GEN:end cmd.migrate -->
 
 **Examples**
 
@@ -369,17 +409,19 @@ One-time: tag every existing file with a host-group. Required after upgrading fr
 
 Remove orphaned files from `~/.tuck/files/` — files on disk that aren't in the manifest (usually because `tuck remove` didn't clean up a mirrored copy, or files were moved manually).
 
+<!-- TUCK_GEN:start cmd.clean -->
 **Synopsis**
 
     tuck clean [options]
 
 **Options**
 
-- `--dry-run` — preview only. Print every orphan + size, don't delete.
-- `-y, --yes` — skip the confirmation prompt.
-- `--commit` — commit the cleanup in one step.
-- `--push` — commit + push.
-- `-m, --message <msg>` — custom commit message for `--commit` / `--push`.
+- `--dry-run` — Preview what would be removed without deleting
+- `-y, --yes` — Skip the confirmation prompt
+- `--commit` — Stage and commit the removal
+- `--push` — Commit and push (implies --commit)
+- `-m, --message <msg>` — Override the auto-generated commit message
+<!-- TUCK_GEN:end cmd.clean -->
 
 **Examples**
 
@@ -403,13 +445,17 @@ Remove orphaned files from `~/.tuck/files/` — files on disk that aren't in the
 
 Push local commits in `~/.tuck/` to the remote. Called internally by `tuck sync`; useful manually when you've used `tuck sync --no-push`.
 
+<!-- TUCK_GEN:start cmd.push -->
 **Synopsis**
 
     tuck push [options]
 
 **Options**
 
-- `--force-write` — bypass consumer-host guard.
+- `-f, --force` — Force push
+- `--set-upstream <name>` — Set upstream branch
+- `--force-write` — Override the readOnlyGroups consumer-host guardrail
+<!-- TUCK_GEN:end cmd.push -->
 
 ---
 
@@ -417,9 +463,18 @@ Push local commits in `~/.tuck/` to the remote. Called internally by `tuck sync`
 
 Pull + rebase + autostash from the remote into `~/.tuck/`. Called internally by `tuck sync`.
 
+<!-- TUCK_GEN:start cmd.pull -->
 **Synopsis**
 
     tuck pull [options]
+
+**Options**
+
+- `--rebase` — Pull with rebase
+- `--restore` — Also restore files to system after pull
+- `--mirror` — Reset to upstream (destroys local commits) — use on receiving-only hosts
+- `--allow-divergent` — Bypass the divergence safety check (required with --mirror when ahead of upstream)
+<!-- TUCK_GEN:end cmd.pull -->
 
 ---
 
@@ -429,16 +484,20 @@ Pull + rebase + autostash from the remote into `~/.tuck/`. Called internally by 
 
 Apply another user's (or your own) dotfiles to the host. Smart-merges shell files to preserve local customizations.
 
+<!-- TUCK_GEN:start cmd.apply -->
 **Synopsis**
 
-    tuck apply <user-or-url> [options]
+    tuck apply <source> [options]
 
 **Options**
 
-- `-g, --group <name>` — pick one host-group from the source repo.
-- `-y, --yes` — accept every overwrite prompt.
-- `--no-backup` — skip the pre-apply snapshot (not recommended).
-- `--install-deps` / `--no-install-deps` — control the post-apply missing-tool prompt.
+- `-m, --merge` — Merge with existing files (preserve local customizations)
+- `-r, --replace` — Replace existing files completely
+- `-g, --group <name>` — Filter files by host-group (repeatable)
+- `--dry-run` — Show what would be applied without making changes
+- `-f, --force` — Apply without confirmation prompts
+- `-y, --yes` — Assume yes to all prompts
+<!-- TUCK_GEN:end cmd.apply -->
 
 **Examples**
 
@@ -461,19 +520,29 @@ Apply another user's (or your own) dotfiles to the host. Smart-merges shell file
 
 Write tracked files from the repo back to your system.
 
+<!-- TUCK_GEN:start cmd.restore -->
 **Synopsis**
 
     tuck restore [paths...] [options]
 
 **Options**
 
-- `--all` — restore every tracked file (required without explicit paths).
-- `-g, --group <name>` — scope to one host-group.
-- `--category <cat>` — scope to one category.
-- `-y, --yes` — accept overwrite prompts.
-- `--no-backup` — skip the pre-restore snapshot.
-- `--install-deps` / `--no-install-deps` — control the missing-tool prompt (same semantics as `tuck apply`).
-- `--bootstrap` — run the full bootstrap flow after restoring (installs the bundle associated with the current host's primary group, if any).
+- `-a, --all` — Restore all tracked files
+- `-g, --group <name>` — Filter by host-group (repeatable)
+- `--symlink` — Create symlinks from source paths to tuck repo files
+- `--backup` — Backup existing files before restore
+- `--no-backup` — Skip backup of existing files
+- `--dry-run` — Show what would be done
+- `--no-hooks` — Skip execution of pre/post restore hooks
+- `--trust-hooks` — Trust and run hooks without confirmation (use with caution)
+- `--no-secrets` — Skip restoring secrets (keep placeholders as-is)
+- `--install-deps` — Auto-install any missing tool dependencies detected from restored configs (non-interactive; also the opt-in for CI / non-TTY hosts)
+- `--no-install-deps` — Skip the missing-deps prompt/advisory entirely
+- `--install-missing` — Attempt `brew install` for tools referenced by restored dotfiles but not declared in bootstrap.toml. Per-tool brew failures warn and continue; manual-install tools (zimfw, neovim-plugins, zsh) are never auto-installed.
+- `--bootstrap` — After restore, run `tuck bootstrap --bundle <g>` for each -g whose name matches a bundle (groups without a matching bundle soft-skip)
+- `-y, --yes` — Skip confirmations (forwarded to bootstrap when --bootstrap is set)
+- `-v, --verbose` — Stream nested bootstrap subprocess output to the terminal (full transcript always goes to ~/.tuck/logs/)
+<!-- TUCK_GEN:end cmd.restore -->
 
 **Examples**
 
@@ -497,16 +566,20 @@ Write tracked files from the repo back to your system.
 
 Roll back any destructive operation using time-machine snapshots.
 
+<!-- TUCK_GEN:start cmd.undo -->
 **Synopsis**
 
     tuck undo [snapshot-id] [options]
 
 **Options**
 
-- `--list` — list every snapshot (kind, date, file count) and exit.
-- `--latest` — restore the most recent snapshot without picking.
-- `--file <path>` — restore only one file from the chosen snapshot.
-- `--delete <id>` — delete a snapshot.
+- `-l, --list` — List all available backup snapshots
+- `--latest` — Restore the most recent snapshot
+- `--file <path>` — Restore a single file from the snapshot
+- `--delete <id>` — Delete a specific snapshot
+- `-f, --force` — Skip confirmation prompts
+- `--dry-run` — Show what would be restored without making changes
+<!-- TUCK_GEN:end cmd.undo -->
 
 **Examples**
 
@@ -527,18 +600,20 @@ Roll back any destructive operation using time-machine snapshots.
 
 Walk the manifest, run format-specific parsers against each tracked file's content, and emit a markdown (or JSON) document listing every keybind, alias, and binding tuck could extract.
 
+<!-- TUCK_GEN:start cmd.cheatsheet -->
 **Synopsis**
 
     tuck cheatsheet [options]
 
 **Options**
 
-- `-o, --output <path>` — write to a custom path. Default: `<tuckDir>/cheatsheet.md`.
-- `--stdout` — print to stdout instead of writing. Handy for `tuck cheatsheet --stdout | less` or `| glow`.
-- `--format <fmt>` — `markdown` (default) or `json`.
-- `--sources <ids>` — restrict to specific parsers (e.g. `--sources tmux,zsh`).
-- `-g, --group <name>` — filter tracked files by host-group.
-- `--no-timestamp` — omit the `generated` timestamp from the output. Use this when committing the cheatsheet (e.g. via a `preSync` hook) — without the flag, every regen produces a 1-line `+/- generated:` diff regardless of whether keybinds changed. With it, the file only changes when content actually changes.
+- `-o, --output <path>` — Write the cheatsheet to this path (default: <tuckDir>/cheatsheet.<ext>)
+- `--stdout` — Print to stdout instead of writing a file
+- `--sources <ids>` — Comma-separated parser ids to include (default: every registered parser)
+- `-g, --group <name>` — Filter tracked files by host-group (repeatable)
+- `--format <md|json>` — Output format: md (GitHub-flavored markdown) or json (flat entries for jq/fzf)
+- `--no-timestamp` — Omit the wall-clock generated timestamp (avoids noisy diffs when the cheatsheet is auto-regenerated)
+<!-- TUCK_GEN:end cmd.cheatsheet -->
 
 **Supported parsers**
 
@@ -573,17 +648,17 @@ Dynamic mappings (mode or lhs driven by a variable or loop) are silently skipped
 
 View and edit configuration. Without arguments, drops into an interactive menu.
 
+<!-- TUCK_GEN:start cmd.config -->
 **Synopsis**
 
-    tuck config
     tuck config get <key>
-    tuck config set [--local] <key> <value>
-    tuck config unset [--local] <key>
-    tuck config edit [--local]
+    tuck config set <key> <value>
+    tuck config unset <key>
     tuck config list
+    tuck config edit
     tuck config reset
     tuck config remote
-    tuck config wizard
+<!-- TUCK_GEN:end cmd.config -->
 
 **Examples**
 
@@ -596,7 +671,6 @@ View and edit configuration. Without arguments, drops into an interactive menu.
     tuck config unset --local hooks.preSync  # remove a per-host hook
     tuck config edit --local                 # open .tuckrc.local.json in $EDITOR
     tuck config remote                       # configure provider
-    tuck config wizard                       # full re-run of init's prompts
 
 **Behavior notes**
 
@@ -617,15 +691,17 @@ View and edit configuration. Without arguments, drops into an interactive menu.
 
 Run repository-health and safety diagnostics. Useful after upgrades or when something feels off.
 
+<!-- TUCK_GEN:start cmd.doctor -->
 **Synopsis**
 
     tuck doctor [options]
 
 **Options**
 
-- `--json` — machine-readable output for CI.
-- `--strict` — treat warnings as non-zero exit.
-- `--category <env|repo|manifest|security|hooks>` — run one check group.
+- `--json` — Output as JSON
+- `--strict` — Exit non-zero on warnings
+- `-c, --category <category>` — Run only one category (env|repo|manifest|security|hooks)
+<!-- TUCK_GEN:end cmd.doctor -->
 
 **Examples**
 
@@ -647,15 +723,17 @@ Run repository-health and safety diagnostics. Useful after upgrades or when some
 
 Syntax-check tracked files — JSON, TOML, YAML, shell (bash/zsh), Lua. Report-only by default; `--fix` previews + applies a narrow set of safe rewrites after confirmation.
 
+<!-- TUCK_GEN:start cmd.validate -->
 **Synopsis**
 
     tuck validate [paths...] [options]
 
 **Options**
 
-- `--format <text|json>` — output format (default `text`). `json` emits `{ summary, results }` for scripting.
-- `--fix` — preview trailing-whitespace, missing-EOF-newline, and JSON pretty-print fixes as a unified diff, then prompt `Apply fixes to N files?` before writing.
-- `-y, --yes` — skip the confirmation prompt (still previews, still snapshots). Required in non-TTY / CI mode when `--fix` is set.
+- `--format <type>` — Output format: text | json
+- `--fix` — Preview + apply fixes (trailing whitespace, EOF newline, JSON pretty-print)
+- `-y, --yes` — Skip the confirmation prompt (still previews, still snapshots)
+<!-- TUCK_GEN:end cmd.validate -->
 
 **Examples**
 
@@ -689,17 +767,19 @@ Syntax-check tracked files — JSON, TOML, YAML, shell (bash/zsh), Lua. Report-o
 
 Profile shell startup and flag rule-based recommendations. Supports zsh and bash. Report-only by default; `--auto` previews + applies the safe subset of fixes after confirmation.
 
+<!-- TUCK_GEN:start cmd.optimize -->
 **Synopsis**
 
     tuck optimize [options]
 
 **Options**
 
-- `--profile` — profile only, skip the recommendation engine. Prints per-source wall-clock attribution.
-- `--auto` — preview + apply the safe subset of auto-fixes (today: append `skip_global_compinit=1` to `~/.zshenv` when `multiple-compinit` fires and the line isn't present).
-- `-y, --yes` — skip the confirmation prompt (still previews, still snapshots). Required in non-TTY / CI mode when `--auto` is set.
-- `--format <text|json>` — output format (default `text`). `json` emits structured recommendations for scripting (`shell` is included so the consumer knows which interpreter was profiled).
-- `--shell <zsh|bash>` — profile a specific shell. Default: detect from `$SHELL` basename (falls back to `zsh` if unset / unknown).
+- `--profile` — Profile only — skip the recommendation engine
+- `--auto` — Preview + apply the safe subset of auto-fixes (with confirmation)
+- `-y, --yes` — Skip the confirmation prompt (still previews, still snapshots)
+- `--format <type>` — Output format: text | json
+- `--shell <name>` — Shell to profile: zsh | bash (default: detect from $SHELL)
+<!-- TUCK_GEN:end cmd.optimize -->
 
 **Examples**
 
@@ -740,15 +820,17 @@ Profile shell startup and flag rule-based recommendations. Supports zsh and bash
 
 Update tuck itself to the latest GitHub release of `stanrc85/tuck`.
 
+<!-- TUCK_GEN:start cmd.self-update -->
 **Synopsis**
 
     tuck self-update [options]
 
 **Options**
 
-- `--check` — report update status without installing. Exit 1 if an update is available, 0 if up to date. For scripts.
-- `-y, --yes` — apply without prompting.
-- `--tag <tag>` — install a specific tag (e.g. `--tag v1.2.0`). Works for downgrades / pins.
+- `--check` — Report update status without installing (exit 1 if an update is available)
+- `-y, --yes` — Apply the update without prompting
+- `--tag <tag>` — Install a specific release tag (e.g. v1.2.0)
+<!-- TUCK_GEN:end cmd.self-update -->
 
 **Examples**
 
@@ -769,20 +851,24 @@ Update tuck itself to the latest GitHub release of `stanrc85/tuck`.
 
 Install CLI tools on a fresh machine from a declarative catalog. The orchestration half of "new-machine setup" — dotfiles come from `tuck apply` / `tuck restore`; the CLIs those dotfiles expect come from `tuck bootstrap`.
 
+<!-- TUCK_GEN:start cmd.bootstrap -->
 **Synopsis**
 
     tuck bootstrap [options]
 
 **Options**
 
-- `--all` — install every tool in the merged catalog (skip the picker).
-- `--bundle <name>` — install a named bundle from `[bundles]`.
-- `--tools <ids>` — comma/space-separated tool ids to install.
-- `--rerun <ids>` — force-reinstall, ignoring `check` probes.
-- `--dry-run` — print the resolved install order without executing.
-- `-y, --yes` — pre-check `sudo -n true` when the script needs sudo so non-interactive runs fail fast.
-- `--no-detect` — in the picker, show a flat alphabetical list and ignore detection signals.
-- `-f, --file <path>` — alternate `bootstrap.toml` location. Default: `~/.tuck/bootstrap.toml`.
+- `-f, --file <path>` — Path to bootstrap.toml (default: <tuckDir>/bootstrap.toml)
+- `--all` — Install every tool in the catalog (skip picker)
+- `--bundle <name>` — Install a named bundle (skip picker)
+- `--tools <ids>` — Comma-separated tool ids to install (skip picker)
+- `--rerun <ids>` — Comma-separated tool ids to force-reinstall (bypass check)
+- `--dry-run` — Print the planned tools without executing
+- `-y, --yes` — Skip confirmations and enable sudo pre-check under --yes
+- `--no-detect` — In the picker, ignore detection signals and show a flat list
+- `--skip-preflight` — Skip clock/disk/network/sudo preflight probes (CI escape hatch)
+- `-v, --verbose` — Stream every install/update line to the terminal (full transcript always goes to ~/.tuck/logs/)
+<!-- TUCK_GEN:end cmd.bootstrap -->
 
 **Examples**
 
@@ -809,18 +895,22 @@ Install CLI tools on a fresh machine from a declarative catalog. The orchestrati
 
 Re-run the `update` script for tools previously installed via `bootstrap`. Drives the picker from the per-host install state file.
 
+<!-- TUCK_GEN:start cmd.bootstrap.update -->
 **Synopsis**
 
     tuck bootstrap update [options]
 
 **Options**
 
-- `--all` — update every installed tool (skip the picker).
-- `--tools <ids>` — update specific ids.
-- `--check` — report which installed tools have pending updates (version bump or definition drift) without doing anything. Exit 1 if any are pending, 0 otherwise.
-- `--dry-run` — print the planned update order without executing.
-- `-y, --yes` — same sudo pre-check as `tuck bootstrap`.
-- `-f, --file <path>` — alternate `bootstrap.toml`.
+- `-f, --file <path>` — Path to bootstrap.toml (default: <tuckDir>/bootstrap.toml)
+- `--all` — Update every installed tool (skip picker)
+- `--tools <ids>` — Comma-separated tool ids to update (skip picker)
+- `--check` — Report pending updates without running them (exit 1 if any)
+- `--dry-run` — Print the plan without executing
+- `-y, --yes` — Skip confirmations and enable sudo pre-check under --yes
+- `--skip-preflight` — Skip clock/disk/network/sudo preflight probes (CI escape hatch)
+- `-v, --verbose` — Stream every update line to the terminal (full transcript always goes to ~/.tuck/logs/)
+<!-- TUCK_GEN:end cmd.bootstrap.update -->
 
 **Examples**
 
@@ -841,14 +931,16 @@ Re-run the `update` script for tools previously installed via `bootstrap`. Drive
 
 Edit `[bundles]` in `bootstrap.toml` from the CLI without hand-editing TOML.
 
+<!-- TUCK_GEN:start cmd.bootstrap.bundle -->
 **Synopsis**
 
     tuck bootstrap bundle list
     tuck bootstrap bundle show <name>
-    tuck bootstrap bundle create <name> <tool...>
+    tuck bootstrap bundle create <name> <tools...>
     tuck bootstrap bundle add <name> <tool>
     tuck bootstrap bundle rm <name> <tool>
-    tuck bootstrap bundle delete <name> [-y]
+    tuck bootstrap bundle delete <name>
+<!-- TUCK_GEN:end cmd.bootstrap.bundle -->
 
 **Examples**
 
@@ -871,17 +963,22 @@ Bundle edits re-serialize the entire `bootstrap.toml` via `smol-toml.stringify`,
 
 One-shot umbrella: `self-update` → `pull` → `restore` → `bootstrap update`.
 
+<!-- TUCK_GEN:start cmd.update -->
 **Synopsis**
 
     tuck update [options]
 
 **Options**
 
-- `--no-self` — skip the `tuck self-update` phase.
-- `--no-pull` — skip the `git pull` phase on `~/.tuck/`.
-- `--no-restore` — skip the `tuck restore --all` phase (which only runs when pull brought in new commits anyway).
-- `--no-tools` — skip the `tuck bootstrap update --all` phase.
-- `-y, --yes` — forward `--yes` to both self-update and bootstrap update.
+- `--no-self` — Skip the self-update phase
+- `--no-pull` — Skip the dotfiles-repo pull phase
+- `--no-restore` — Skip the dotfile restore phase
+- `--no-tools` — Skip the bootstrap update phase
+- `-y, --yes` — Skip confirmations in each phase
+- `--mirror` — Reset to upstream (destroys local commits) instead of rebasing
+- `--allow-divergent` — Bypass the divergence safety check (required with --mirror when ahead of upstream)
+- `-v, --verbose` — Stream every restore/update subprocess line to the terminal (full transcripts always go to ~/.tuck/logs/)
+<!-- TUCK_GEN:end cmd.update -->
 
 **Examples**
 
@@ -904,11 +1001,20 @@ One-shot umbrella: `self-update` → `pull` → `restore` → `bootstrap update`
 
 Manage potentially-sensitive content in tracked files.
 
+<!-- TUCK_GEN:start cmd.secrets -->
 **Synopsis**
 
-    tuck secrets scan
-    tuck secrets set <key> <value>
     tuck secrets list
+    tuck secrets set <name>
+    tuck secrets unset <name>
+    tuck secrets path
+    tuck secrets scan [paths...]
+    tuck secrets scan-history
+    tuck secrets backend
+    tuck secrets map <name>
+    tuck secrets mappings
+    tuck secrets test
+<!-- TUCK_GEN:end cmd.secrets -->
 
 **Examples**
 

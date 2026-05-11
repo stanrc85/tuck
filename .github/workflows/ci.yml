@@ -43,6 +43,9 @@ jobs:
       - name: Run TypeScript type checking
         run: pnpm typecheck
 
+      - name: Check wiki docs are in sync with code
+        run: pnpm docs:check
+
   test:
     name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
