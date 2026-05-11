@@ -1,3 +1,5 @@
+<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
+
 # [3.7.0](https://github.com/stanrc85/tuck/compare/v3.6.5...v3.7.0) (2026-05-11)
 
 
@@ -9,8 +11,6 @@
 ### Features
 
 * **docs:** generate wiki schema + command reference from source ([5d2aa84](https://github.com/stanrc85/tuck/commit/5d2aa84cbfe63c7d02ea9ba123169f1778ddeca2))
-
-<img src="public/Changelog.png" alt="Changelog" style="width:100%;">
 
 ## [3.6.5](https://github.com/stanrc85/tuck/compare/v3.6.4...v3.6.5) (2026-05-06)
 
