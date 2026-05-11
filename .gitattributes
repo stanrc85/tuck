@@ -1,0 +1,5 @@
+# Force LF line endings on the auto-generated wiki pages. Without this,
+# Windows checkouts get CRLF (via git's core.autocrlf), but the docs:gen
+# generator emits LF — mixed line endings result and docs:check fails.
+docs/wiki/Command-Reference.md text eol=lf
+docs/wiki/Configuration-Reference.md text eol=lf

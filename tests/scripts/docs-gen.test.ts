@@ -21,9 +21,16 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const configPath = join(repoRoot, 'docs/wiki/Configuration-Reference.md');
 const commandPath = join(repoRoot, 'docs/wiki/Command-Reference.md');
 
+/**
+ * Strip CR so Windows checkouts compare cleanly. .gitattributes pins these
+ * pages to LF but the normalize is a safety net for contributors with
+ * non-default autocrlf settings.
+ */
+const lf = (s: string): string => s.replace(/\r\n/g, '\n');
+
 describe('docs-gen — Configuration-Reference.md', () => {
   it('is in sync with the zod schema (run `pnpm docs:gen` if this fails)', () => {
-    const current = readFileSync(configPath, 'utf8');
+    const current = lf(readFileSync(configPath, 'utf8'));
     const regenerated = generateConfigDocs(current);
     expect(regenerated).toBe(current);
   });
@@ -34,7 +41,7 @@ describe('docs-gen — Configuration-Reference.md', () => {
   });
 
   it('detects stale config marker blocks', () => {
-    const current = readFileSync(configPath, 'utf8');
+    const current = lf(readFileSync(configPath, 'utf8'));
     const withStale = current.replace(
       '## See also',
       '<!-- TUCK_GEN:start config.bogus -->\n<!-- TUCK_GEN:end config.bogus -->\n\n## See also'
@@ -45,7 +52,7 @@ describe('docs-gen — Configuration-Reference.md', () => {
 
 describe('docs-gen — Command-Reference.md', () => {
   it('is in sync with commander programs (run `pnpm docs:gen` if this fails)', () => {
-    const current = readFileSync(commandPath, 'utf8');
+    const current = lf(readFileSync(commandPath, 'utf8'));
     const regenerated = generateCommandDocs(current);
     expect(regenerated).toBe(current);
   });
@@ -56,7 +63,7 @@ describe('docs-gen — Command-Reference.md', () => {
   });
 
   it('detects stale command marker blocks', () => {
-    const current = readFileSync(commandPath, 'utf8');
+    const current = lf(readFileSync(commandPath, 'utf8'));
     const withStale = current.replace(
       '## Secrets',
       '<!-- TUCK_GEN:start cmd.bogus -->\n<!-- TUCK_GEN:end cmd.bogus -->\n\n## Secrets'

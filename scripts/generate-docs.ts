@@ -439,7 +439,11 @@ export function generateCommandDocs(page: string): string {
 // ---------------------------------------------------------------------------
 
 function rewriteFile(path: string, transform: (s: string) => string): boolean {
-  const before = readFileSync(path, 'utf8');
+  // Normalize to LF on read so a Windows contributor whose autocrlf added \r
+  // doesn't end up with mixed line endings after we splice LF-only generated
+  // content into a CRLF-bodied file. .gitattributes pins these pages to LF
+  // already, this is the belt-and-suspenders.
+  const before = readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
   const after = transform(before);
   if (before === after) return false;
   writeFileSync(path, after);
